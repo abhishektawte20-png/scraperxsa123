@@ -1,0 +1,63 @@
+/* ScraperX overlay styles. Namespaced hard — this rides on top of Google's own
+   CSS and must not touch anything that isn't ours. */
+
+mark.sx-hit {
+  background: #ffe27a;
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+  box-shadow: inset 0 -2px 0 rgba(214, 158, 0, .55);
+}
+
+.sx-result.sx-tier-critical { border-left: 3px solid #d93025; padding-left: 10px; }
+.sx-result.sx-tier-strong   { border-left: 3px solid #1a73e8; padding-left: 10px; }
+.sx-result.sx-tier-weak     { border-left: 3px solid #bdc1c6; padding-left: 10px; }
+.sx-result.sx-tier-noise    { opacity: .55; }
+
+.sx-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 11px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  margin: 2px 0 4px;
+}
+.sx-badge .sx-score {
+  min-width: 26px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 9px;
+  color: #fff;
+  background: #5f6368;
+}
+.sx-badge-critical .sx-score { background: #d93025; }
+.sx-badge-strong   .sx-score { background: #1a73e8; }
+.sx-badge-weak     .sx-score { background: #80868b; }
+.sx-badge .sx-tier { text-transform: uppercase; letter-spacing: .06em; color: #5f6368; }
+.sx-badge .sx-why  { color: #80868b; font-weight: 400; }
+
+.sx-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #202124;
+  color: #e8eaed;
+  font: 500 12px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .3);
+}
+.sx-bar-tag {
+  background: #1a73e8;
+  color: #fff;
+  padding: 1px 7px;
+  border-radius: 3px;
+  letter-spacing: .04em;
+}
+.sx-bar-name { color: #fff; }
+.sx-bar-stats { color: #9aa0a6; font-weight: 400; margin-left: auto; }
+
+@media (prefers-color-scheme: dark) {
+  mark.sx-hit { background: #7a5c00; color: #fff; }
+}

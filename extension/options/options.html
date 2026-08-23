@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ScraperX settings</title>
+  <link rel="stylesheet" href="../sidepanel/panel.css">
+  <style>
+    body { background: var(--bg-sunk); }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .saved { color: #188038; font-size: 12px; opacity: 0; transition: opacity .2s; }
+    .saved.show { opacity: 1; }
+    h1.page { font-size: 18px; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page">ScraperX settings</h1>
+    <p class="hint" style="margin-bottom:16px">These apply to every run.</p>
+
+    <div class="card">
+      <h2>Pacing</h2>
+      <p class="hint" style="margin-bottom:10px">
+        The extension runs one query at a time through a real browser tab, at the speed a
+        person would. Shortening these makes Google far more likely to serve a CAPTCHA and
+        stall the run.
+      </p>
+      <div class="grid2">
+        <label class="field"><span>Minimum gap (ms)</span><input type="text" id="minDelayMs"></label>
+        <label class="field"><span>Maximum gap (ms)</span><input type="text" id="maxDelayMs"></label>
+        <label class="field"><span>Long pause every N queries</span><input type="text" id="longPauseEvery"></label>
+        <label class="field"><span>Long pause length (ms)</span><input type="text" id="longPauseMs"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Search</h2>
+      <div class="grid2">
+        <label class="field"><span>Results requested per query</span><input type="text" id="resultsPerQuery"></label>
+        <label class="field"><span>Top results kept per query</span><input type="text" id="keepTopResults"></label>
+        <label class="field"><span>Page load timeout (ms)</span><input type="text" id="navTimeoutMs"></label>
+        <label class="field"><span>Country code (gl) — optional</span><input type="text" id="country" placeholder="us"></label>
+      </div>
+      <label class="sel-item"><input type="checkbox" id="recentOnly"><span>Restrict to the last 2 years</span></label>
+    </div>
+
+    <div class="card">
+      <h2>Behaviour</h2>
+      <label class="sel-item"><input type="checkbox" id="highlightSerp"><span>Highlight matched terms on the results page</span></label>
+      <label class="sel-item"><input type="checkbox" id="closeTabWhenDone"><span>Close the run tab when a run finishes</span></label>
+      <label class="field" style="margin-top:8px">
+        <span>Run window</span>
+        <select id="windowMode">
+          <option value="background">Separate minimised window</option>
+          <option value="current">Background tab in the current window</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Enrichment</h2>
+      <p class="hint" style="margin-bottom:10px">
+        Optional. Points at the ScraperX enrichment server in this repo; a finished run can be
+        POSTed there for the AI extraction pass.
+      </p>
+      <label class="field"><span>Endpoint URL</span><input type="text" id="enrichEndpoint" placeholder="https://your-project.up.railway.app/enrich"></label>
+      <label class="sel-item"><input type="checkbox" id="autoEnrich"><span>Send automatically when a run finishes</span></label>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary" id="save">Save</button>
+      <button class="btn" id="reset">Restore defaults</button>
+      <span class="saved" id="saved">Saved</span>
+    </div>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

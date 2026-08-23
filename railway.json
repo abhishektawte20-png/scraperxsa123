@@ -1,7 +1,7 @@
 {
   "build": {
     "builder": "npm",
-    "command": "npm install"
+    "command": "npm install --omit=dev"
   },
   "deploy": {
     "start": "npm start"

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScraperX</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="head">
+    <div class="brand">
+      <span class="logo">SX</span>
+      <div>
+        <h1>ScraperX</h1>
+        <p class="sub">Boolean run automation</p>
+      </div>
+    </div>
+    <button class="icon-btn" id="openOptions" title="Settings">&#9881;</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-tab="run" role="tab">Run</button>
+    <button class="tab" data-tab="results" role="tab">Results <span class="pill" id="resultsCount">0</span></button>
+    <button class="tab" data-tab="library" role="tab">Booleans</button>
+    <button class="tab" data-tab="history" role="tab">History</button>
+  </nav>
+
+  <div id="blockedBanner" class="banner banner-warn" hidden>
+    <strong>Google is asking for verification.</strong>
+    <span>The run tab has been brought forward — solve it there, then resume.</span>
+    <button class="btn btn-sm" id="resumeAfterBlock">Resume run</button>
+  </div>
+
+  <!-- ── Run ──────────────────────────────────────────────────────────────── -->
+  <section class="panel is-active" data-panel="run">
+    <div class="card">
+      <h2>Company</h2>
+      <label class="field">
+        <span>Company name</span>
+        <input id="company" type="text" placeholder="L&amp;L Exhibition Management" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Website</span>
+        <input id="website" type="text" placeholder="www.homeshowcenter.com" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Aliases <em>(one per line — DBAs, former names)</em></span>
+        <textarea id="aliases" rows="2" placeholder="Home Show Center&#10;L&amp;L Expo"></textarea>
+      </label>
+      <div class="preview">
+        <span class="preview-label">Entity group</span>
+        <code id="entityPreview">—</code>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Booleans to run</h2>
+        <span class="muted" id="selectedCount">0 selected</span>
+      </div>
+      <div class="row row-wrap">
+        <button class="btn btn-ghost btn-sm" id="selAll">All</button>
+        <button class="btn btn-ghost btn-sm" id="selNone">None</button>
+        <button class="btn btn-ghost btn-sm" id="selDefault">Defaults</button>
+        <button class="btn btn-ghost btn-sm" id="selRovoDown">+ ROVO-down backups</button>
+      </div>
+      <div id="selector" class="selector"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button class="btn btn-primary" id="startBtn">Run all booleans</button>
+        <button class="btn" id="pauseBtn" hidden>Pause</button>
+        <button class="btn btn-danger" id="stopBtn" hidden>Stop</button>
+      </div>
+      <div id="progressWrap" hidden>
+        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <p class="progress-text" id="progressText"></p>
+      </div>
+      <p class="hint" id="etaHint"></p>
+    </div>
+  </section>
+
+  <!-- ── Results ──────────────────────────────────────────────────────────── -->
+  <section class="panel" data-panel="results">
+    <div class="card" id="summaryCard" hidden>
+      <div class="card-head">
+        <h2 id="summaryTitle">Run summary</h2>
+        <div class="row row-tight">
+          <button class="btn btn-ghost btn-sm" id="copyMd">Copy report</button>
+          <button class="btn btn-ghost btn-sm" id="exportJson">JSON</button>
+          <button class="btn btn-ghost btn-sm" id="exportCsv">CSV</button>
+        </div>
+      </div>
+      <div class="stats" id="summaryStats"></div>
+      <div class="row row-tight">
+        <button class="btn btn-ghost btn-sm" id="enrichBtn" hidden>Send to enrichment AI</button>
+      </div>
+      <pre id="enrichOut" class="enrich-out" hidden></pre>
+    </div>
+
+    <div class="card" id="aggregateCard" hidden>
+      <div class="card-head">
+        <h2>Corroborated across booleans</h2>
+        <span class="muted">sources found by more than one query</span>
+      </div>
+      <div id="aggregateList"></div>
+    </div>
+
+    <div class="filters" id="resultFilters" hidden>
+      <label><input type="checkbox" id="onlyStrong"> Only critical &amp; strong</label>
+      <label><input type="checkbox" id="hideEmpty" checked> Hide empty queries</label>
+    </div>
+
+    <div id="resultsList"></div>
+    <p class="empty" id="resultsEmpty">No run yet. Fill in a company on the Run tab and start.</p>
+  </section>
+
+  <!-- ── Library ──────────────────────────────────────────────────────────── -->
+  <section class="panel" data-panel="library">
+    <div class="card">
+      <h2>Boolean library</h2>
+      <p class="hint">These are the strings behind each “Copy Boolean” button. Edit them here and every future run uses the new version.</p>
+      <div class="row row-wrap">
+        <button class="btn btn-ghost btn-sm" id="libExport">Export</button>
+        <button class="btn btn-ghost btn-sm" id="libImport">Import</button>
+        <button class="btn btn-ghost btn-sm" id="libReset">Reset to defaults</button>
+        <button class="btn btn-ghost btn-sm" id="libGrab">Grab from open tab</button>
+      </div>
+    </div>
+    <div id="libraryList"></div>
+  </section>
+
+  <!-- ── History ──────────────────────────────────────────────────────────── -->
+  <section class="panel" data-panel="history">
+    <div class="card">
+      <div class="card-head">
+        <h2>Previous runs</h2>
+        <button class="btn btn-ghost btn-sm" id="clearHistory">Clear</button>
+      </div>
+    </div>
+    <div id="historyList"></div>
+  </section>
+
+  <dialog id="editDialog" class="dialog">
+    <form method="dialog">
+      <h3 id="editTitle">Edit boolean</h3>
+      <label class="field"><span>Name</span><input id="editName" type="text"></label>
+      <label class="field"><span>Category</span><input id="editCategory" type="text"></label>
+      <label class="field">
+        <span>Query <em>{{entity}}, {{company}}, {{website}}, {{domain}}</em></span>
+        <textarea id="editQuery" rows="6"></textarea>
+      </label>
+      <div class="row row-end">
+        <button class="btn btn-ghost" value="cancel">Cancel</button>
+        <button class="btn btn-primary" id="editSave" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="importFile" accept="application/json" hidden>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>
