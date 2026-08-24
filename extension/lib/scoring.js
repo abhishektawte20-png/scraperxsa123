@@ -121,10 +121,66 @@ export function findSignalMatches(text, terms) {
     if (!m) continue;
     const matchStart = m.index + m[1].length;
     const before = hay.slice(Math.max(0, matchStart - NEGATION_WINDOW), matchStart);
-    out.push({ term, negated: NEGATION_RE.test(before) });
+    out.push({ term, negated: NEGATION_RE.test(before), at: matchStart });
   }
   return out;
 }
+
+/** Every position where any of `terms` occurs, not just the first. */
+function allTermPositions(text, terms) {
+  const hay = String(text || '');
+  const positions = [];
+  for (const term of terms || []) {
+    if (!term || String(term).length < 2) continue;
+    const re = termRegex(term);
+    let m;
+    while ((m = re.exec(hay)) !== null) {
+      positions.push(m.index + m[1].length);
+      if (re.lastIndex <= m.index) re.lastIndex = m.index + 1; // guard zero-width
+    }
+  }
+  return positions.sort((a, b) => a - b);
+}
+
+/**
+ * Does a sentence boundary sit between two offsets? Cheap and deliberately
+ * conservative: an abbreviation like "Inc." or "ch. 11" would otherwise read
+ * as a sentence end, so a period only counts when followed by whitespace and
+ * a capital letter.
+ */
+function sentenceBreakBetween(text, a, b) {
+  const seg = String(text).slice(Math.min(a, b), Math.max(a, b));
+  return /[.!?]\s+[A-Z"'(]|\n|\s[—–|]\s|\.{3}/.test(seg);
+}
+
+/**
+ * How closely does a signal term sit to an actual mention of the company?
+ *
+ * This is the post-hoc half of the document-level matching problem: "Psypher"
+ * in a page header and "raised" in an unrelated sidebar item currently score
+ * the same as "Psypher raised $8M" in one sentence. Measuring the gap between
+ * them separates the two without needing a search-engine proximity operator.
+ *
+ * Returns one of:
+ *   'same-sentence' — no sentence boundary between them (the strong case)
+ *   'near'          — a boundary, but still close by
+ *   'far'           — a different part of the page entirely
+ *   'no-entity'     — the company is never named, so proximity says nothing
+ */
+export function signalProximity(text, signalAt, entityPositions) {
+  if (!entityPositions || !entityPositions.length) return 'no-entity';
+  let best = Infinity;
+  let nearest = null;
+  for (const pos of entityPositions) {
+    const d = Math.abs(pos - signalAt);
+    if (d < best) { best = d; nearest = pos; }
+  }
+  if (nearest === null) return 'no-entity';
+  if (!sentenceBreakBetween(text, nearest, signalAt)) return 'same-sentence';
+  return best <= NEAR_WINDOW ? 'near' : 'far';
+}
+
+const NEAR_WINDOW = 160;
 
 /**
  * Blanks out every mention of the entity's own name/website/aliases in a
@@ -403,7 +459,26 @@ export function scoreResult(result, ctx) {
     else signalHits.push(m.term);
   }
 
-  const signalScore = Math.min(30, signalHits.length * 12);
+  // How close does the signal actually sit to a mention of the company? A hit
+  // in the same sentence is the thing the boolean was asking about; one on the
+  // far side of a sentence break may belong to a different story on the page.
+  const entityPositions = allTermPositions(haystack, ctx.entitySignals || []);
+  const keptMatches = positiveMatches.filter((m) => signalHits.includes(m.term));
+  let proximity = 'no-entity';
+  for (const m of keptMatches) {
+    const p = signalProximity(haystack, m.at, entityPositions);
+    if (p === 'same-sentence') { proximity = 'same-sentence'; break; }
+    if (p === 'near' && proximity !== 'same-sentence') proximity = 'near';
+    else if (p === 'far' && proximity === 'no-entity') proximity = 'far';
+  }
+  const distantSignal = proximity === 'far';
+  if (signalHits.length && proximity === 'same-sentence') {
+    reasons.push('company and signal in the same sentence');
+  } else if (distantSignal) {
+    reasons.push('note: signal appears far from any mention of the company — may belong to a different item on the page');
+  }
+
+  const signalScore = Math.min(30, signalHits.length * 12) * (distantSignal ? 0.5 : 1);
   if (signalHits.length) reasons.push(`signal: ${signalHits.slice(0, 3).join(', ')}`);
   if (onLegalPage && signalMatches.length) reasons.push('on a terms/privacy page — generic wording, not counted');
   else if (negatedHits.length) reasons.push(`note: "${negatedHits[0]}" appears negated — not counted`);
@@ -445,7 +520,7 @@ export function scoreResult(result, ctx) {
   const hasSignal = signalHits.length > 0;
   const credibleSource = domainClass !== 'aggregator';
   let flag = null;
-  if (namesCompany && hasSignal && credibleSource && !isCollision && !possibleDifferentCompany) {
+  if (namesCompany && hasSignal && credibleSource && !isCollision && !possibleDifferentCompany && !distantSignal) {
     const spec = (ctx.category && CATEGORY_FLAG[ctx.category]) || DEFAULT_FLAG;
     flag = { ...spec, category: ctx.category || null };
   }
@@ -459,6 +534,8 @@ export function scoreResult(result, ctx) {
     signalHits,
     negatedHits,
     ambiguousHits,
+    proximity,
+    distantSignal,
     isCollision,
     contextMismatch,
     possibleDifferentCompany,

@@ -1,7 +1,9 @@
 import { toMarkdown, toCsv, slug, groupByCategory } from '../lib/export.js';
 import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword } from '../lib/query.js';
 import { DEFAULT_LIBRARY } from '../lib/library.js';
-import { scoreResult, classifyDomain, isLegalBoilerplatePage } from '../lib/scoring.js';
+import { scoreResult, classifyDomain, isLegalBoilerplatePage, signalProximity } from '../lib/scoring.js';
+import { buildExclusionTail, exclusionTerms } from '../lib/query.js';
+import { clusterProbeResults, isAmbiguous, exclusionsFromClusters, probeQuery, extractPlaces } from '../lib/probe.js';
 
 let fail = 0;
 const check = (n, c, x = '') => { console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
@@ -411,6 +413,120 @@ const legalSuffixHit = scoreResult({
 }, legalSuffixCtx);
 check('a legal-entity suffix ("Inc.") is not mistaken for a different company\'s name',
   legalSuffixHit.extensionWord === null, legalSuffixHit.extensionWord);
+
+console.log('\n[sentence proximity: signal near the company, not just on the same page]');
+const proxCtx = {
+  company: 'Psypher', entityDomain: 'psypher.in', category: 'Prior Backing',
+  entitySignals: ['Psypher', 'psypher.in'],
+  signals: ['raised', 'raises', 'venture funding', 'Psypher', 'psypher.in']
+};
+const sameSentence = scoreResult({
+  title: 'Psypher raised $8M Series A', url: 'https://www.businesswire.com/x',
+  snippet: 'Psypher raised $8M in Series A funding led by investors.'
+}, proxCtx);
+check('company and signal in one sentence is the strong case',
+  sameSentence.proximity === 'same-sentence' && sameSentence.distantSignal === false, sameSentence.proximity);
+check('a same-sentence hit still carries the flag', sameSentence.flag !== null);
+
+const nextSentence = scoreResult({
+  title: 'Psypher profile', url: 'https://news.example.com/x',
+  snippet: 'Psypher is a streetwear brand. The company raised $2M last year.'
+}, proxCtx);
+check('an adjacent sentence still counts — not everything across a full stop is noise',
+  nextSentence.proximity === 'near' && nextSentence.distantSignal === false, nextSentence.proximity);
+
+const farAway = scoreResult({
+  title: 'Psypher — Indian Streetwear Brand', url: 'https://news.example.com/y',
+  snippet: 'Psypher emerged from a desire to translate artistic ideas into wearable art, founded 2024 in Delhi with a small team of designers and illustrators working across India. In other news this week, Acme Corp raised $40M in a round led by Sequoia to expand its logistics network.'
+}, proxCtx);
+check('a signal belonging to a different story on the page is marked distant',
+  farAway.distantSignal === true && farAway.proximity === 'far', farAway.proximity);
+check('a distant signal never carries the flag', farAway.flag === null);
+check('a distant signal scores lower than the same-sentence version',
+  farAway.score < sameSentence.score, `${farAway.score} < ${sameSentence.score}`);
+check('the reason explains the demotion',
+  farAway.reasons.some((r) => r.includes('far from any mention')), farAway.reasons.join(' | '));
+
+check('proximity says nothing when the company is never named',
+  signalProximity('some text about funding', 5, []) === 'no-entity');
+check('an abbreviation is not mistaken for a sentence end',
+  signalProximity('Psypher Inc. raised money', 21, [0]) === 'same-sentence');
+
+console.log('\n[query-side exclusions]');
+check('exclusion terms are quoted and negated',
+  buildExclusionTail(['Psypher AI', 'Interactive']) === '-"Psypher AI" -"Interactive"',
+  buildExclusionTail(['Psypher AI', 'Interactive']));
+check('duplicates and case variants collapse',
+  exclusionTerms(['AI', 'ai', ' AI ']).length === 1, JSON.stringify(exclusionTerms(['AI', 'ai', ' AI '])));
+check('embedded quotes cannot break out of the operator',
+  buildExclusionTail(['bad"term']) === '-"badterm"', buildExclusionTail(['bad"term']));
+check('no terms yields an empty tail, not a stray operator', buildExclusionTail([]) === '');
+
+const exclEntity = { company: 'Psypher', website: 'psypher.in', aliases: [], excludeTerms: ['Psypher AI'] };
+const jobOff = buildJobs(DEFAULT_LIBRARY, exclEntity, { only: ['backing.general'] })[0];
+const jobOn = buildJobs(DEFAULT_LIBRARY, exclEntity, { only: ['backing.general'], queryExclusions: true })[0];
+check('exclusions are off unless asked for', !jobOff.query.includes('-"Psypher AI"'));
+check('exclusions reach the query when enabled', jobOn.query.includes('-"Psypher AI"'), jobOn.query.slice(-40));
+check('the excluded terms are reported on the job', jobOn.excludedInQuery.includes('Psypher AI'));
+const noExcl = buildJobs(DEFAULT_LIBRARY, { company: 'Psypher', website: 'psypher.in', aliases: [] },
+  { only: ['backing.general'], queryExclusions: true })[0];
+check('an entity with nothing configured gets a byte-identical query',
+  noExcl.query === jobOff.query, 'unchanged');
+
+console.log('\n[pre-flight ambiguity probe]');
+const probeEntity = { company: 'Psypher', website: 'psypher.in', aliases: [] };
+check('the probe is the bare name, no signals or filters', probeQuery(probeEntity) === '"Psypher"', probeQuery(probeEntity));
+check('places are pulled out of snippets',
+  extractPlaces('Psypher AI is headquartered in Kochi, India.')[0] === 'Kochi',
+  JSON.stringify(extractPlaces('Psypher AI is headquartered in Kochi, India.')));
+check('a sentence-ending period is not treated as part of the city name',
+  JSON.stringify(extractPlaces('Founded in 2024, based in Delhi. Psypher, based in Delhi, released a drop.')) === '["Delhi"]',
+  JSON.stringify(extractPlaces('Founded in 2024, based in Delhi. Psypher, based in Delhi, released a drop.')));
+check('interior punctuation in a real place name survives',
+  extractPlaces('headquartered in St. Louis today')[0] === 'St. Louis',
+  JSON.stringify(extractPlaces('headquartered in St. Louis today')));
+
+const probeResults = [
+  { title: 'About Psypher – Indian Streetwear Brand Story', url: 'https://www.psypher.in/pages/about-psypher',
+    snippet: 'PSYPHER emerged from a desire to translate artistic ideas into wearable art. Founded in 2024.' },
+  { title: 'Psypher AI - 2026 Company Profile', url: 'https://tracxn.com/Discover/Companies/psypher-ai',
+    snippet: 'Psypher AI was founded in 2024. Psypher AI is headquartered in Kochi, India.' },
+  { title: 'Terms of Service', url: 'https://www.psypher.ai/terms',
+    snippet: 'All services and branding are owned by Psypher AI.' },
+  { title: 'PSYPHER AI PRIVATE LIMITED', url: 'https://tracxn.com/Discover/Legal-Entities/India/psypher-ai',
+    snippet: 'PSYPHER AI PRIVATE LIMITED was incorporated on Oct 14, 2024 in India.' },
+  { title: 'Psypher streetwear drop', url: 'https://hypebeast.com/psypher',
+    snippet: 'Psypher, based in Delhi, released a new capsule collection.' }
+];
+const clusters = clusterProbeResults(probeResults, probeEntity);
+check('the two companies separate into two clusters', clusters.length === 2, `${clusters.length} clusters`);
+check('the target cluster is listed first', clusters[0].kind === 'target', clusters[0].kind);
+check('the rival is labelled by the extra word in its name',
+  clusters[1].label === 'Psypher AI', clusters[1].label);
+check('a page on the target\'s own domain always lands in the target cluster',
+  clusters[0].domains.includes('psypher.in'), JSON.stringify(clusters[0].domains));
+check('locations are captured as a discriminator (Delhi vs Kochi)',
+  clusters[0].places.includes('Delhi') && clusters[1].places.includes('Kochi'),
+  JSON.stringify([clusters[0].places, clusters[1].places]));
+check('this counts as ambiguous', isAmbiguous(clusters) === true);
+check('rejecting the rival yields its full name, not the bare distinguishing word',
+  exclusionsFromClusters(clusters, [clusters[1].key]).includes('Psypher AI'),
+  JSON.stringify(exclusionsFromClusters(clusters, [clusters[1].key])));
+check('the bare word alone is never used — -"AI" would gut the results',
+  !exclusionsFromClusters(clusters, [clusters[1].key]).includes('AI'));
+check('rejecting nothing yields no exclusions', exclusionsFromClusters(clusters, []).length === 0);
+
+const soloClusters = clusterProbeResults([
+  { title: 'Acme Robotics raises $8M', url: 'https://businesswire.com/x', snippet: 'Acme Robotics raised $8M.' },
+  { title: 'About Acme Robotics', url: 'https://www.acme.com/about', snippet: 'Acme Robotics, based in Boston.' }
+], { company: 'Acme Robotics', website: 'acme.com', aliases: [] });
+check('an unambiguous name produces one cluster and no interruption',
+  soloClusters.length === 1 && isAmbiguous(soloClusters) === false, `${soloClusters.length} cluster(s)`);
+check('a single stray mention is below the interrupt threshold',
+  isAmbiguous(clusterProbeResults([
+    ...probeResults.slice(0, 1),
+    { title: 'Psypher Labs one-off', url: 'https://example.com/a', snippet: 'Psypher Labs is unrelated.' }
+  ], probeEntity)) === false);
 
 console.log('\n[exports]');
 const run = {

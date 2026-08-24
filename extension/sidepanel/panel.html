@@ -175,6 +175,20 @@
   </section>
   </main>
 
+  <dialog id="ambiguityDialog" class="dialog">
+    <h3>More than one company matches this name</h3>
+    <p class="hint" id="ambiguityIntro">
+      A quick check on the name alone turned up more than one company. Mark the ones
+      that aren't yours — they'll be excluded from every boolean in this run, and
+      remembered for this company from now on.
+    </p>
+    <div id="ambiguityList" class="ambig-list"></div>
+    <div class="row row-end">
+      <button class="btn btn-ghost" id="ambiguitySkip">Run anyway</button>
+      <button class="btn btn-primary" id="ambiguityConfirm">Exclude &amp; run</button>
+    </div>
+  </dialog>
+
   <dialog id="editDialog" class="dialog">
     <form method="dialog">
       <h3 id="editTitle">Edit boolean</h3>

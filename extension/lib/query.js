@@ -42,6 +42,35 @@ export function renderQuery(template, entity) {
     .trim();
 }
 
+/**
+ * The `-"Psypher AI"` tail that keeps a known-different company out of the
+ * results in the first place.
+ *
+ * Filtering these out after the fact still costs the result slot — a boolean
+ * that returns ten links spends six of them on the wrong company and we score
+ * six of them as noise. Excluding at query time gets those six slots back as
+ * usable results, at no extra queries and no extra time.
+ *
+ * Only ever built from terms the researcher typed themselves. The auto-detected
+ * collision guesses in scoring.js deliberately do NOT feed this: a wrong guess
+ * here silently removes results a researcher would never see, where a wrong
+ * guess in scoring only demotes something still visible on screen.
+ */
+export function exclusionTerms(excludeTerms) {
+  const parts = [];
+  for (const raw of excludeTerms || []) {
+    const term = String(raw || '').replaceAll('"', '').trim();
+    if (!term) continue;
+    if (parts.some((p) => p.toLowerCase() === term.toLowerCase())) continue;
+    parts.push(term);
+  }
+  return parts;
+}
+
+export function buildExclusionTail(excludeTerms) {
+  return exclusionTerms(excludeTerms).map((t) => `-"${t}"`).join(' ');
+}
+
 /** Full Google URL for a rendered query string. */
 export function googleUrl(q, opts = {}) {
   const params = new URLSearchParams({ q, num: String(opts.num || 20), hl: opts.hl || 'en' });
@@ -120,13 +149,19 @@ export function buildJobs(library, entity, opts = {}) {
           url: t.url, notes: t.notes || '', query: '', signals: []
         };
       }
-      const q = renderQuery(t, entity);
+      const base = renderQuery(t, entity);
+      // Off unless the caller asks: a researcher who has not opted in gets
+      // byte-identical queries to before.
+      const excluded = opts.queryExclusions ? exclusionTerms(entity.excludeTerms) : [];
+      const tail = buildExclusionTail(excluded);
+      const q = tail ? `${base} ${tail}` : base;
       return {
         id: t.id,
         category: t.category,
         name: t.name,
         engine: 'google',
         query: q,
+        excludedInQuery: excluded,
         url: googleUrl(q, opts),
         signals: deriveSignals(t, entity),
         entitySignals: [entity.company, bareDomain(entity.website), ...(entity.aliases || [])].filter(Boolean),

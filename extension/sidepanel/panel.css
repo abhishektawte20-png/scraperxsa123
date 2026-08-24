@@ -389,3 +389,21 @@ input[type="text"]:focus, textarea:focus {
 .dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); width: min(92vw, 480px); padding: 16px; box-shadow: var(--shadow-pop); }
 .dialog::backdrop { background: rgba(20, 12, 40, .5); backdrop-filter: blur(1px); }
 .dialog h3 { font-size: 13px; margin-bottom: 11px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+
+/* pre-flight ambiguity dialog */
+.ambig-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 2px; }
+.ambig-item {
+  display: flex; gap: 9px; align-items: flex-start; padding: 10px 11px;
+  border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.ambig-item.is-rejected { border-color: var(--critical); background: var(--critical-soft); }
+.ambig-item.is-target { border-color: var(--accent-2); background: var(--accent-soft); }
+.ambig-check { margin-top: 2px; accent-color: var(--critical); }
+.ambig-body { min-width: 0; flex: 1; }
+.ambig-name { font-weight: 700; font-size: 12.5px; }
+.ambig-meta { font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; word-break: break-all; }
+.ambig-sample { font-size: 10.5px; color: var(--ink-soft); margin-top: 4px; }
+.ambig-tag {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  padding: 1px 6px; border-radius: 4px; background: var(--accent-2); color: #fff; margin-left: 6px;
+}

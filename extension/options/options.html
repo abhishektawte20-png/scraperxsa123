@@ -42,6 +42,18 @@
         <label class="field"><span>Country code (gl) — optional</span><input type="text" id="country" placeholder="us"></label>
       </div>
       <label class="sel-item"><input type="checkbox" id="recentOnly"><span>Restrict to the last 2 years</span></label>
+      <label class="sel-item"><input type="checkbox" id="queryExclusions"><span>Exclude known-different companies in the query itself</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        Sends your "Not this company if it also mentions" terms to Google as
+        <code>-"term"</code>, so the wrong company never takes up a result slot.
+        Only your own typed terms are used, never the auto-detected guesses.
+      </p>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="preflightProbe"><span>Check the name for other companies before running</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        One extra query on the bare company name. If it turns up a second company
+        sharing the name, you settle it once instead of in every boolean. Silent
+        when the name is unambiguous.
+      </p>
     </div>
 
     <div class="card">

@@ -15,6 +15,14 @@ export const DEFAULT_SETTINGS = {
   navTimeoutMs: 25000,
   recentOnly: false,         // tbs=qdr:y2
   country: '',               // gl=
+  // Push the researcher's own exclude terms into the query as -"term", so the
+  // wrong company never occupies a result slot. Only their typed terms are
+  // ever used — never the auto-detected collision guesses.
+  queryExclusions: true,
+  // One query on the bare company name before the library runs, to catch a
+  // name that matches two different companies before it contaminates all of
+  // them. Silent unless a rival actually turns up.
+  preflightProbe: true,
 
   highlightSerp: true,       // paint terms on the SERP itself
   closeTabWhenDone: true,

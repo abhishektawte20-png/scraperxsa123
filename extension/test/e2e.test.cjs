@@ -29,7 +29,10 @@ function check(name, cond, extra = '') {
     if (!url.pathname.startsWith('/search')) return route.fulfill({ status: 200, body: 'ok' });
     serves++;
     const q = url.searchParams.get('q') || '';
-    const body = q.includes('psypher.in') ? serp.autoCollisionSerp(q)
+    const bare = q.trim();
+    const body = bare === '"Psypher"' ? serp.probeSerp(q)            // pre-flight probe
+      : bare === '"Acme Robotics"' ? serp.soloSerp(q)                // unambiguous probe
+      : q.includes('psypher.in') ? serp.autoCollisionSerp(q)
       : q.includes('Psypher') ? serp.collisionSerp(q)
       : serp(q);
     route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
@@ -69,7 +72,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
       highlightSerp: true, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -307,7 +310,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
       highlightSerp: true, closeTabWhenDone: false, windowMode: 'current'
     }
   }));
@@ -399,7 +402,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -499,12 +502,98 @@ function check(name, cond, extra = '') {
     (await panel.locator('.result-verify:has-text("also called")').count()) > 0,
     await panel.locator('.result-verify').first().textContent().catch(() => 'none'));
 
+  // --- pre-flight ambiguity probe -----------------------------------------
+  log('\n[pre-flight ambiguity probe]');
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: true, queryExclusions: true,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'Psypher');
+  await panel.fill('#website', 'psypher.in');
+  await panel.fill('#excludeTerms', '');
+  await panel.fill('#contextTerms', '');
+  await panel.waitForTimeout(150);
+  await panel.click('#selNone');
+  await panel.check('#chk_entity\\.startdate');
+
+  const probeRunDone = panel.evaluate(() => new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ timeout: true }), 40000);
+    chrome.runtime.onMessage.addListener(function h(m) {
+      if (m.type === 'SX_RUN_DONE') { clearTimeout(timer); chrome.runtime.onMessage.removeListener(h); resolve(m.run); }
+    });
+  }));
+  await panel.click('#startBtn');
+
+  await panel.waitForSelector('#ambiguityDialog[open]', { timeout: 15000 });
+  check('the probe stops the run and asks before spending the other queries',
+    await panel.locator('#ambiguityDialog').isVisible());
+
+  const ambigItems = await panel.locator('.ambig-item').count();
+  check('both companies are offered', ambigItems === 2, `${ambigItems} clusters shown`);
+  check('the target is marked, not offered for exclusion',
+    (await panel.locator('.ambig-item.is-target').count()) === 1);
+  const rivalText = await panel.locator('.ambig-item:not(.is-target)').first().textContent();
+  check('the rival is named by the extra word in its name', /Psypher AI/.test(rivalText), rivalText.trim().slice(0, 60));
+  check('the location discriminator is shown to the researcher', /Kochi/.test(rivalText));
+  check('the rival is pre-ticked for exclusion',
+    (await panel.locator('.ambig-item.is-rejected').count()) === 1);
+
+  await panel.click('#ambiguityConfirm');
+  const probeRun = await probeRunDone;
+  check('the run continues once the researcher answers', !probeRun.timeout,
+    probeRun.timeout ? 'timed out' : `${probeRun.queries.length} queries`);
+
+  const storedEntity = await panel.evaluate(() => new Promise((resolve) =>
+    chrome.storage.local.get('sx_entity', (r) => resolve(r.sx_entity))));
+  check('the answer is remembered for this company, not just this run',
+    (storedEntity.excludeTerms || []).includes('Psypher AI'), JSON.stringify(storedEntity.excludeTerms));
+
+  check('the exclusion reaching Google is the rival\'s full name, not the bare word',
+    probeRun.queries[0].query.includes('-"Psypher AI"') && !probeRun.queries[0].query.includes('-"AI"'),
+    probeRun.queries[0].query.slice(-40));
+
+  await panel.waitForTimeout(300);
+  check('the panel form reflects the newly remembered exclusion',
+    (await panel.inputValue('#excludeTerms')).includes('Psypher AI'), await panel.inputValue('#excludeTerms'));
+
+  // An unambiguous name must not interrupt.
+  log('\n[probe stays silent when the name is unambiguous]');
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'Acme Robotics');
+  await panel.fill('#website', 'acme.com');
+  await panel.fill('#excludeTerms', '');
+  await panel.waitForTimeout(150);
+  await panel.click('#selNone');
+  await panel.check('#chk_entity\\.startdate');
+
+  const soloDone = panel.evaluate(() => new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ timeout: true }), 40000);
+    chrome.runtime.onMessage.addListener(function h(m) {
+      if (m.type === 'SX_RUN_DONE') { clearTimeout(timer); chrome.runtime.onMessage.removeListener(h); resolve(m.run); }
+    });
+  }));
+  await panel.click('#startBtn');
+  const soloRun = await soloDone;
+  check('an unambiguous company runs straight through with no dialog',
+    !soloRun.timeout && !(await panel.locator('#ambiguityDialog').isVisible()),
+    soloRun.timeout ? 'timed out' : 'completed silently');
+  check('the probe still recorded what it found', (soloRun.probe?.clusters || []).length === 1,
+    `${soloRun.probe?.clusters?.length} cluster(s)`);
+
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 700, maxDelayMs: 900, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));

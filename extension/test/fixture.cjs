@@ -72,3 +72,37 @@ module.exports.autoCollisionSerp = function autoCollisionSerp(query) {
   ];
   return renderSerp(query, results);
 };
+
+// The bare-name probe SERP: the target streetwear brand plus the unrelated
+// "Psypher AI", which is what makes the name ambiguous in the first place.
+module.exports.probeSerp = function probeSerp(query) {
+  const results = [
+    { t: 'About Psypher – Indian Streetwear Brand Story',
+      u: 'https://www.psypher.in/pages/about-psypher',
+      s: 'PSYPHER emerged from a desire to translate artistic ideas into wearable art. Founded in 2024, based in Delhi.' },
+    { t: 'Psypher streetwear drop',
+      u: 'https://hypebeast.com/psypher',
+      s: 'Psypher, based in Delhi, released a new capsule collection this month.' },
+    { t: 'Psypher AI - 2026 Company Profile, Team & Competitors',
+      u: 'https://tracxn.com/Discover/Companies/psypher-ai',
+      s: 'Psypher AI was founded in 2024. Psypher AI is headquartered in Kochi, India.' },
+    { t: 'Terms of Service',
+      u: 'https://www.psypher.ai/terms',
+      s: 'All services, content, code, and branding are owned by Psypher AI.' },
+    { t: 'PSYPHER AI PRIVATE LIMITED - Company Profile',
+      u: 'https://tracxn.com/Discover/Legal-Entities/India/psypher-ai',
+      s: 'PSYPHER AI PRIVATE LIMITED was incorporated on Oct 14, 2024 in India.' }
+  ];
+  return renderSerp(query, results);
+};
+
+// An unambiguous company — the probe must stay silent for this one.
+module.exports.soloSerp = function soloSerp(query) {
+  const results = [
+    { t: 'About Acme Robotics', u: 'https://www.acme.com/about',
+      s: 'Acme Robotics, based in Boston, builds warehouse automation.' },
+    { t: 'Acme Robotics raises $8M', u: 'https://www.businesswire.com/news/acme',
+      s: 'Acme Robotics raised $8M in Series A funding this week.' }
+  ];
+  return renderSerp(query, results);
+};

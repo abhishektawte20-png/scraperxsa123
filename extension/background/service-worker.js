@@ -6,9 +6,10 @@
  * deliberate rather than incidental.
  */
 
-import { getLibrary, getSettings, getRuns, saveRun } from '../lib/store.js';
+import { getLibrary, getSettings, getRuns, saveRun, saveEntity } from '../lib/store.js';
 import { buildJobs, bareDomain } from '../lib/query.js';
 import { scoreResult } from '../lib/scoring.js';
+import { probeUrl, clusterProbeResults, isAmbiguous, exclusionsFromClusters } from '../lib/probe.js';
 
 // ── run state (in memory; the run itself is mirrored to storage each step) ────
 
@@ -284,16 +285,58 @@ async function enrich(run, endpoint) {
 
 // ── commands from the panel ──────────────────────────────────────────────────
 
+function compileJobs(library, entity, settings, only) {
+  return buildJobs(library, entity, {
+    num: settings.resultsPerQuery,
+    recentOnly: settings.recentOnly,
+    country: settings.country,
+    queryExclusions: settings.queryExclusions,
+    only
+  });
+}
+
+/**
+ * One query on the bare company name, before the library runs.
+ *
+ * If the name resolves to a single company this costs one query and says
+ * nothing. If it resolves to two, settling it here saves the researcher from
+ * re-judging the same collision in every category that follows.
+ */
+async function runProbe() {
+  const url = probeUrl(state.entity, { num: state.settings.resultsPerQuery, country: state.settings.country });
+  if (!url) return false;
+
+  broadcast({ type: 'SX_PROBE_START', runId: state.runId });
+  const tabId = await ensureTab();
+  state.probing = true;
+  let payload;
+  try {
+    payload = await navigateAndWait(tabId, url, state.settings.navTimeoutMs);
+  } finally {
+    state.probing = false;
+  }
+  if (state.status === 'blocked') return false;
+  if (payload?.error) return false; // a failed probe must never block the real run
+
+  const clusters = clusterProbeResults(payload.results || [], state.entity);
+  state.run.probe = { clusters, at: Date.now() };
+
+  if (!isAmbiguous(clusters)) {
+    broadcast({ type: 'SX_PROBE_CLEAR', runId: state.runId, clusters });
+    return false;
+  }
+
+  state.status = 'ambiguous';
+  await persist();
+  broadcast({ type: 'SX_AMBIGUOUS', runId: state.runId, clusters });
+  return true;
+}
+
 async function startRun({ entity, only }) {
   if (state && state.status === 'running') throw new Error('a run is already in progress');
 
   const [library, settings] = await Promise.all([getLibrary(), getSettings()]);
-  const jobs = buildJobs(library, entity, {
-    num: settings.resultsPerQuery,
-    recentOnly: settings.recentOnly,
-    country: settings.country,
-    only
-  });
+  const jobs = compileJobs(library, entity, settings, only);
   if (!jobs.length) throw new Error('no booleans selected');
 
   const runId = `run_${Date.now()}`;
@@ -306,6 +349,8 @@ async function startRun({ entity, only }) {
     windowId: null,
     settings,
     entity,
+    library,
+    only,
     run: {
       runId,
       entity,
@@ -318,12 +363,49 @@ async function startRun({ entity, only }) {
   };
 
   await persist();
-  runLoop().catch(async (e) => {
+  (async () => {
+    if (settings.preflightProbe) {
+      const paused = await runProbe();
+      if (paused) return; // waiting on the researcher to pick the right company
+      if (!state || state.status !== 'running') return;
+    }
+    await runLoop();
+  })().catch(async (e) => {
     if (state) { state.status = 'error'; state.run.error = e.message; await persist(); }
     broadcast({ type: 'SX_RUN_ERROR', error: e.message });
   });
 
   return { runId, total: jobs.length };
+}
+
+/**
+ * The researcher has said which cluster is theirs. Fold the rejected ones into
+ * the entity's exclude terms, recompile so the exclusions reach the queries
+ * themselves, and go.
+ */
+async function resolveAmbiguity({ rejectedKeys }) {
+  if (!state || state.status !== 'ambiguous') return { ok: false };
+
+  const clusters = state.run.probe?.clusters || [];
+  const added = exclusionsFromClusters(clusters, rejectedKeys || []);
+  if (added.length) {
+    const existing = state.entity.excludeTerms || [];
+    const merged = [...existing];
+    for (const t of added) {
+      if (!merged.some((e) => String(e).toLowerCase() === t.toLowerCase())) merged.push(t);
+    }
+    state.entity = { ...state.entity, excludeTerms: merged };
+    state.run.entity = state.entity;
+    await saveEntity(state.entity); // persists for every future run of this company
+    state.jobs = compileJobs(state.library, state.entity, state.settings, state.only);
+  }
+
+  state.run.probe.resolved = { rejectedKeys: rejectedKeys || [], added };
+  state.status = 'running';
+  await persist();
+  broadcast({ type: 'SX_AMBIGUITY_RESOLVED', runId: state.runId, added });
+  runLoop().catch(() => {});
+  return { ok: true, added };
 }
 
 async function stopRun() {
@@ -377,6 +459,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const isRunTab = state && tabId === state.tabId && pending && pending.tabId === tabId;
     if (!isRunTab) { sendResponse({ managed: false }); return false; }
 
+    // The pre-flight probe navigates a SERP too, but it is not one of the
+    // booleans — scoring it against jobs[state.index] would paint the wrong
+    // boolean's terms all over it.
+    if (state.probing) {
+      if (pending?.timer) clearTimeout(pending.timer);
+      const pp = pending; pending = null;
+      pp.resolve(msg);
+      sendResponse({ managed: true, highlight: false });
+      return false;
+    }
+
     const job = state.jobs[state.index];
     const { scored, summary } = processSerp(job, msg, state.settings, state.entity);
 
@@ -417,6 +510,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handlers = {
     SX_START: () => startRun(msg.payload || {}),
     SX_STOP: () => stopRun(),
+    SX_RESOLVE_AMBIGUITY: () => resolveAmbiguity(msg.payload || {}),
     SX_PAUSE: () => pauseRun(),
     SX_RESUME: () => resumeRun(),
     SX_STATE: async () => currentState(),

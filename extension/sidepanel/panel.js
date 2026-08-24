@@ -74,6 +74,17 @@ function readEntity() {
   };
 }
 
+/** Pull the entity back out of storage after the worker has amended it. */
+async function refreshEntityFromStorage() {
+  app.entity = await getEntity();
+  $('#company').value = app.entity.company || '';
+  $('#website').value = app.entity.website || '';
+  $('#aliases').value = (app.entity.aliases || []).join('\n');
+  $('#excludeTerms').value = (app.entity.excludeTerms || []).join('\n');
+  $('#contextTerms').value = (app.entity.contextTerms || []).join('\n');
+  $('#entityPreview').textContent = buildEntityGroup(app.entity) || '—';
+}
+
 function refreshEntityPreview() {
   app.entity = readEntity();
   const group = buildEntityGroup(app.entity);
@@ -526,6 +537,45 @@ function switchTab(name) {
   if (name === 'library') renderLibrary();
 }
 
+// ── pre-flight ambiguity ─────────────────────────────────────────────────────
+
+let ambiguityClusters = [];
+
+function renderAmbiguity(clusters) {
+  ambiguityClusters = clusters || [];
+  $('#ambiguityList').innerHTML = ambiguityClusters.map((c) => {
+    const isTarget = c.kind === 'target';
+    const where = c.places.length ? c.places.join(', ') : '';
+    const meta = [where, c.domains.slice(0, 2).join(', ')].filter(Boolean).join(' · ');
+    return `
+      <label class="ambig-item${isTarget ? ' is-target' : ''}" data-key="${esc(c.key)}">
+        ${isTarget ? '' : `<input type="checkbox" class="ambig-check" data-key="${esc(c.key)}" checked>`}
+        <div class="ambig-body">
+          <div class="ambig-name">${esc(c.label)}${isTarget ? '<span class="ambig-tag">your target</span>' : ''}</div>
+          ${meta ? `<div class="ambig-meta">${esc(meta)}</div>` : ''}
+          <div class="ambig-meta">${c.count} result${c.count === 1 ? '' : 's'}</div>
+          ${c.samples[0] ? `<div class="ambig-sample">e.g. ${esc(c.samples[0].title)}</div>` : ''}
+        </div>
+      </label>`;
+  }).join('');
+
+  $('#ambiguityList').querySelectorAll('.ambig-check').forEach((el) => {
+    const sync = () => el.closest('.ambig-item').classList.toggle('is-rejected', el.checked);
+    el.addEventListener('change', sync);
+    sync();
+  });
+  $('#ambiguityDialog').showModal();
+}
+
+function resolveAmbiguity(useSelections) {
+  const rejectedKeys = useSelections
+    ? $$('#ambiguityList .ambig-check:checked').map((el) => el.dataset.key)
+    : [];
+  $('#ambiguityDialog').close();
+  setRunning(true);
+  send('SX_RESOLVE_AMBIGUITY', { payload: { rejectedKeys } }).catch(() => {});
+}
+
 // ── background events ────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg) => {
@@ -547,6 +597,16 @@ chrome.runtime.onMessage.addListener((msg) => {
     setRunning(false);
     renderResults();
     renderHistory();
+  }
+
+  if (msg.type === 'SX_AMBIGUOUS') {
+    setRunning(false);
+    renderAmbiguity(msg.clusters);
+  }
+
+  if (msg.type === 'SX_AMBIGUITY_RESOLVED') {
+    setRunning(true);
+    if (msg.added?.length) refreshEntityFromStorage();
   }
 
   if (msg.type === 'SX_BLOCKED') {
@@ -595,6 +655,9 @@ function wire() {
     const resuming = $('#pauseBtn').textContent === 'Resume';
     send(resuming ? 'SX_RESUME' : 'SX_PAUSE');
   });
+  $('#ambiguityConfirm').addEventListener('click', (e) => { e.preventDefault(); resolveAmbiguity(true); });
+  $('#ambiguitySkip').addEventListener('click', (e) => { e.preventDefault(); resolveAmbiguity(false); });
+
   $('#resumeAfterBlock').addEventListener('click', () => {
     $('#blockedBanner').hidden = true;
     send('SX_RESUME').then(() => setRunning(true));
