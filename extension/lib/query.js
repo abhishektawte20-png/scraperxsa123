@@ -82,6 +82,32 @@ export function deriveSignals(template, entity) {
   return out.concat(entityTerms.filter((t) => !out.some((o) => o.toLowerCase() === t.toLowerCase())));
 }
 
+/**
+ * Add a keyword to a boolean without the researcher having to hand-edit
+ * OR-syntax. Drops the new term into the first quoted OR-group in the query
+ * (that's the boolean's main "what am I looking for" list — a multi-group
+ * boolean like the EBITDA backup, which pairs a figure-type group with a
+ * "million"/"billion" group, keeps its second group untouched). A boolean
+ * with no quoted group yet (a bare site: list, or a blank placeholder) gets
+ * a new AND-group appended instead, since there's nothing to join into.
+ * Already-present terms are left alone rather than duplicated.
+ */
+export function insertKeyword(query, keyword) {
+  const term = String(keyword || '').replaceAll('"', '').trim();
+  if (!term) return query;
+
+  const quoted = `"${term}"`;
+  if (String(query || '').toLowerCase().includes(quoted.toLowerCase())) return query;
+
+  const groupRe = /\(([^()]*"[^()]*)\)/;
+  const m = query.match(groupRe);
+  if (m) {
+    const closeParenIndex = m.index + m[0].length - 1;
+    return `${query.slice(0, closeParenIndex)} OR ${quoted}${query.slice(closeParenIndex)}`;
+  }
+  return `${query.trim()} AND (${quoted})`;
+}
+
 /** Compile a whole library into the job list for one entity. */
 export function buildJobs(library, entity, opts = {}) {
   return library

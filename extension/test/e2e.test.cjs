@@ -198,6 +198,65 @@ function check(name, cond, extra = '') {
   check('only-flagged filter hides everything unflagged', unflaggedVisible === 0, `${unflaggedVisible} unflagged still visible`);
   await panel.uncheck('#onlyFlagged');
 
+  // --- editing booleans: quick-edit pencil, add-a-keyword, new boolean -----
+  log('\n[edit booleans]');
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+
+  await panel.locator('[data-quickedit="backing.general"]').click({ force: true });
+  await panel.waitForSelector('#editDialog[open]');
+  check('quick-edit pencil opens the dialog pre-filled with the existing query',
+    (await panel.inputValue('#editQuery')).includes('"venture funding"'));
+
+  await panel.fill('#newKeyword', 'secured investment');
+  await panel.click('#addKeywordBtn');
+  const afterAdd = await panel.inputValue('#editQuery');
+  check('Add button inserts the keyword into the existing OR-group without touching the rest',
+    afterAdd.includes('"venture funding" OR "secured investment"'), afterAdd);
+
+  await panel.click('#editSave');
+  await panel.waitForTimeout(150);
+  const savedTemplate = (await panel.evaluate(() => new Promise((resolve) =>
+    chrome.storage.local.get('sx_library', (r) => resolve(r.sx_library)))))
+    .find((t) => t.id === 'backing.general');
+  check('the added keyword persists to storage', savedTemplate.query.includes('"secured investment"'), savedTemplate.query);
+
+  // A run kicked off after the edit should carry the new keyword into the real query.
+  await panel.click('#selNone');
+  await panel.check(`#chk_backing\\.general`);
+  const editedRunDone = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const editedResult = await editedRunDone;
+  check('a run started after editing actually uses the edited boolean',
+    editedResult.queries[0].query.includes('"secured investment"'), editedResult.queries[0].query);
+
+  // A brand-new boolean, built from nothing, with a keyword typed straight in.
+  await panel.click('[data-tab="library"]');
+  await panel.waitForTimeout(150);
+  await panel.click('#libNew');
+  await panel.waitForSelector('#editDialog[open]');
+  await panel.fill('#editName', 'Media Coverage');
+  await panel.fill('#editCategory', 'Custom Research');
+  await panel.fill('#newKeyword', 'featured in');
+  await panel.click('#addKeywordBtn');
+  await panel.click('#editSave');
+  await panel.waitForTimeout(150);
+
+  const created = (await panel.evaluate(() => new Promise((resolve) =>
+    chrome.storage.local.get('sx_library', (r) => resolve(r.sx_library)))))
+    .find((t) => t.name === 'Media Coverage');
+  check('a brand-new boolean gets a stable custom id', !!created && created.id.startsWith('custom.'), created?.id);
+  check('the new boolean carries the typed keyword', created?.query.includes('"featured in"'), created?.query);
+  check('the blank starting template leaves no stray empty "" behind', !created?.query.includes('""'), created?.query);
+  check('new booleans are enabled by default, ready to run', created?.enabled === true);
+
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  check('the new boolean shows up in the Run tab selector',
+    (await panel.locator('.sel-item:has-text("Media Coverage")').count()) === 1);
+
   // --- full-screen / expand view -------------------------------------------
   log('\n[expand to full screen]');
   const [fullTab] = await Promise.all([

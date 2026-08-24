@@ -1,5 +1,5 @@
 import { getLibrary, saveLibrary, resetLibrary, getSettings, getEntity, saveEntity, getRuns, clearRuns } from '../lib/store.js';
-import { buildEntityGroup, renderQuery } from '../lib/query.js';
+import { buildEntityGroup, renderQuery, insertKeyword } from '../lib/query.js';
 import { toMarkdown, toCsv, slug, groupByCategory } from '../lib/export.js';
 
 // ── tiny helpers ─────────────────────────────────────────────────────────────
@@ -95,6 +95,7 @@ function renderSelector() {
           <label for="chk_${esc(t.id)}">${esc(t.name)}</label>
           ${t.engine === 'external' ? '<span class="sel-tag sel-tag-ext">opens only</span>' : ''}
           ${t.tag === 'rovo-down' ? '<span class="sel-tag">ROVO down</span>' : ''}
+          <button class="sel-edit" type="button" data-quickedit="${esc(t.id)}" title="Add a keyword or edit this boolean">&#9998;</button>
         </div>`).join('')}
     </div>`).join('');
 
@@ -103,6 +104,9 @@ function renderSelector() {
       el.checked ? app.selected.add(el.dataset.id) : app.selected.delete(el.dataset.id);
       updateSelectionCounts();
     });
+  });
+  host.querySelectorAll('.sel-edit').forEach((el) => {
+    el.addEventListener('click', () => openEditor(el.dataset.quickedit));
   });
   host.querySelectorAll('.cat-check').forEach((el) => {
     el.addEventListener('change', () => {
@@ -336,24 +340,62 @@ function renderLibrary() {
 }
 
 let editingId = null;
+let editingIsNew = false;
+
 function openEditor(id) {
   const t = app.library.find((x) => x.id === id);
   if (!t) return;
   editingId = id;
+  editingIsNew = false;
   $('#editTitle').textContent = t.name;
   $('#editName').value = t.name;
   $('#editCategory').value = t.category;
   $('#editQuery').value = t.engine === 'external' ? (t.url || '') : (t.query || '');
+  $('#newKeyword').value = '';
   $('#editDialog').showModal();
 }
 
+/** Tomorrow's keyword, today's boolean — a category-scoped search built from scratch. */
+function openNewBooleanEditor() {
+  editingId = null;
+  editingIsNew = true;
+  $('#editTitle').textContent = 'New boolean';
+  $('#editName').value = '';
+  $('#editCategory').value = app.library[0]?.category || 'Custom';
+  // Deliberately no ("") placeholder group here — insertKeyword's fallback
+  // (append a fresh AND-group) gives a clean first group once a keyword is
+  // typed in, instead of leaving a stray empty "" behind.
+  $('#editQuery').value = '{{entity}}';
+  $('#newKeyword').value = '';
+  $('#editDialog').showModal();
+}
+
+function uniqueTemplateId(base) {
+  let id = base || 'custom.boolean';
+  let n = 2;
+  while (app.library.some((t) => t.id === id)) { id = `${base}-${n}`; n += 1; }
+  return id;
+}
+
 async function saveEditor() {
-  const t = app.library.find((x) => x.id === editingId);
-  if (!t) return;
-  t.name = $('#editName').value.trim() || t.name;
-  t.category = $('#editCategory').value.trim() || t.category;
-  if (t.engine === 'external') t.url = $('#editQuery').value.trim();
-  else t.query = $('#editQuery').value.trim();
+  const name = $('#editName').value.trim();
+  const category = $('#editCategory').value.trim();
+  const query = $('#editQuery').value.trim();
+  if (!name || !query) return;
+
+  if (editingIsNew) {
+    const cat = category || 'Custom';
+    const id = uniqueTemplateId(`custom.${slug(cat)}.${slug(name)}`);
+    app.library.push({ id, category: cat, name, engine: 'google', enabled: true, query });
+    app.selected.add(id);
+  } else {
+    const t = app.library.find((x) => x.id === editingId);
+    if (!t) return;
+    t.name = name;
+    t.category = category || t.category;
+    if (t.engine === 'external') t.url = query;
+    else t.query = query;
+  }
   await saveLibrary(app.library);
   renderLibrary();
   renderSelector();
@@ -605,7 +647,19 @@ function wire() {
   });
 
   $('#editSave').addEventListener('click', () => setTimeout(saveEditor, 0));
+  $('#addKeywordBtn').addEventListener('click', () => {
+    const input = $('#newKeyword');
+    const term = input.value.trim();
+    if (!term) return;
+    $('#editQuery').value = insertKeyword($('#editQuery').value, term);
+    input.value = '';
+    input.focus();
+  });
+  $('#newKeyword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $('#addKeywordBtn').click(); }
+  });
 
+  $('#libNew').addEventListener('click', openNewBooleanEditor);
   $('#libExport').addEventListener('click', () =>
     download('scraperx-booleans.json', JSON.stringify(app.library, null, 2), 'application/json'));
   $('#libImport').addEventListener('click', () => $('#importFile').click());

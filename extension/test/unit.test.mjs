@@ -1,5 +1,5 @@
 import { toMarkdown, toCsv, slug, groupByCategory } from '../lib/export.js';
-import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals } from '../lib/query.js';
+import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword } from '../lib/query.js';
 import { DEFAULT_LIBRARY } from '../lib/library.js';
 import { scoreResult, classifyDomain } from '../lib/scoring.js';
 
@@ -34,6 +34,32 @@ check('site: operators excluded from signals', !sig.some((s) => /site:/i.test(s)
 check('entity terms appended', sig.includes('L&L Exhibition Management'));
 const siteOnly = deriveSignals(DEFAULT_LIBRARY.find((t) => t.id === 'smi.linkedin'), entity);
 check('site-only boolean still yields entity signals', siteOnly.length === 2, siteOnly.join(' | '));
+
+console.log('\n[add-a-keyword]');
+const backing = DEFAULT_LIBRARY.find((t) => t.id === 'backing.general').query;
+const withNewTerm = insertKeyword(backing, 'secured investment');
+check('new keyword joins the existing OR-group', withNewTerm.includes('"venture funding" OR "secured investment")'),
+  withNewTerm);
+check('everything else in the query is untouched',
+  withNewTerm.startsWith(backing.slice(0, backing.indexOf('"venture funding"') + '"venture funding"'.length)));
+
+const siteOnlyQuery = DEFAULT_LIBRARY.find((t) => t.id === 'oob.website').query;
+const withSiteAdd = insertKeyword(siteOnlyQuery, 'archived');
+check('a query with no quoted group gets a new AND-group instead of a broken OR',
+  withSiteAdd.endsWith('AND ("archived")'), withSiteAdd);
+
+const ebitda = DEFAULT_LIBRARY.find((t) => t.id === 'backup.ebitda').query;
+const withEbitdaTerm = insertKeyword(ebitda, 'operating income');
+check('multi-group boolean gets the term in its first (target) group, not the second',
+  withEbitdaTerm.includes('"earnings before interest" OR "operating income")') &&
+  !withEbitdaTerm.includes('"billion" OR "operating income"'),
+  withEbitdaTerm);
+
+check('adding a term already present is a no-op', insertKeyword(backing, 'raised') === backing);
+check('adding a term already present ignores case', insertKeyword(backing, 'RAISED') === backing);
+check('quotes in the typed term are stripped, not smuggled into the query',
+  insertKeyword(backing, 'a "sneaky" term').includes('"a sneaky term"'));
+check('blank input is a no-op', insertKeyword(backing, '   ') === backing);
 
 console.log('\n[scoring edges]');
 check('pitchbook classified as aggregator', classifyDomain('https://pitchbook.com/x', 'acme.com') === 'aggregator');

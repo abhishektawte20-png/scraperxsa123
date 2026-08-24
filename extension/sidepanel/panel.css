@@ -242,6 +242,12 @@ input[type="text"]:focus, textarea:focus {
   border-radius: 4px; background: var(--warn-bg); color: #8a6100; border: 1px solid var(--warn-line);
 }
 .sel-tag-ext { background: var(--accent-soft); color: var(--accent-solid); border-color: transparent; }
+.sel-edit {
+  flex: none; border: 0; background: none; cursor: pointer; color: var(--ink-faint);
+  font-size: 12px; padding: 1px 4px; border-radius: 5px; opacity: 0; transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.sel-item:hover .sel-edit, .sel-edit:focus-visible { opacity: 1; }
+.sel-edit:hover { color: var(--accent-solid); background: var(--accent-soft); }
 
 /* progress */
 .progress { height: 6px; border-radius: 4px; background: var(--weak-soft); overflow: hidden; margin-top: 10px; }

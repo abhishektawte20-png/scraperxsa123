@@ -74,7 +74,22 @@ less; the defaults exist because they work.
 
 The **Booleans** tab holds the same strings that sit behind each *Copy Boolean*
 button, transcribed from the sheet. Edit any of them and every future run uses
-the new version — you are not stuck with what shipped.
+the new version — you are not stuck with what shipped, and adding a keyword to
+a search you'll run again tomorrow takes seconds:
+
+- **Quick-edit, right on the Run tab.** Hover a boolean in the selector and a
+  pencil appears — no need to go find it in the library first. Opens the same
+  dialog as the Booleans tab.
+- **Add a keyword** without touching OR-syntax by hand: type a term, hit Add,
+  and it's dropped into the query's existing OR-group (the correct one, even
+  on a boolean that pairs two groups like the EBITDA backup — the new term
+  joins the figure-type group, not the units group). Typing a term that's
+  already there is a no-op rather than a duplicate.
+- **+ New boolean** on the Booleans tab starts one from scratch — pick a
+  category, name it, type in the keywords you're after, save, and it's in the
+  selector on the Run tab immediately, enabled by default.
+- The query textarea underneath both flows stays fully editable for anything
+  the keyword-add shortcut doesn't cover.
 
 Placeholders available in a query:
 

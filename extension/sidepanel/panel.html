@@ -136,6 +136,7 @@
       <h2>Boolean library</h2>
       <p class="hint">These are the strings behind each “Copy Boolean” button. Edit them here and every future run uses the new version.</p>
       <div class="row row-wrap">
+        <button class="btn btn-primary btn-sm" id="libNew">+ New boolean</button>
         <button class="btn btn-ghost btn-sm" id="libExport">Export</button>
         <button class="btn btn-ghost btn-sm" id="libImport">Import</button>
         <button class="btn btn-ghost btn-sm" id="libReset">Reset to defaults</button>
@@ -165,6 +166,13 @@
       <label class="field">
         <span>Query <em>{{entity}}, {{company}}, {{website}}, {{domain}}</em></span>
         <textarea id="editQuery" rows="6"></textarea>
+      </label>
+      <label class="field">
+        <span>Add a keyword <em>— dropped into the query above, OR-joined with what's already there</em></span>
+        <div class="row row-tight">
+          <input id="newKeyword" type="text" placeholder="e.g. secured investment" autocomplete="off">
+          <button class="btn btn-ghost btn-sm" id="addKeywordBtn" type="button">Add</button>
+        </div>
       </label>
       <div class="row row-end">
         <button class="btn btn-ghost" value="cancel">Cancel</button>
