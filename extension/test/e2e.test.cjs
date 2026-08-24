@@ -30,7 +30,8 @@ function check(name, cond, extra = '') {
     serves++;
     const q = url.searchParams.get('q') || '';
     const bare = q.trim();
-    const body = bare === '"Psypher"' ? serp.probeSerp(q)            // pre-flight probe
+    const body = q.includes('"nested-layout"') ? serp.nestedSerp(q)   // multi-result wrapper
+      : bare === '"Psypher"' ? serp.probeSerp(q)                      // pre-flight probe
       : bare === '"Acme Robotics"' ? serp.soloSerp(q)                // unambiguous probe
       : q.includes('psypher.in') ? serp.autoCollisionSerp(q)
       : q.includes('Psypher') ? serp.collisionSerp(q)
@@ -587,6 +588,80 @@ function check(name, cond, extra = '') {
     soloRun.timeout ? 'timed out' : 'completed silently');
   check('the probe still recorded what it found', (soloRun.probe?.clusters || []).length === 1,
     `${soloRun.probe?.clusters?.length} cluster(s)`);
+
+  // --- reported: title/URL/snippet mismatch -------------------------------
+  // Google sometimes wraps several results in one `div.g`. Picking the block
+  // by class name then grabs the first cite and snippet inside it — a
+  // different result's URL and text under this result's title, which is how a
+  // link ends up opening something else entirely.
+  log('\n[reported: each result keeps its own link and text]');
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'nested-layout');
+  await panel.fill('#website', 'psypher.in');
+  await panel.fill('#excludeTerms', '');
+  await panel.click('#selNone');
+  await panel.check('#chk_oob\\.bankruptcy_us');
+
+  const nestedDone = panel.evaluate(() => new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ timeout: true }), 40000);
+    chrome.runtime.onMessage.addListener(function h(m) {
+      if (m.type === 'SX_RUN_DONE') { clearTimeout(timer); chrome.runtime.onMessage.removeListener(h); resolve(m.run); }
+    });
+  }));
+  await panel.click('#startBtn');
+  const nestedRun = await nestedDone;
+  const nested = nestedRun.queries[0].results;
+
+  check('all three results are extracted from the shared wrapper', nested.length === 3, `${nested.length}`);
+
+  const byTitle = (frag) => nested.find((r) => r.title.includes(frag));
+  const game = byTitle('RF ONLINE NEXT');
+  const privacy = byTitle('Privacy Policy');
+  const insta = byTitle('Instagram');
+
+  check('the game page keeps its own URL, not a neighbour\'s',
+    game?.url === 'https://rfonlinenext.github.io/biosuits/psypher', game?.url);
+  check('the privacy page keeps its own URL',
+    privacy?.url === 'https://www.psypher.in/policies/privacy-policy', privacy?.url);
+  check('the Instagram result keeps its own URL',
+    insta?.url === 'https://www.instagram.com/psypher.in', insta?.url);
+
+  check('the displayed cite matches the link it sits under',
+    game?.displayUrl === 'rfonlinenext.github.io' && privacy?.displayUrl === 'psypher.in',
+    `${game?.displayUrl} / ${privacy?.displayUrl}`);
+  check('each snippet belongs to its own result',
+    game?.snippet.includes('invincibility') && privacy?.snippet.includes('merger or bankruptcy'),
+    (game?.snippet || '').slice(0, 40));
+  check('no result borrows another result\'s text',
+    !game?.snippet.includes('merger or bankruptcy') && !privacy?.snippet.includes('invincibility'));
+
+  check('the privacy page is no longer an out-of-business finding',
+    privacy?.flag == null && privacy?.tier === 'weak',
+    JSON.stringify({ tier: privacy?.tier, flag: privacy?.flag }));
+
+  // --- identity confidence -------------------------------------------------
+  log('\n[identity: domain beats name]');
+  await panel.waitForTimeout(300);
+  const idBadges = await panel.locator('.result-id').count();
+  check('domain-confirmed results carry an identity badge', idBadges > 0, `${idBadges} badges`);
+
+  const beforeId = await panel.locator('.result').count();
+  await panel.check('#onlyIdentity');
+  await panel.waitForTimeout(200);
+  const afterId = await panel.locator('.result').count();
+  check('the domain-confirmed filter narrows the list', afterId > 0 && afterId <= beforeId,
+    `${beforeId} -> ${afterId}`);
+  check('nothing without a domain match survives the filter',
+    (await panel.locator('.result:not(:has(.result-id))').count()) === 0);
+  await panel.uncheck('#onlyIdentity');
 
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');

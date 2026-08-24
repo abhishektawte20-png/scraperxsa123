@@ -182,6 +182,9 @@ export function signalProximity(text, signalAt, entityPositions) {
 
 const NEAR_WINDOW = 160;
 
+/** Anything shaped like a hostname, so it can be masked out of name checks. */
+const DOMAIN_TOKEN_RE = /\b(?:[a-z0-9-]+\.)+(?:com|net|org|io|ai|co|in|app|dev|xyz|tech|biz|edu|gov|uk|us|de|fr|jp|cn|au|ca|eu)\b/gi;
+
 /**
  * Blanks out every mention of the entity's own name/website/aliases in a
  * copy of the text. Confirming context for an ambiguous signal word ("Capital",
@@ -203,8 +206,17 @@ export function stripEntityMentions(text, entitySignals) {
 // have nothing to do with. Out of Business > Legal Name is the one boolean
 // that's deliberately searching these pages — everyone else should discount
 // a signal match found there rather than take it at face value.
-const LEGAL_PAGE_URL_RE = /\/(terms(-of-(use|service))?|privacy(-policy)?|cookies?|legal|eula|tos)(\/|$|[?#])/i;
+// "legal" on its own is too broad — Reuters, Bloomberg and others run whole
+// Legal *news* sections, and a bankruptcy story filed under /legal/ is exactly
+// the article this boolean exists to find.
+const LEGAL_PAGE_URL_RE = /\/(terms(-of-(use|service))?|privacy(-policy)?|cookies?-?(policy)?|legal-(notice|terms)|eula|tos)(\/|$|[?#])/i;
 const LEGAL_PAGE_TITLE_RE = /\b(terms of (service|use)|privacy (policy|notice)|cookie policy|legal notice|end[\s-]user license)\b/i;
+
+/**
+ * The booleans whose whole purpose is to read a company's legal pages — a
+ * "merger or bankruptcy" clause there is boilerplate to everyone else.
+ */
+const LEGAL_PAGE_BOOLEANS = new Set(['oob.legalname', 'oob.website']);
 
 export function isLegalBoilerplatePage(url, title) {
   return LEGAL_PAGE_URL_RE.test(String(url || '')) || LEGAL_PAGE_TITLE_RE.test(String(title || ''));
@@ -222,16 +234,24 @@ export function isLegalBoilerplatePage(url, title) {
  * "acquisition"), since those already carry their own meaning unambiguously.
  */
 const AMBIGUOUS_SENSE = {
-  'Prior Backing': {
+  'Prior Backing': [{
     terms: new Set(['raises', 'raised', 'received', 'won', 'grant']),
     confirm: /(\$|€|£|₹|\bmillion\b|\bbillion\b|\bfunding\b|\bfinanc(?:e|ed|ing)\b|\binvestors?\b|\binvestments?\b|\bcapital\b|\bventure\b|\bseed\b|\bseries [a-z]\b|\bbacked\b|\bequity\b|\bvaluation\b|\bsbir\b|\bsbic\b)/i,
     topic: 'financing'
-  },
-  'Out of Business': {
+  }],
+  'Out of Business': [{
     terms: new Set(['acquired', 'merged', 'purchased', 'placement']),
     confirm: /(\$|€|£|₹|\bmillion\b|\bbillion\b|\bdeal\b|\btransaction\b|\bstake\b|\bshares?\b|\bbuyout\b|\blbo\b|\bprivate equity\b)/i,
     topic: 'a deal'
-  },
+  }, {
+    // "Chapter 7" is a bankruptcy filing, a book chapter, and a video-game
+    // quest. Without an insolvency word nearby it is almost certainly not the
+    // filing — a game walkthrough should never read as a company shutting down.
+    terms: new Set(['chapter 7', 'chapter 11', 'ch. 7', 'ch. 11', 'ch 7', 'ch 11',
+                    'registered', 'closed', 'shuts down', 'dead pool']),
+    confirm: /\b(bankrupt|bankruptcy|insolvenc\w*|liquidat\w*|receivership|administration|creditors?|debtor|restructur\w*|court|filed?|filing|petition|trustee|wound up|winding up|ceased)\b/i,
+    topic: 'insolvency'
+  }],
   // "the chief among these problems" and "the city's new police chief" both
   // match "chief"; "time management" and "risk management" both match
   // "management". None of them say anything about this company's leadership.
@@ -239,24 +259,24 @@ const AMBIGUOUS_SENSE = {
   // "firm" match plenty of real company names outright ("Acme Corp") and
   // would confirm every bare "chief"/"legal" hit regardless of sense —
   // exactly the bug this mechanism exists to catch.
-  'Management': {
+  'Management': [{
     terms: new Set(['chief', 'president', 'management']),
     confirm: /\b(ceo|coo|cfo|cto|co-founder|appointed|joins as|joined as|promoted to|board of directors|executive team|leadership team|named as)\b/i,
     topic: 'a corporate leadership role'
-  },
+  }],
   // "is this legal in my state" and "I'd advise against it" both match —
   // neither is a law firm or an advisory engagement.
-  'Service Providers': {
+  'Service Providers': [{
     terms: new Set(['advise', 'advised', 'legal']),
     confirm: /\b(counsel|attorney|law firm|llp|represented by|legal team|general counsel|outside counsel|advisor|advisers?|consultant)\b/i,
     topic: 'a professional services engagement'
-  },
+  }],
   // "employee turnover" and "hotel bookings" both match; neither is revenue.
-  'Boolean Backup': {
+  'Boolean Backup': [{
     terms: new Set(['turnover', 'bookings']),
     confirm: /(\$|€|£|₹|\brevenue\b|\bsales\b|\bmillion\b|\bbillion\b|\bannual\b|\bfiscal\b|\bfy\s?\d{2,4}\b|\bgenerated\b)/i,
     topic: 'revenue figures'
-  }
+  }]
 };
 
 /**
@@ -385,6 +405,40 @@ export function scoreResult(result, ctx) {
     if (!reasons.includes('company domain in URL')) reasons.push('on the company website');
   }
 
+  // How sure are we this is the right company, independent of what the boolean
+  // was asking? A name can be generic — "Psypher", "Bolt", "Wave" all belong to
+  // several companies. A domain is close to unique, so seeing the domain is
+  // much stronger evidence of identity than seeing the name, and seeing both
+  // together is stronger still.
+  const domainInText = !!(ctx.entityDomain && termRegex(ctx.entityDomain).test(haystack));
+  const domainSeen = domainClass === 'official' || urlHasDomain || domainInText;
+  // Testing for the name is harder than it looks. The domain sits in
+  // entitySignals, and most company domains are built out of the company name
+  // — "psypher.in" contains "Psypher" — so a naive check reports a name match
+  // for every domain mention and "name + domain" degenerates into meaning
+  // "domain". Blank out domain-shaped tokens first, then look for the name in
+  // what's left, so the two signals stay genuinely independent.
+  const nameOnlySignals = (ctx.entitySignals || []).filter(
+    (t) => String(t).toLowerCase() !== String(ctx.entityDomain || '').toLowerCase()
+  );
+  const haystackNoDomains = haystack.replace(DOMAIN_TOKEN_RE, ' ');
+  const nameSeen = findTerms(haystackNoDomains, nameOnlySignals).length > 0
+    || (tokens.length > 0 && tokens.every((t) => termRegex(t).test(haystackNoDomains)));
+
+  let identity = 'none';
+  if (domainSeen && nameSeen) identity = 'name+domain';
+  else if (domainSeen) identity = 'domain';
+  else if (nameSeen) identity = 'name';
+  else if (tokenHits.length) identity = 'partial-name';
+
+  if (identity === 'name+domain') {
+    entityScore += 12;
+    reasons.push('identity: name and domain both present — near-certain match');
+  } else if (identity === 'domain' && domainClass !== 'official') {
+    entityScore += 8;
+    reasons.push('identity: domain mentioned — domains are far more unique than names');
+  }
+
   // 1b. Name collision guard. The name matched, but does the text also carry
   // a term the researcher said means "that's a different company"? A page on
   // the company's own domain is exempt — the domain already settles identity.
@@ -443,20 +497,30 @@ export function scoreResult(result, ctx) {
     (s) => !(ctx.entitySignals || []).some((e) => String(e).toLowerCase() === String(s).toLowerCase())
   );
   const signalMatches = findSignalMatches(haystack, contentSignals);
-  const onLegalPage = ctx.category !== 'Out of Business' && isLegalBoilerplatePage(result.url, result.title);
+  // Only the booleans that deliberately go looking at terms/privacy pages are
+  // exempt from the boilerplate discount. Exempting the whole "Out of Business"
+  // category let Bankruptcy match "a merger or bankruptcy" in a privacy policy
+  // and report it as a real out-of-business signal.
+  const onLegalPage = !LEGAL_PAGE_BOOLEANS.has(ctx.templateId) && isLegalBoilerplatePage(result.url, result.title);
   const negatedHits = signalMatches.filter((m) => m.negated).map((m) => m.term);
   const positiveMatches = onLegalPage ? [] : signalMatches.filter((m) => !m.negated);
 
   // Split out matches that only found the word, not the sense: a bare
   // "raises"/"acquired" with no money- or deal-shaped context nearby doesn't
   // answer what this boolean actually asked.
-  const sense = AMBIGUOUS_SENSE[ctx.category];
-  const confirmHaystack = sense ? stripEntityMentions(haystack, ctx.entitySignals) : haystack;
+  const senseGroups = AMBIGUOUS_SENSE[ctx.category] || [];
+  const confirmHaystack = senseGroups.length ? stripEntityMentions(haystack, ctx.entitySignals) : haystack;
   const ambiguousHits = [];
   const signalHits = [];
+  let ambiguousTopic = '';
   for (const m of positiveMatches) {
-    if (sense && sense.terms.has(m.term.toLowerCase()) && !sense.confirm.test(confirmHaystack)) ambiguousHits.push(m.term);
-    else signalHits.push(m.term);
+    const group = senseGroups.find((g) => g.terms.has(m.term.toLowerCase()));
+    if (group && !group.confirm.test(confirmHaystack)) {
+      ambiguousHits.push(m.term);
+      ambiguousTopic = ambiguousTopic || group.topic;
+    } else {
+      signalHits.push(m.term);
+    }
   }
 
   // How close does the signal actually sit to a mention of the company? A hit
@@ -483,7 +547,7 @@ export function scoreResult(result, ctx) {
   if (onLegalPage && signalMatches.length) reasons.push('on a terms/privacy page — generic wording, not counted');
   else if (negatedHits.length) reasons.push(`note: "${negatedHits[0]}" appears negated — not counted`);
   if (ambiguousHits.length) {
-    reasons.push(`note: "${ambiguousHits[0]}" found but nothing nearby suggests ${sense.topic} — may be a different sense of the word`);
+    reasons.push(`note: "${ambiguousHits[0]}" found but nothing nearby suggests ${ambiguousTopic} — may be a different sense of the word`);
   }
 
   // 3. How much do we trust the source?
@@ -512,6 +576,19 @@ export function scoreResult(result, ctx) {
     score = Math.min(score, 44);
   }
 
+  // A boolean asks a question. If it had target phrases to look for and none
+  // of them landed, this result is a mention of the company, not an answer —
+  // being on the company's own high-trust domain is otherwise enough to push
+  // it to "critical" and bury the results that genuinely answered something.
+  // Site-only booleans (LinkedIn, the Website boolean) have no content signals
+  // to find, so being on the right domain IS the finding and they are exempt.
+  const askedForSignals = contentSignals.length > 0;
+  if (askedForSignals && !signalHits.length && (tier === 'critical' || tier === 'strong')) {
+    tier = 'weak';
+    score = Math.min(score, 44);
+    reasons.push('mentions the company but answers nothing this boolean asked');
+  }
+
   // The finding, named: the company is confirmed present AND the boolean's
   // own target phrase showed up, from a source that isn't a bought-data
   // aggregator. This is the line between "Google returned something" and
@@ -534,6 +611,7 @@ export function scoreResult(result, ctx) {
     signalHits,
     negatedHits,
     ambiguousHits,
+    identity,
     proximity,
     distantSignal,
     isCollision,

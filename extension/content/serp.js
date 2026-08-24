@@ -82,14 +82,28 @@
     } catch { return true; }
   }
 
+  /**
+   * The block that belongs to exactly this result — and to no other.
+   *
+   * Picking it by class name ("div.g") or by climbing a fixed number of levels
+   * is a guess, and when the guess lands on a wrapper holding several results
+   * the cite and snippet lookups below return the *first* ones in that
+   * wrapper — i.e. a different result's URL and text stapled to this result's
+   * title. That is how a link ends up opening something other than what it
+   * says. Climb until one more step would swallow a second <h3>, and the
+   * container is guaranteed to be this result's alone, whatever Google
+   * happens to be calling its classes this month.
+   */
   function containerFor(h3) {
-    return (
-      h3.closest('div.g') ||
-      h3.closest('div[data-hveid][data-ved]') ||
-      h3.closest('div[jscontroller]') ||
-      h3.parentElement?.parentElement?.parentElement ||
-      h3.parentElement
-    );
+    let best = h3.parentElement || h3;
+    let node = best;
+    while (node && node !== document.body && node.parentElement) {
+      const next = node.parentElement;
+      if (next.querySelectorAll('h3').length > 1) break;
+      best = next;
+      node = next;
+    }
+    return best;
   }
 
   function snippetFor(container, title) {
@@ -110,24 +124,27 @@
     for (const h3 of root.querySelectorAll('h3')) {
       if (out.length >= limit) break;
 
-      const anchor = h3.closest('a[href]') || h3.parentElement?.querySelector('a[href]');
-      const url = cleanUrl(anchor && anchor.getAttribute('href'));
-      if (isNoise(url) || seen.has(url)) continue;
-
       const container = containerFor(h3);
       // Skip "People also ask" / video carousels — they have no stable snippet
       // and the researchers never cite them.
       if (container && container.closest('[data-initq], [jsname="Cpkphb"]')) continue;
 
+      // Only ever take the link from inside this result's own block, so the
+      // title can never end up pointing at a neighbour's URL.
+      const anchor = h3.closest('a[href]') || container?.querySelector('a[href]');
+      const url = cleanUrl(anchor && anchor.getAttribute('href'));
+      if (isNoise(url) || seen.has(url)) continue;
+
       const title = (h3.innerText || '').trim();
       if (!title) continue;
 
       seen.add(url);
+      const displayUrl = (container?.querySelector('cite')?.innerText || '').trim();
       out.push({
         rank: out.length + 1,
         title,
         url,
-        displayUrl: (container?.querySelector('cite')?.innerText || '').trim(),
+        displayUrl,
         snippet: snippetFor(container, title)
       });
       if (container) container.dataset.sxIndex = String(out.length);

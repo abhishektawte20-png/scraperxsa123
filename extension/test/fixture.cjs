@@ -106,3 +106,37 @@ module.exports.soloSerp = function soloSerp(query) {
   ];
   return renderSerp(query, results);
 };
+
+/**
+ * The layout that produced the reported title/URL mismatch: Google wrapping
+ * several results inside one `div.g`, so a container picked by class name
+ * spans more than one result. A correct extractor must still pair each title
+ * with its own link, cite and snippet.
+ */
+module.exports.nestedSerp = function nestedSerp(query) {
+  const results = [
+    { t: 'RF ONLINE NEXT: Main Quest Chapter 7-70 Stop Vector',
+      u: 'https://rfonlinenext.github.io/biosuits/psypher',
+      c: 'rfonlinenext.github.io',
+      s: '15 Jun 2026 — ... grant brief invincibility when hit, making them Psypher-proof for the duration.' },
+    { t: 'Privacy Policy',
+      u: 'https://www.psypher.in/policies/privacy-policy',
+      c: 'psypher.in',
+      s: '18 Jul 2026 — ... www.psypher.in (the "Site") or otherwise communicate with us ... In connection with a business transaction such as a merger or bankruptcy ...' },
+    { t: 'Psypher on Instagram',
+      u: 'https://www.instagram.com/psypher.in',
+      c: 'instagram.com',
+      s: 'Psypher streetwear, Delhi. 4,200 followers.' }
+  ];
+  // All three crammed into ONE div.g, the shape that broke the old extractor.
+  return `<!doctype html><html><head><title>${query} - Google Search</title></head><body>
+    <div id="result-stats">About 5,400 results</div>
+    <div id="search"><div id="rso">
+      <div class="g" data-hveid="CA" data-ved="2ahU">
+        ${results.map((r) => `
+          <div><div><a href="${r.u}"><br><h3>${r.t}</h3></a>
+          <cite>${r.c}</cite></div>
+          <div class="VwiC3b"><span>${r.s}</span></div></div>`).join('')}
+      </div>
+    </div></div></body></html>`;
+};

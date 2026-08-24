@@ -91,6 +91,7 @@ function processSerp(job, payload, settings, entity) {
     entitySignals: job.entitySignals || [],
     signals: job.signals || [],
     category: job.category,
+    templateId: job.id,
     excludeTerms: entity.excludeTerms || [],
     contextTerms: entity.contextTerms || []
   };

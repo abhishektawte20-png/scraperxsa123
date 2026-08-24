@@ -234,6 +234,8 @@ function resultRow(r) {
       <div class="result-top">
         <span class="result-score">${r.score}</span>
         ${r.flag ? `<span class="result-flag">${r.flag.icon} ${esc(r.flag.label)}</span>` : ''}
+        ${r.identity === 'name+domain' ? '<span class="result-id result-id-both">name + domain</span>'
+          : r.identity === 'domain' ? '<span class="result-id result-id-domain">domain match</span>' : ''}
         ${r.isCollision ? '<span class="result-collision">&#9888; different company?</span>' : ''}
         ${r.confusableDomain ? `<span class="result-verify">verify — also seen at ${esc(r.confusableDomain)}</span>` : ''}
         ${!r.confusableDomain && r.extensionWord ? `<span class="result-verify">verify — also called "${esc((r.entityHits || [])[0] || '')} ${esc(r.extensionWord)}"</span>` : ''}
@@ -282,6 +284,7 @@ function renderResults() {
 
   const onlyStrong = $('#onlyStrong').checked;
   const onlyFlagged = $('#onlyFlagged').checked;
+  const onlyIdentity = $('#onlyIdentity').checked;
   const hideEmpty = $('#hideEmpty').checked;
 
   const entries = run.queries
@@ -289,6 +292,8 @@ function renderResults() {
       let results = e.results || [];
       if (onlyStrong) results = results.filter((r) => r.tier === 'critical' || r.tier === 'strong');
       if (onlyFlagged) results = results.filter((r) => r.flag);
+      // The domain is close to unique; the name often is not.
+      if (onlyIdentity) results = results.filter((r) => r.identity === 'name+domain' || r.identity === 'domain');
       return results === e.results ? e : { ...e, results };
     })
     .filter((e) => !hideEmpty || (e.results || []).length || e.status === 'manual' || e.status === 'error');
@@ -665,6 +670,7 @@ function wire() {
 
   $('#onlyStrong').addEventListener('change', renderResults);
   $('#onlyFlagged').addEventListener('change', renderResults);
+  $('#onlyIdentity').addEventListener('change', renderResults);
   $('#hideEmpty').addEventListener('change', renderResults);
 
   $('#copyMd').addEventListener('click', (e) => app.run && copy(toMarkdown(app.run), e.target));

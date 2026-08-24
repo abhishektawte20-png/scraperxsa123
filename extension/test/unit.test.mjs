@@ -188,13 +188,98 @@ check('"grant" used as a legal verb on a ToS page is not counted', tosMatch.sign
 check('a ToS-page match never carries the flag', tosMatch.flag === null);
 check('the Legal Name boolean is exempt from the ToS discount (it is deliberately searching these pages)',
   isLegalBoilerplatePage('https://www.psypher.ai/terms', 'Terms of Service') === true);
-const legalNameCtx = { ...grantCtx, category: 'Out of Business', signals: ['privacy policy', 'terms of use', 'Psypher'] };
+const legalNameCtx = { ...grantCtx, category: 'Out of Business', templateId: 'oob.legalname',
+  signals: ['privacy policy', 'terms of use', 'Psypher'] };
 const legalNameHit = scoreResult({
   title: 'Terms of Service', url: 'https://www.psypher.ai/terms',
   snippet: 'These terms of use govern your access to Psypher AI services.'
 }, legalNameCtx);
 check('Out of Business > Legal Name still gets its intended hit on a ToS page',
   legalNameHit.signalHits.includes('terms of use'), JSON.stringify(legalNameHit.signalHits));
+
+console.log('\n[reported: bankruptcy boolean matching a privacy policy]');
+// A privacy policy says "a business transaction such as a merger or bankruptcy".
+// That is boilerplate on every such page, not evidence the company folded.
+const privacyPage = {
+  title: 'Privacy Policy', url: 'https://www.psypher.in/policies/privacy-policy',
+  snippet: '... www.psypher.in (the "Site") ... In connection with a business transaction such as a merger or bankruptcy ...'
+};
+const bankruptcyCtx = {
+  company: 'Psypher', entityDomain: 'psypher.in', category: 'Out of Business',
+  templateId: 'oob.bankruptcy_us', entitySignals: ['Psypher', 'psypher.in'],
+  signals: ['chapter 7', 'chapter 11', 'bankruptcy', 'bankrupt', 'Psypher', 'psypher.in']
+};
+const bankruptcyOnPrivacy = scoreResult(privacyPage, bankruptcyCtx);
+check('boilerplate "bankruptcy" on a privacy page is not counted',
+  bankruptcyOnPrivacy.signalHits.length === 0, JSON.stringify(bankruptcyOnPrivacy.signalHits));
+check('it is not reported as an out-of-business finding', bankruptcyOnPrivacy.flag === null);
+check('it no longer outranks results that answered something',
+  bankruptcyOnPrivacy.tier === 'weak', bankruptcyOnPrivacy.tier);
+
+const legalNameOnPrivacy = scoreResult(
+  { ...privacyPage, snippet: 'These terms of use and privacy policy govern access to Psypher.' },
+  { ...bankruptcyCtx, templateId: 'oob.legalname', signals: ['privacy policy', 'terms of use', 'Psypher'] });
+check('the Legal Name boolean, which wants these pages, is unaffected',
+  legalNameOnPrivacy.signalHits.includes('terms of use') && legalNameOnPrivacy.flag !== null,
+  JSON.stringify(legalNameOnPrivacy.signalHits));
+
+const noAnswer = scoreResult(
+  { title: 'Psypher — Contact', url: 'https://www.psypher.in/pages/contact', snippet: 'Get in touch with the Psypher team.' },
+  bankruptcyCtx);
+check('a company page answering nothing the boolean asked is capped at weak',
+  noAnswer.tier === 'weak', noAnswer.tier);
+const siteOnlyBoolean = scoreResult(
+  { title: 'Psypher | LinkedIn', url: 'https://www.linkedin.com/company/psypher', snippet: 'Psypher | 240 followers.' },
+  { company: 'Psypher', entityDomain: 'psypher.in', category: 'SMI', templateId: 'smi.linkedin',
+    entitySignals: ['Psypher', 'psypher.in'], signals: ['Psypher', 'psypher.in'] });
+check('a site-only boolean is exempt — being on the right domain IS its finding',
+  siteOnlyBoolean.tier !== 'weak', siteOnlyBoolean.tier);
+
+console.log('\n[reported: a game walkthrough is not a bankruptcy]');
+// "Main Quest Chapter 7-70" matched the bankruptcy boolean and was reported as
+// an out-of-business signal on a video-game wiki.
+const gameQuest = scoreResult({
+  title: 'RF ONLINE NEXT: Main Quest Chapter 7-70 Stop Vector',
+  url: 'https://rfonlinenext.github.io/biosuits/psypher',
+  snippet: '... grant brief invincibility when hit, making them Psypher-proof for the duration.'
+}, bankruptcyCtx);
+check('"Chapter 7" with no insolvency context is not a bankruptcy signal',
+  gameQuest.signalHits.length === 0, JSON.stringify(gameQuest.signalHits));
+check('the game page is not reported as out-of-business', gameQuest.flag === null);
+check('the reason names the ambiguity',
+  gameQuest.reasons.some((r) => r.includes('insolvency')), gameQuest.reasons.join(' | '));
+
+const realFiling = scoreResult({
+  title: 'Psypher files for Chapter 7 bankruptcy', url: 'https://www.reuters.com/legal/psypher',
+  snippet: 'Psypher filed for Chapter 7 bankruptcy protection in Delaware court, citing creditors.'
+}, bankruptcyCtx);
+check('a genuine Chapter 7 filing still flags', realFiling.flag !== null, JSON.stringify(realFiling.flag));
+check('both the filing chapter and the word bankruptcy count',
+  realFiling.signalHits.includes('chapter 7') && realFiling.signalHits.includes('bankruptcy'),
+  realFiling.signalHits.join(', '));
+check('a news section at /legal/ is not mistaken for a terms-of-service page',
+  isLegalBoilerplatePage('https://www.reuters.com/legal/psypher', 'Psypher files for Chapter 7') === false);
+check('an actual legal-notice page is still detected',
+  isLegalBoilerplatePage('https://example.com/legal-notice', '') === true);
+
+console.log('\n[identity confidence: a domain is more unique than a name]');
+const identCtx = { company: 'Psypher', entityDomain: 'psypher.in', category: 'Prior Backing',
+  templateId: 'backing.general', entitySignals: ['Psypher', 'psypher.in'],
+  signals: ['raised', 'Psypher', 'psypher.in'] };
+const bothSeen = scoreResult({ title: 'Psypher raises seed round', url: 'https://news.example.com/a',
+  snippet: 'Psypher (psypher.in) raised a seed round this week.' }, identCtx);
+const domainOnly = scoreResult({ title: 'Funding roundup', url: 'https://news.example.com/b',
+  snippet: 'The brand at psypher.in raised a seed round this week.' }, identCtx);
+const nameOnly2 = scoreResult({ title: 'Psypher raises seed round', url: 'https://news.example.com/c',
+  snippet: 'Psypher raised a seed round this week.' }, identCtx);
+check('name and domain together is the strongest identity', bothSeen.identity === 'name+domain', bothSeen.identity);
+check('a domain mention alone is recognised as a domain match, not a name match',
+  domainOnly.identity === 'domain', domainOnly.identity);
+check('a name mention alone is the weakest of the three', nameOnly2.identity === 'name', nameOnly2.identity);
+check('a domain match outranks a bare name match',
+  domainOnly.score > nameOnly2.score, `${domainOnly.score} > ${nameOnly2.score}`);
+check('the company name being a substring of its own domain does not fake a name match',
+  domainOnly.identity !== 'name+domain');
 
 console.log('\n[sense-checking: matching the word is not matching the meaning]');
 const senseCtx = {
