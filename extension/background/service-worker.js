@@ -89,7 +89,9 @@ function processSerp(job, payload, settings, entity) {
     entityDomain: bareDomain(entity.website),
     entitySignals: job.entitySignals || [],
     signals: job.signals || [],
-    category: job.category
+    category: job.category,
+    excludeTerms: entity.excludeTerms || [],
+    contextTerms: entity.contextTerms || []
   };
 
   const scored = (payload.results || [])

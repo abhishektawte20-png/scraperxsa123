@@ -28,7 +28,9 @@ function check(name, cond, extra = '') {
     const url = new URL(route.request().url());
     if (!url.pathname.startsWith('/search')) return route.fulfill({ status: 200, body: 'ok' });
     serves++;
-    route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: serp(url.searchParams.get('q') || '') });
+    const q = url.searchParams.get('q') || '';
+    const body = q.includes('Psypher') ? serp.collisionSerp(q) : serp(q);
+    route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
   });
 
   let [sw] = context.serviceWorkers();
@@ -386,6 +388,67 @@ function check(name, cond, extra = '') {
   check('the raw payload shows as literal, escaped text in the banner instead',
     (bannerText || '').includes('<img') && (bannerText || '').includes('Name'), bannerText);
   await xssTab.close();
+
+  // --- name-collision disambiguation ---------------------------------------
+  // Reproduces the exact production report: "Psypher" (target) colliding with
+  // the unrelated "Psypher Interactive", plus a negated funding claim and a
+  // ToS-page word match — all in one real run through the actual UI.
+  log('\n[name-collision disambiguation]');
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'Psypher');
+  await panel.fill('#website', 'psypher.ai');
+  await panel.click('.disambig summary'); // expand the collapsed <details>
+  await panel.fill('#excludeTerms', 'Interactive\nGames\nStudio');
+  await panel.waitForTimeout(150);
+
+  const collisionEntityPreview = await panel.locator('#entityPreview').textContent();
+  check('disambiguation fields do not change the entity group Google receives',
+    collisionEntityPreview === '("Psypher" OR "psypher.ai")', collisionEntityPreview);
+
+  await panel.click('#selNone');
+  await panel.check('#chk_backing\\.general');
+  const collisionRun = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const collisionResult = await collisionRun;
+  const financingResults = collisionResult.queries[0].results;
+
+  const tracxnHit = financingResults.find((r) => r.url.includes('tracxn.com'));
+  const businesswireHit = financingResults.find((r) => r.url.includes('businesswire.com'));
+  check('the name-collision result is demoted to noise', tracxnHit?.tier === 'noise', tracxnHit?.tier);
+  check('the name-collision result carries no flag', tracxnHit?.flag == null);
+  check('the genuine same-name result (different article) still gets flagged',
+    businesswireHit?.flag?.label === 'Investor backing detected', JSON.stringify(businesswireHit?.flag));
+
+  await panel.waitForTimeout(400);
+  check('the panel shows a "different company?" badge on the collision result',
+    (await panel.locator('.result-collision').count()) > 0,
+    await panel.locator('.result-collision').first().textContent().catch(() => 'none'));
+
+  // Same entity, the Grant boolean — "grant" used as a legal verb on the ToS
+  // page must not read as a funding signal either.
+  await panel.click('[data-tab="run"]'); // the previous run auto-switched to Results
+  await panel.waitForTimeout(150);
+  await panel.click('#selNone');
+  await panel.check('#chk_backing\\.grant');
+  const grantRun = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const grantResult = await grantRun;
+  const tosHit = grantResult.queries[0].results.find((r) => r.url.includes('psypher.ai/terms'));
+  check('"grant" as a legal verb on a ToS page is not flagged as funding',
+    tosHit?.flag == null, JSON.stringify(tosHit?.flag));
 
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');

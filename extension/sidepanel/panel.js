@@ -62,11 +62,15 @@ const app = {
 
 // ── entity form ──────────────────────────────────────────────────────────────
 
+const linesOf = (sel) => $(sel).value.split('\n').map((s) => s.trim()).filter(Boolean);
+
 function readEntity() {
   return {
     company: $('#company').value.trim(),
     website: $('#website').value.trim(),
-    aliases: $('#aliases').value.split('\n').map((s) => s.trim()).filter(Boolean)
+    aliases: linesOf('#aliases'),
+    excludeTerms: linesOf('#excludeTerms'),
+    contextTerms: linesOf('#contextTerms')
   };
 }
 
@@ -215,10 +219,12 @@ function flaggedCount(entry) {
 function resultRow(r) {
   const terms = r.highlightTerms || [];
   return `
-    <div class="result tier-${esc(r.tier)}${r.flag ? ' is-flagged' : ''}">
+    <div class="result tier-${esc(r.tier)}${r.flag ? ' is-flagged' : ''}${r.isCollision ? ' is-collision' : ''}">
       <div class="result-top">
         <span class="result-score">${r.score}</span>
         ${r.flag ? `<span class="result-flag">${r.flag.icon} ${esc(r.flag.label)}</span>` : ''}
+        ${r.isCollision ? '<span class="result-collision">&#9888; different company?</span>' : ''}
+        ${r.contextMismatch ? '<span class="result-verify">verify — no context match</span>' : ''}
         <a class="result-title" href="${esc(r.url)}" target="_blank" rel="noreferrer">${highlight(r.title, terms)}</a>
       </div>
       <div class="result-url">${esc(r.displayUrl || r.url)}</div>
@@ -573,7 +579,7 @@ function wire() {
   // a normal tab, where the CSS grid widens into a full dashboard layout.
   $('#expandView').addEventListener('click', () => send('SX_OPEN', { url: chrome.runtime.getURL('sidepanel/panel.html') }));
 
-  ['#company', '#website', '#aliases'].forEach((sel) =>
+  ['#company', '#website', '#aliases', '#excludeTerms', '#contextTerms'].forEach((sel) =>
     $(sel).addEventListener('input', refreshEntityPreview));
 
   $('#selAll').addEventListener('click', () => applyPreset('all'));
@@ -703,6 +709,8 @@ function wire() {
   $('#company').value = app.entity.company || '';
   $('#website').value = app.entity.website || '';
   $('#aliases').value = (app.entity.aliases || []).join('\n');
+  $('#excludeTerms').value = (app.entity.excludeTerms || []).join('\n');
+  $('#contextTerms').value = (app.entity.contextTerms || []).join('\n');
   $('#entityPreview').textContent = buildEntityGroup(app.entity) || '—';
 
   wire();

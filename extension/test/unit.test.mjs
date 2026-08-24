@@ -1,7 +1,7 @@
 import { toMarkdown, toCsv, slug, groupByCategory } from '../lib/export.js';
 import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword } from '../lib/query.js';
 import { DEFAULT_LIBRARY } from '../lib/library.js';
-import { scoreResult, classifyDomain } from '../lib/scoring.js';
+import { scoreResult, classifyDomain, isLegalBoilerplatePage } from '../lib/scoring.js';
 
 let fail = 0;
 const check = (n, c, x = '') => { console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
@@ -108,6 +108,136 @@ const oobHit = scoreResult(
     snippet: 'Acme Robotics filed for bankruptcy protection.' }, oobCtx);
 check('flag label follows the boolean category, not just Prior Backing',
   oobHit.flag?.label === 'Out-of-business signal', oobHit.flag?.label);
+
+console.log('\n[entity disambiguation: same name, different company]');
+const psypherCtx = {
+  company: 'Psypher', entityDomain: 'psypher.ai', category: 'Prior Backing',
+  entitySignals: ['Psypher', 'psypher.ai'],
+  signals: ['raises', 'raised', 'received funding', 'venture funding', 'Psypher', 'psypher.ai'],
+  excludeTerms: ['Interactive', 'Games', 'Studio']
+};
+const collision = scoreResult({
+  title: 'Meet Psypher Interactive Walked into their stall at GAFX',
+  url: 'https://tracxn.com/Discover/Companies',
+  snippet: 'Psypher AI has not raised any funding yet, per this profile.'
+}, psypherCtx);
+check('a name collision is demoted to noise regardless of raw score', collision.tier === 'noise', collision.tier);
+check('a name collision never carries the flag', collision.flag === null, JSON.stringify(collision.flag));
+check('the collision reason names the term that gave it away',
+  collision.reasons.some((r) => r.includes('Interactive')), collision.reasons.join(' | '));
+check('isCollision is reported on the result', collision.isCollision === true);
+
+const onOwnSite = scoreResult({
+  title: 'Psypher Interactive Partnership', url: 'https://www.psypher.ai/blog/interactive-launch',
+  snippet: 'Psypher announces an interactive product launch.'
+}, psypherCtx);
+check('the company\'s own domain is exempt from the collision check even if it mentions the exclude term',
+  onOwnSite.isCollision === false, JSON.stringify({ url: onOwnSite.domainClass, collision: onOwnSite.isCollision }));
+
+const realHit = scoreResult({
+  title: 'Psypher raises $8M Series A to expand AI healthcare platform',
+  url: 'https://www.businesswire.com/news/psypher-series-a',
+  snippet: 'Psypher, the AI-powered healthcare startup, announced it raised $8M in Series A funding.'
+}, psypherCtx);
+check('a genuine hit with no exclude term present scores normally', realHit.tier === 'critical', realHit.tier);
+check('a genuine hit still carries the flag', realHit.flag !== null);
+
+console.log('\n[entity disambiguation: distinguishing context]');
+const contextCtx = { ...psypherCtx, excludeTerms: [], contextTerms: ['AI', 'healthcare', 'fintech'] };
+const noContext = scoreResult({
+  title: 'Psypher raises $8M', url: 'https://news.example.com/a',
+  snippet: 'Psypher raised $8M this week, details unclear.'
+}, contextCtx);
+check('name matched but none of the configured context terms found — downgraded, not dropped',
+  noContext.contextMismatch === true && noContext.tier !== 'critical', JSON.stringify({ tier: noContext.tier, mismatch: noContext.contextMismatch }));
+
+const withContext = scoreResult({
+  title: 'Psypher raises $8M for its AI healthcare platform', url: 'https://news.example.com/b',
+  snippet: 'Psypher, an AI healthcare startup, raised $8M this week.'
+}, contextCtx);
+check('context present — no mismatch, scores normally', withContext.contextMismatch === false);
+
+console.log('\n[negation-aware signal matching]');
+const negCtx = { company: 'Acme', entityDomain: 'acme.com', category: 'Prior Backing',
+  entitySignals: ['Acme'], signals: ['raised', 'Acme'] };
+const negatedResult = scoreResult({
+  title: 'About Acme', url: 'https://www.acme.com/about',
+  snippet: 'Acme has not raised any funding yet, remaining fully bootstrapped.'
+}, negCtx);
+check('"has not raised" does not count as a positive signal hit', negatedResult.signalHits.length === 0, JSON.stringify(negatedResult.signalHits));
+check('the negated term is reported separately, not silently dropped',
+  negatedResult.negatedHits.includes('raised'), negatedResult.negatedHits.join(', '));
+check('a negated match never carries the flag', negatedResult.flag === null);
+
+const positiveResult = scoreResult({
+  title: 'Acme raised funding', url: 'https://www.acme.com/news',
+  snippet: 'Acme raised $5M in seed funding this week.'
+}, negCtx);
+check('an un-negated match still counts normally', positiveResult.signalHits.includes('raised'));
+
+console.log('\n[legal/privacy boilerplate discount]');
+const grantCtx = { company: 'Psypher', entityDomain: 'psypher.ai', category: 'Prior Backing',
+  entitySignals: ['Psypher', 'psypher.ai'], signals: ['won', 'grant', 'sbic', 'sbir', 'was awarded', 'Psypher'] };
+const tosMatch = scoreResult({
+  title: 'Terms of Service', url: 'https://www.psypher.ai/terms',
+  snippet: 'All content is owned by Psypher AI. By submitting it, you grant us a license to use it.'
+}, grantCtx);
+check('"grant" used as a legal verb on a ToS page is not counted', tosMatch.signalHits.length === 0, JSON.stringify(tosMatch.signalHits));
+check('a ToS-page match never carries the flag', tosMatch.flag === null);
+check('the Legal Name boolean is exempt from the ToS discount (it is deliberately searching these pages)',
+  isLegalBoilerplatePage('https://www.psypher.ai/terms', 'Terms of Service') === true);
+const legalNameCtx = { ...grantCtx, category: 'Out of Business', signals: ['privacy policy', 'terms of use', 'Psypher'] };
+const legalNameHit = scoreResult({
+  title: 'Terms of Service', url: 'https://www.psypher.ai/terms',
+  snippet: 'These terms of use govern your access to Psypher AI services.'
+}, legalNameCtx);
+check('Out of Business > Legal Name still gets its intended hit on a ToS page',
+  legalNameHit.signalHits.includes('terms of use'), JSON.stringify(legalNameHit.signalHits));
+
+console.log('\n[sense-checking: matching the word is not matching the meaning]');
+const senseCtx = {
+  company: 'Acme Robotics', entityDomain: 'acme.com', category: 'Prior Backing',
+  entitySignals: ['Acme Robotics', 'acme.com'],
+  signals: ['raises', 'raised', 'received', 'received funding', 'venture funding', 'Acme Robotics', 'acme.com']
+};
+const wrongSense = scoreResult({
+  title: 'Acme Robotics raises awareness for road safety', url: 'https://news.example.com/a',
+  snippet: 'Acme Robotics raises awareness with a new campaign this month, no financial details.'
+}, senseCtx);
+check('"raises awareness" is not counted as a financing signal',
+  wrongSense.signalHits.length === 0, JSON.stringify(wrongSense.signalHits));
+check('the ambiguous term is reported, not silently dropped',
+  wrongSense.ambiguousHits.includes('raises'), wrongSense.ambiguousHits.join(', '));
+check('the wrong-sense match never carries the flag', wrongSense.flag === null);
+
+const rightSense = scoreResult({
+  title: 'Acme Robotics raises $8M Series A', url: 'https://www.businesswire.com/news/acme',
+  snippet: 'Acme Robotics raised $8M in Series A funding led by top investors.'
+}, senseCtx);
+check('"raises $8M Series A" — money context present — counts normally',
+  rightSense.signalHits.includes('raises') || rightSense.signalHits.includes('raised'), rightSense.signalHits.join(', '));
+check('a genuine financing hit still carries the flag', rightSense.flag !== null);
+
+const compoundPhrase = scoreResult({
+  title: 'Acme Robotics received funding', url: 'https://www.prnewswire.com/x',
+  snippet: 'Acme Robotics received funding from local backers this week.'
+}, senseCtx);
+check('a self-confirming compound phrase ("received funding") needs no extra corroboration',
+  compoundPhrase.signalHits.includes('received funding'), compoundPhrase.signalHits.join(', '));
+
+const oobSenseCtx = { ...senseCtx, category: 'Out of Business', signals: ['acquired', 'merged', 'acquisition', 'Acme Robotics', 'acme.com'] };
+const acquiredWrongSense = scoreResult({
+  title: 'How our team acquired a taste for robotics', url: 'https://blog.example.com/a',
+  snippet: 'Our engineers acquired a taste for hands-on robotics over the years.'
+}, oobSenseCtx);
+check('"acquired a taste for" is not counted as an M&A signal',
+  acquiredWrongSense.signalHits.length === 0, JSON.stringify(acquiredWrongSense.signalHits));
+const acquiredRightSense = scoreResult({
+  title: 'Acme Robotics acquired by BigCorp for $50M', url: 'https://www.businesswire.com/news/x',
+  snippet: 'BigCorp announced it acquired Acme Robotics in a $50M deal.'
+}, oobSenseCtx);
+check('"acquired ... in a $50M deal" — deal context present — counts normally',
+  acquiredRightSense.signalHits.includes('acquired'), acquiredRightSense.signalHits.join(', '));
 
 console.log('\n[exports]');
 const run = {

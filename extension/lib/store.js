@@ -54,7 +54,8 @@ export async function saveSettings(patch) {
   return next;
 }
 
-export const getEntity = () => get(KEYS.entity, { company: '', website: '', aliases: [] });
+export const getEntity = () =>
+  get(KEYS.entity, { company: '', website: '', aliases: [], contextTerms: [], excludeTerms: [] });
 export const saveEntity = (entity) => set(KEYS.entity, entity);
 
 /** Run history, newest first, capped so storage doesn't grow forever. */

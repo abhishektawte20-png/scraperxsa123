@@ -62,6 +62,23 @@
         <span class="preview-label">Entity group Google will receive</span>
         <code id="entityPreview">—</code>
       </div>
+
+      <details class="disambig">
+        <summary>Disambiguation <em>— for a name that collides with other companies</em></summary>
+        <p class="hint">
+          "Psypher" matches inside "Psypher Interactive" too — a different company. Tell the
+          extension what tells them apart and matches on the wrong one get scored as noise
+          instead of a false "critical" hit.
+        </p>
+        <label class="field">
+          <span>Not this company if it also mentions <em>(one per line)</em></span>
+          <textarea id="excludeTerms" rows="2" placeholder="Interactive&#10;Games&#10;Studio"></textarea>
+        </label>
+        <label class="field">
+          <span>Distinguishing context <em>(one per line — industry, sector, whatever the bare name doesn't say)</em></span>
+          <textarea id="contextTerms" rows="2" placeholder="AI&#10;healthcare&#10;fintech"></textarea>
+        </label>
+      </details>
     </div>
 
     <div class="run-col">

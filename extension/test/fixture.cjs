@@ -17,6 +17,10 @@ module.exports = function serp(query) {
       u: 'https://www.linkedin.com/company/ll-exhibition-management',
       s: 'L&L Exhibition Management | 240 followers. Denver-based producer of consumer home shows.' }
   ];
+  return renderSerp(query, results);
+};
+
+function renderSerp(query, results) {
   return `<!doctype html><html><head><title>${query} - Google Search</title></head><body>
     <div id="result-stats">About 12,300 results<nobr> (0.42 seconds)</nobr></div>
     <div id="search"><div id="rso">
@@ -27,4 +31,22 @@ module.exports = function serp(query) {
           <div class="VwiC3b"><span>${r.s}</span></div></div>
         </div>`).join('')}
     </div></div></body></html>`;
+}
+
+// Reproduces the exact ambiguity a researcher hit in production: a common
+// company name colliding with an unrelated "Psypher Interactive", plus a
+// negated funding claim that a plain keyword match would still flag.
+module.exports.collisionSerp = function collisionSerp(query) {
+  const results = [
+    { t: 'Meet Psypher Interactive Walked into their stall at GAFX just to...',
+      u: 'https://tracxn.com/Discover/Companies',
+      s: '28 Jun 2026 — It operates as a Developer of AI-powered solutions for healthcare, finance, and other industries. Psypher AI has not raised any funding yet ...Read more' },
+    { t: 'Psypher raises $8M Series A to expand AI healthcare platform',
+      u: 'https://www.businesswire.com/news/psypher-series-a',
+      s: '2 Aug 2026 — Psypher, the AI-powered healthcare and fintech startup, today announced it raised $8M in Series A funding led by...' },
+    { t: 'Terms of Service',
+      u: 'https://www.psypher.ai/terms',
+      s: '24 Jul 2026 — All services, content, code, and branding are owned by Psypher AI. By submitting it, you grant us a license to use it.' }
+  ];
+  return renderSerp(query, results);
 };
