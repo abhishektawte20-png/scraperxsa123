@@ -239,6 +239,88 @@ const acquiredRightSense = scoreResult({
 check('"acquired ... in a $50M deal" — deal context present — counts normally',
   acquiredRightSense.signalHits.includes('acquired'), acquiredRightSense.signalHits.join(', '));
 
+console.log('\n[sense-checking: extended to Management, Service Providers, Boolean Backup]');
+const mgmtCtx = {
+  company: 'Acme Corp', entityDomain: 'acme.com', category: 'Management',
+  entitySignals: ['Acme Corp', 'acme.com'],
+  signals: ['chief executive officer', 'ceo', 'management', 'chief', 'president', 'Acme Corp', 'acme.com']
+};
+const wrongChief = scoreResult({
+  title: 'Acme Corp says the chief among these problems is staffing', url: 'https://news.example.com/a',
+  snippet: 'Acme Corp executives say the chief among these operational problems is staffing shortages.'
+}, mgmtCtx);
+check('"the chief among these problems" is not counted as a leadership signal',
+  wrongChief.signalHits.length === 0, JSON.stringify(wrongChief.signalHits));
+check('the ambiguous term is reported', wrongChief.ambiguousHits.includes('chief'), wrongChief.ambiguousHits.join(', '));
+
+const rightChief = scoreResult({
+  title: 'Acme Corp names new chief amid restructuring', url: 'https://www.businesswire.com/news/acme',
+  snippet: 'Acme Corp appointed a new chief, effective immediately.'
+}, mgmtCtx);
+check('"appointed a new chief" — leadership context present — counts normally',
+  rightChief.signalHits.includes('chief'), rightChief.signalHits.join(', '));
+
+const spCtx = {
+  company: 'Acme Corp', entityDomain: 'acme.com', category: 'Service Providers',
+  entitySignals: ['Acme Corp', 'acme.com'], signals: ['advise', 'advisor', 'advised', 'legal', 'Acme Corp', 'acme.com']
+};
+const wrongLegal = scoreResult({
+  title: 'Acme Corp says downloading movies is not legal in some regions', url: 'https://news.example.com/b',
+  snippet: 'Acme Corp streaming service warns that downloading content is not legal in some regions.'
+}, spCtx);
+check('"is not legal" is not counted as a service-provider signal (also caught by negation)',
+  wrongLegal.signalHits.length === 0, JSON.stringify(wrongLegal.signalHits));
+
+const rightLegal = scoreResult({
+  title: 'Acme Corp retains outside counsel', url: 'https://www.reuters.com/business/acme',
+  snippet: 'Acme Corp retained outside counsel from Smith LLP for the legal review of the merger.'
+}, spCtx);
+check('"outside counsel" / "LLP" context present — "legal" counts normally',
+  rightLegal.signalHits.includes('legal'), rightLegal.signalHits.join(', '));
+
+const revCtx = {
+  company: 'Acme Corp', entityDomain: 'acme.com', category: 'Boolean Backup',
+  entitySignals: ['Acme Corp', 'acme.com'], signals: ['revenue', 'turnover', 'bookings', 'Acme Corp', 'acme.com']
+};
+const wrongTurnover = scoreResult({
+  title: 'Acme Corp reports high employee turnover this quarter', url: 'https://news.example.com/c',
+  snippet: 'Acme Corp reports high turnover among frontline staff this quarter, HR says.'
+}, revCtx);
+check('"employee turnover" is not counted as a revenue signal',
+  wrongTurnover.signalHits.length === 0, JSON.stringify(wrongTurnover.signalHits));
+check('the ambiguous term is reported', wrongTurnover.ambiguousHits.includes('turnover'));
+
+const rightTurnover = scoreResult({
+  title: 'Acme Corp turnover reached $50M in fiscal 2025', url: 'https://www.businesswire.com/news/acme',
+  snippet: 'Acme Corp turnover reached $50M in fiscal 2025, up from last year.'
+}, revCtx);
+check('"turnover reached $50M in fiscal 2025" — revenue context present — counts normally',
+  rightTurnover.signalHits.includes('turnover'), rightTurnover.signalHits.join(', '));
+
+console.log('\n[sense-checking: the confirming context cannot be the company\'s own name]');
+const capitalCtx = {
+  company: 'XYZ Capital', entityDomain: 'xyzcapital.com', category: 'Prior Backing',
+  entitySignals: ['XYZ Capital', 'xyzcapital.com'],
+  signals: ['raises', 'raised', 'received funding', 'XYZ Capital', 'xyzcapital.com']
+};
+const selfConfirmBug = scoreResult({
+  title: 'XYZ Capital raises awareness for financial literacy', url: 'https://news.example.com/a',
+  snippet: 'XYZ Capital raises awareness with a new outreach campaign this month, no financial figures disclosed.'
+}, capitalCtx);
+check('a company named "XYZ Capital" does not confirm its own "raises" just by being named',
+  selfConfirmBug.signalHits.length === 0 && selfConfirmBug.flag === null,
+  JSON.stringify({ signalHits: selfConfirmBug.signalHits, flag: selfConfirmBug.flag }));
+check('the ambiguous term is still reported rather than silently vanishing',
+  selfConfirmBug.ambiguousHits.includes('raises'));
+
+const genuineCapitalHit = scoreResult({
+  title: 'XYZ Capital raises $8M for new fund', url: 'https://www.businesswire.com/news/xyz',
+  snippet: 'XYZ Capital raised $8M in fresh capital commitments for its latest fund this week.'
+}, capitalCtx);
+check('a genuine hit for the same company still counts when real financing context is present',
+  genuineCapitalHit.signalHits.includes('raises') || genuineCapitalHit.signalHits.includes('raised'),
+  genuineCapitalHit.signalHits.join(', '));
+
 console.log('\n[exports]');
 const run = {
   entity: { company: 'L&L Exhibition Management', website: 'www.homeshowcenter.com' },

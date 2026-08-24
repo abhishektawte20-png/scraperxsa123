@@ -126,6 +126,22 @@ export function findSignalMatches(text, terms) {
   return out;
 }
 
+/**
+ * Blanks out every mention of the entity's own name/website/aliases in a
+ * copy of the text. Confirming context for an ambiguous signal word ("Capital",
+ * "Ventures", "Partners") is meant to come from somewhere else in the result —
+ * a company literally named "XYZ Capital" would otherwise confirm its own
+ * "raises" every time, just by being mentioned, which defeats the check.
+ */
+export function stripEntityMentions(text, entitySignals) {
+  let out = String(text || '');
+  for (const term of entitySignals || []) {
+    if (!term || String(term).length < 2) continue;
+    out = out.replace(termRegex(term), (_full, pre) => pre);
+  }
+  return out;
+}
+
 // A ToS/privacy page's boilerplate ("...you grant us a license...") makes
 // ordinary words like "grant" or "acquired" look like hits for booleans they
 // have nothing to do with. Out of Business > Legal Name is the one boolean
@@ -159,6 +175,31 @@ const AMBIGUOUS_SENSE = {
     terms: new Set(['acquired', 'merged', 'purchased', 'placement']),
     confirm: /(\$|€|£|₹|\bmillion\b|\bbillion\b|\bdeal\b|\btransaction\b|\bstake\b|\bshares?\b|\bbuyout\b|\blbo\b|\bprivate equity\b)/i,
     topic: 'a deal'
+  },
+  // "the chief among these problems" and "the city's new police chief" both
+  // match "chief"; "time management" and "risk management" both match
+  // "management". None of them say anything about this company's leadership.
+  // Confirm words are deliberately narrow: generic ones like "corp" or
+  // "firm" match plenty of real company names outright ("Acme Corp") and
+  // would confirm every bare "chief"/"legal" hit regardless of sense —
+  // exactly the bug this mechanism exists to catch.
+  'Management': {
+    terms: new Set(['chief', 'president', 'management']),
+    confirm: /\b(ceo|coo|cfo|cto|co-founder|appointed|joins as|joined as|promoted to|board of directors|executive team|leadership team|named as)\b/i,
+    topic: 'a corporate leadership role'
+  },
+  // "is this legal in my state" and "I'd advise against it" both match —
+  // neither is a law firm or an advisory engagement.
+  'Service Providers': {
+    terms: new Set(['advise', 'advised', 'legal']),
+    confirm: /\b(counsel|attorney|law firm|llp|represented by|legal team|general counsel|outside counsel|advisor|advisers?|consultant)\b/i,
+    topic: 'a professional services engagement'
+  },
+  // "employee turnover" and "hotel bookings" both match; neither is revenue.
+  'Boolean Backup': {
+    terms: new Set(['turnover', 'bookings']),
+    confirm: /(\$|€|£|₹|\brevenue\b|\bsales\b|\bmillion\b|\bbillion\b|\bannual\b|\bfiscal\b|\bfy\s?\d{2,4}\b|\bgenerated\b)/i,
+    topic: 'revenue figures'
   }
 };
 
@@ -256,10 +297,11 @@ export function scoreResult(result, ctx) {
   // "raises"/"acquired" with no money- or deal-shaped context nearby doesn't
   // answer what this boolean actually asked.
   const sense = AMBIGUOUS_SENSE[ctx.category];
+  const confirmHaystack = sense ? stripEntityMentions(haystack, ctx.entitySignals) : haystack;
   const ambiguousHits = [];
   const signalHits = [];
   for (const m of positiveMatches) {
-    if (sense && sense.terms.has(m.term.toLowerCase()) && !sense.confirm.test(haystack)) ambiguousHits.push(m.term);
+    if (sense && sense.terms.has(m.term.toLowerCase()) && !sense.confirm.test(confirmHaystack)) ambiguousHits.push(m.term);
     else signalHits.push(m.term);
   }
 
