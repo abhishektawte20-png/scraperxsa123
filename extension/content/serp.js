@@ -14,6 +14,18 @@
 
   const BLOCK_PATHS = ['/sorry/', '/interstitial'];
 
+  /**
+   * Boolean name/category and signal terms are researcher-editable (the
+   * quick-edit pencil, "New boolean", library import) and reach this content
+   * script's innerHTML calls below. Escape before interpolating — this page
+   * is live google.com, not our own sandboxed panel.
+   */
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  }
+
   // ── page state ─────────────────────────────────────────────────────────────
 
   function isBlocked() {
@@ -190,10 +202,10 @@
       const badge = document.createElement('div');
       badge.className = `sx-badge sx-badge-${item.tier}`;
       badge.innerHTML =
-        `<span class="sx-score">${item.score}</span>` +
-        `<span class="sx-tier">${item.tier}</span>` +
-        (item.flag ? `<span class="sx-flag">${item.flag.icon} ${item.flag.label}</span>` : '') +
-        `<span class="sx-why">${(item.reasons || []).slice(0, 3).join(' · ')}</span>`;
+        `<span class="sx-score">${Number(item.score) || 0}</span>` +
+        `<span class="sx-tier">${escapeHtml(item.tier)}</span>` +
+        (item.flag ? `<span class="sx-flag">${escapeHtml(item.flag.icon)} ${escapeHtml(item.flag.label)}</span>` : '') +
+        `<span class="sx-why">${(item.reasons || []).map(escapeHtml).join(' · ')}</span>`;
       container.prepend(badge);
     }
   }
@@ -204,9 +216,9 @@
     bar.className = 'sx-bar';
     bar.innerHTML =
       `<span class="sx-bar-tag">ScraperX</span>` +
-      `<span class="sx-bar-name">${job.category} › ${job.name}</span>` +
-      `<span class="sx-bar-stats">${summary.critical} critical · ${summary.strong} strong · ` +
-      `${summary.total} scanned${summary.resultCount != null ? ` · ${summary.resultCount.toLocaleString()} results` : ''}</span>`;
+      `<span class="sx-bar-name">${escapeHtml(job.category)} › ${escapeHtml(job.name)}</span>` +
+      `<span class="sx-bar-stats">${Number(summary.critical) || 0} critical · ${Number(summary.strong) || 0} strong · ` +
+      `${Number(summary.total) || 0} scanned${summary.resultCount != null ? ` · ${Number(summary.resultCount).toLocaleString()} results` : ''}</span>`;
     document.documentElement.appendChild(bar);
   }
 

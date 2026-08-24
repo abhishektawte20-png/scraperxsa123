@@ -341,6 +341,52 @@ function check(name, cond, extra = '') {
     await runTab.close();
   }
 
+  // --- XSS hardening: a boolean's own name/category is researcher-editable
+  // (quick-edit pencil, New boolean, library import) and reaches serp.js's
+  // innerHTML calls on live google.com — prove it's escaped, not executed. ---
+  log('\n[xss hardening]');
+  await panel.click('[data-tab="library"]');
+  await panel.waitForTimeout(150);
+  await panel.click('#libNew');
+  await panel.waitForSelector('#editDialog[open]');
+  const payload = `<img src=x onerror='window.__sx_xss=(window.__sx_xss||0)+1'>`;
+  await panel.fill('#editName', `Injected${payload}Name`);
+  await panel.fill('#editCategory', `Injected${payload}Category`);
+  await panel.click('#editSave');
+  await panel.waitForTimeout(150);
+
+  const xssTemplate = (await panel.evaluate(() => new Promise((resolve) =>
+    chrome.storage.local.get('sx_library', (r) => resolve(r.sx_library)))))
+    .find((t) => t.name.startsWith('Injected'));
+  check('malicious boolean saved as inert data, not executed in the panel',
+    !!xssTemplate, JSON.stringify(xssTemplate?.name));
+
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.click('#selNone');
+  await panel.check(`#chk_${xssTemplate.id.replace(/\./g, '\\.')}`);
+
+  const [xssTab] = await Promise.all([
+    context.waitForEvent('page', { timeout: 15000 }),
+    (async () => {
+      const doneXss = panel.evaluate(() => new Promise((resolve) => {
+        chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+      }));
+      await panel.click('#startBtn');
+      await doneXss;
+    })()
+  ]);
+  await xssTab.waitForTimeout(600);
+
+  const xssFired = await xssTab.evaluate(() => window.__sx_xss || 0);
+  check('the payload never executes on the SERP page', xssFired === 0, `window.__sx_xss = ${xssFired}`);
+  check('no img[onerror] element was created from the escaped markup',
+    (await xssTab.locator('img[onerror]').count()) === 0);
+  const bannerText = await xssTab.locator('.sx-bar-name').textContent().catch(() => '');
+  check('the raw payload shows as literal, escaped text in the banner instead',
+    (bannerText || '').includes('<img') && (bannerText || '').includes('Name'), bannerText);
+  await xssTab.close();
+
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');
   await panel.evaluate(() => chrome.storage.local.set({
@@ -423,6 +469,34 @@ function check(name, cond, extra = '') {
 
   const stopped = await panel.evaluate(() => chrome.runtime.sendMessage({ type: 'SX_STOP' }));
   check('blocked run can be stopped', stopped?.ok === true);
+
+  // --- options page --------------------------------------------------------
+  // Not reachable from any other flow — the only way to catch this page
+  // breaking (e.g. a stale CSS variable name after a panel.css rename that
+  // options.html's own inline <style> still referenced) is to open it directly.
+  log('\n[options page]');
+  const optsPage = await context.newPage();
+  const optsErrors = [];
+  optsPage.on('pageerror', (e) => optsErrors.push(e.message));
+  await optsPage.goto(`chrome-extension://${extId}/options/options.html`);
+  await optsPage.waitForSelector('#minDelayMs');
+  check('options page loads without script errors', optsErrors.length === 0, optsErrors.join(' | '));
+
+  const bodyBg = await optsPage.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  check('shared panel.css actually resolved (background isn\'t transparent)',
+    bodyBg !== 'rgba(0, 0, 0, 0)' && bodyBg !== 'transparent', bodyBg);
+
+  await optsPage.fill('#minDelayMs', '5000');
+  await optsPage.click('#save');
+  await optsPage.waitForTimeout(200);
+  const savedSettings = await optsPage.evaluate(() => new Promise((resolve) =>
+    chrome.storage.local.get('sx_settings', (r) => resolve(r.sx_settings))));
+  check('a changed setting round-trips through storage', savedSettings?.minDelayMs === 5000, JSON.stringify(savedSettings));
+
+  await optsPage.click('#reset');
+  await optsPage.waitForTimeout(200);
+  check('Restore defaults resets the field', (await optsPage.inputValue('#minDelayMs')) === '4000');
+  await optsPage.close();
 
   log('\n[errors]');
   const real = errors.filter((e) => !/Could not establish connection|message port closed/i.test(e));

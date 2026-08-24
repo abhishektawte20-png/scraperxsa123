@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ScraperX Research Automation",
   "short_name": "ScraperX",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Automates the boolean Google searches researchers run by hand when profiling private companies. Runs the whole library, highlights the results that matter.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -12,9 +12,6 @@
     "scripting",
     "sidePanel",
     "windows"
-  ],
-  "optional_permissions": [
-    "clipboardWrite"
   ],
   "host_permissions": [
     "https://www.google.com/*",
@@ -56,16 +53,6 @@
       ],
       "run_at": "document_idle",
       "all_frames": false
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "content/serp.css"
-      ],
-      "matches": [
-        "https://www.google.com/*"
-      ]
     }
   ],
   "icons": {
