@@ -50,3 +50,25 @@ module.exports.collisionSerp = function collisionSerp(query) {
   ];
   return renderSerp(query, results);
 };
+
+// The actual reported case, verbatim from the production screenshot: the
+// real "Psypher" is an Indian streetwear brand at psypher.in; "Psypher AI"
+// is an unrelated Kochi tech startup at psypher.ai — no excludeTerms
+// configured, since the whole point is that this gets caught automatically.
+module.exports.autoCollisionSerp = function autoCollisionSerp(query) {
+  const results = [
+    { t: 'About Psypher – Indian Streetwear Brand Story',
+      u: 'https://www.psypher.in/pages/about-psypher',
+      s: '28 Jun 2026 — PSYPHER emerged from a desire to translate artistic ideas, illustrations, photography, and other creative passions into wearable art. Founded in 2024, we\'re ...Read more' },
+    { t: 'Psypher AI - 2026 Company Profile, Team & Competitors',
+      u: 'https://tracxn.com/Discover/Companies/psypher-ai',
+      s: '28 Jun 2026 — Psypher AI was founded in 2024. Where is Psypher AI located? Psypher AI is headquartered in Kochi, India. How many employees does Psypher AI ...Read more' },
+    { t: 'Terms of Service',
+      u: 'https://www.psypher.ai/terms',
+      s: '24 Jul 2026 — All services, content, code, and branding are owned by Psypher AI and protected by international IP laws. ... By submitting it, you grant us a ...Read more' },
+    { t: 'PSYPHER AI PRIVATE LIMITED - Company Profile',
+      u: 'https://tracxn.com/Discover/Legal-Entities/India/psypher-ai-private-limited',
+      s: '19 Jul 2026 — PSYPHER AI PRIVATE LIMITED is a Private Limited Company and was incorporated on Oct 14, 2024 in India. It is registered at Registrar of ...Read more' }
+  ];
+  return renderSerp(query, results);
+};

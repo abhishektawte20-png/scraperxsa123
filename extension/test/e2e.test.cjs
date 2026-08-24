@@ -29,7 +29,9 @@ function check(name, cond, extra = '') {
     if (!url.pathname.startsWith('/search')) return route.fulfill({ status: 200, body: 'ok' });
     serves++;
     const q = url.searchParams.get('q') || '';
-    const body = q.includes('Psypher') ? serp.collisionSerp(q) : serp(q);
+    const body = q.includes('psypher.in') ? serp.autoCollisionSerp(q)
+      : q.includes('Psypher') ? serp.collisionSerp(q)
+      : serp(q);
     route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
   });
 
@@ -449,6 +451,53 @@ function check(name, cond, extra = '') {
   const tosHit = grantResult.queries[0].results.find((r) => r.url.includes('psypher.ai/terms'));
   check('"grant" as a legal verb on a ToS page is not flagged as funding',
     tosHit?.flag == null, JSON.stringify(tosHit?.flag));
+
+  // --- auto-detected collision: same test, but nothing pre-configured -----
+  // The point of this round's fix: it has to work without the researcher
+  // having predicted "AI" as an exclude term in advance. Fresh entity, fresh
+  // run, excludeTerms/contextTerms left empty on purpose.
+  log('\n[auto-detected collision — zero configuration]');
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'Psypher');
+  await panel.fill('#website', 'psypher.in');
+  await panel.fill('#excludeTerms', '');
+  await panel.fill('#contextTerms', '');
+  await panel.waitForTimeout(150);
+
+  await panel.click('#selNone');
+  await panel.check('#chk_entity\\.startdate');
+  const autoRun = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const autoResult = await autoRun;
+  const startDateResults = autoResult.queries[0].results;
+
+  const genuinePsypher = startDateResults.find((r) => r.url.includes('www.psypher.in'));
+  const psypherAiTracxn = startDateResults.find((r) => r.url.includes('Companies/psypher-ai'));
+  const psypherAiTos = startDateResults.find((r) => r.url.includes('psypher.ai/terms'));
+  const psypherAiLegalEntity = startDateResults.find((r) => r.url.includes('Legal-Entities'));
+
+  check('the genuine psypher.in result stays critical and flagged, no config needed',
+    genuinePsypher?.tier === 'critical' && genuinePsypher?.flag != null,
+    JSON.stringify({ tier: genuinePsypher?.tier, flag: genuinePsypher?.flag }));
+
+  check('"Psypher AI" on tracxn.com is auto-detected and demoted, with zero excludeTerms set',
+    psypherAiTracxn?.tier === 'weak' && psypherAiTracxn?.extensionWord === 'AI' && psypherAiTracxn?.flag == null,
+    JSON.stringify({ tier: psypherAiTracxn?.tier, extensionWord: psypherAiTracxn?.extensionWord, flag: psypherAiTracxn?.flag }));
+
+  check('the ToS page hosted directly on psypher.ai is caught via confusable domain',
+    psypherAiTos?.confusableDomain === 'psypher.ai' && psypherAiTos?.tier !== 'critical',
+    JSON.stringify({ confusableDomain: psypherAiTos?.confusableDomain, tier: psypherAiTos?.tier }));
+
+  check('"PSYPHER AI PRIVATE LIMITED" (all-caps, different legal entity) is caught too',
+    psypherAiLegalEntity?.extensionWord === 'AI', psypherAiLegalEntity?.extensionWord);
+
+  await panel.waitForTimeout(400);
+  check('the panel shows a "verify" badge naming the detected extension',
+    (await panel.locator('.result-verify:has-text("also called")').count()) > 0,
+    await panel.locator('.result-verify').first().textContent().catch(() => 'none'));
 
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');

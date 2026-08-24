@@ -321,6 +321,97 @@ check('a genuine hit for the same company still counts when real financing conte
   genuineCapitalHit.signalHits.includes('raises') || genuineCapitalHit.signalHits.includes('raised'),
   genuineCapitalHit.signalHits.join(', '));
 
+console.log('\n[auto-detected collision: no excludeTerms configured, the real production case]');
+// The exact pair reported in production: "Psypher" (Indian streetwear, psypher.in)
+// vs. "Psypher AI" (an unrelated Kochi tech startup, psypher.ai) — both founded
+// in 2024, both India-based, nothing pre-configured to tell them apart.
+const psypherAutoCtx = {
+  company: 'Psypher', entityDomain: 'psypher.in', category: 'Entity Recognition',
+  entitySignals: ['Psypher', 'psypher.in'],
+  signals: ['founded in', 'was founded', 'Psypher', 'psypher.in']
+};
+const psypherAutoReal = scoreResult({
+  title: 'About Psypher – Indian Streetwear Brand Story', url: 'https://www.psypher.in/pages/about-psypher',
+  snippet: 'PSYPHER emerged from a desire to translate artistic ideas into wearable art. Founded in 2024, we\'re...'
+}, psypherAutoCtx);
+check('the genuine target scores normally with no config needed',
+  psypherAutoReal.tier === 'critical' && psypherAutoReal.flag !== null, JSON.stringify({ tier: psypherAutoReal.tier, flag: psypherAutoReal.flag }));
+check('the genuine target is never flagged as a possible different company', psypherAutoReal.possibleDifferentCompany === false);
+
+const psypherAiAutoTracxn = scoreResult({
+  title: 'Psypher AI - 2026 Company Profile, Team & Competitors', url: 'https://tracxn.com/Discover/Companies/psypher-ai',
+  snippet: 'Psypher AI was founded in 2024. Psypher AI is headquartered in Kochi, India.'
+}, psypherAutoCtx);
+check('"Psypher AI" is auto-detected as a possible different company with zero configuration',
+  psypherAiAutoTracxn.possibleDifferentCompany === true && psypherAiAutoTracxn.extensionWord === 'AI',
+  JSON.stringify({ possibleDifferentCompany: psypherAiAutoTracxn.possibleDifferentCompany, extensionWord: psypherAiAutoTracxn.extensionWord }));
+check('it is downgraded, not hidden — still weak, never critical/strong',
+  psypherAiAutoTracxn.tier === 'weak', psypherAiAutoTracxn.tier);
+check('it never carries the flag', psypherAiAutoTracxn.flag === null);
+check('the reason tells the researcher exactly what to add to the exclude-terms field',
+  psypherAiAutoTracxn.reasons.some((r) => r.includes('"AI"') && r.includes('Not this company if it also mentions')),
+  psypherAiAutoTracxn.reasons.join(' | '));
+
+const psypherAiAutoOwnSite = scoreResult({
+  title: 'Terms of Service', url: 'https://www.psypher.ai/terms',
+  snippet: 'All services, content, code, and branding are owned by Psypher AI and protected by international IP laws.'
+}, psypherAutoCtx);
+check('a page literally hosted on the confusable domain is caught even without a name-extension phrase',
+  psypherAiAutoOwnSite.confusableDomain === 'psypher.ai', psypherAiAutoOwnSite.confusableDomain);
+check('it is downgraded and never flagged', psypherAiAutoOwnSite.tier !== 'critical' && psypherAiAutoOwnSite.flag === null);
+
+const psypherAiAutoPrivateLimited = scoreResult({
+  title: 'PSYPHER AI PRIVATE LIMITED - Company Profile', url: 'https://tracxn.com/Discover/Legal-Entities/India/psypher-ai',
+  snippet: 'PSYPHER AI PRIVATE LIMITED is a Private Limited Company and was incorporated on Oct 14, 2024 in India.'
+}, psypherAutoCtx);
+check('detection works on all-caps text too (case-insensitive root, case-checked extension)',
+  psypherAiAutoPrivateLimited.extensionWord === 'AI', psypherAiAutoPrivateLimited.extensionWord);
+
+console.log('\n[auto-detected collision: generalizes to other companies]');
+const boltCtx = {
+  company: 'Bolt', entityDomain: 'bolt.eu', category: 'Prior Backing',
+  entitySignals: ['Bolt', 'bolt.eu'], signals: ['raises', 'raised', 'Bolt', 'bolt.eu']
+};
+const boltFintech = scoreResult({
+  title: 'Bolt raises $355M at a $14B valuation', url: 'https://www.bolt.com/blog/series-e',
+  snippet: 'Bolt, the checkout and fraud-prevention company, announced it raised $355M in a Series E round.'
+}, boltCtx);
+check('bolt.com (an unrelated fintech) is caught as a confusable domain against bolt.eu (mobility)',
+  boltFintech.confusableDomain === 'bolt.com', boltFintech.confusableDomain);
+check('never carries the flag', boltFintech.flag === null);
+
+const boltMobility = scoreResult({
+  title: 'Bolt raises €150M in new funding round', url: 'https://techcrunch.com/2024/bolt-funding',
+  snippet: 'Bolt, the Estonian ride-hailing and delivery company, has raised €150M in new funding.'
+}, boltCtx);
+check('the genuine company on a neutral press domain scores normally',
+  boltMobility.tier !== 'noise' && boltMobility.flag !== null, JSON.stringify({ tier: boltMobility.tier, flag: boltMobility.flag }));
+
+console.log('\n[auto-detected collision: false-positive guards]');
+const acmeCtx = {
+  company: 'Acme', entityDomain: 'acmelabs.com', category: 'Entity Recognition',
+  entitySignals: ['Acme', 'acmelabs.com', 'Acme Labs'], // the full name is listed as an alias
+  signals: ['founded in', 'was founded', 'Acme', 'acmelabs.com', 'Acme Labs']
+};
+const acmeOwnFullName = scoreResult({
+  title: 'Acme Labs was founded in 2019', url: 'https://www.acmelabs.com/about',
+  snippet: 'Acme Labs was founded in 2019 by a team of former engineers.'
+}, acmeCtx);
+check('a company\'s own full name, already listed as an alias, is not treated as a collision',
+  acmeOwnFullName.extensionWord === null && acmeOwnFullName.tier === 'critical',
+  JSON.stringify({ extensionWord: acmeOwnFullName.extensionWord, tier: acmeOwnFullName.tier }));
+
+const legalSuffixCtx = {
+  company: 'Reliance', entityDomain: 'ril.com', category: 'Entity Recognition',
+  entitySignals: ['Reliance', 'ril.com'], signals: ['founded in', 'Reliance', 'ril.com']
+};
+const legalSuffixHit = scoreResult({
+  title: 'Reliance Inc. announces new plant', url: 'https://www.ril.com/news/plant',
+  snippet: 'Reliance Inc. today announced a new manufacturing plant.'
+}, legalSuffixCtx);
+check('a legal-entity suffix ("Inc.") is not mistaken for a different company\'s name',
+  legalSuffixHit.extensionWord === null, legalSuffixHit.extensionWord);
+
 console.log('\n[exports]');
 const run = {
   entity: { company: 'L&L Exhibition Management', website: 'www.homeshowcenter.com' },

@@ -224,6 +224,8 @@ function resultRow(r) {
         <span class="result-score">${r.score}</span>
         ${r.flag ? `<span class="result-flag">${r.flag.icon} ${esc(r.flag.label)}</span>` : ''}
         ${r.isCollision ? '<span class="result-collision">&#9888; different company?</span>' : ''}
+        ${r.confusableDomain ? `<span class="result-verify">verify — also seen at ${esc(r.confusableDomain)}</span>` : ''}
+        ${!r.confusableDomain && r.extensionWord ? `<span class="result-verify">verify — also called "${esc((r.entityHits || [])[0] || '')} ${esc(r.extensionWord)}"</span>` : ''}
         ${r.contextMismatch ? '<span class="result-verify">verify — no context match</span>' : ''}
         <a class="result-title" href="${esc(r.url)}" target="_blank" rel="noreferrer">${highlight(r.title, terms)}</a>
       </div>

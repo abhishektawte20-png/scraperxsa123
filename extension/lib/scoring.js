@@ -203,6 +203,72 @@ const AMBIGUOUS_SENSE = {
   }
 };
 
+/**
+ * Two shapes account for most name collisions researchers actually run
+ * into, neither of which needs the researcher to have predicted it in
+ * advance:
+ *
+ *  - The other company's name is this one plus a word. "Psypher" (an
+ *    Indian streetwear brand) and "Psypher AI" (an unrelated Kochi tech
+ *    startup) are a real pair; "Bolt" (Estonian mobility, bolt.eu) and
+ *    "Bolt Threads" (US biotech) are another. The "X + AI/Labs/Interactive/
+ *    Studio" branding pattern is common enough in the last few years that
+ *    it's worth checking by default, not just when pre-configured.
+ *  - The other company lives at a different domain sharing the same brand
+ *    root. "psypher.in" (target) vs. "psypher.ai" (the other Psypher);
+ *    "bolt.eu" (mobility) vs. "bolt.com" (an unrelated US checkout/fintech
+ *    company that is also just called "Bolt") is the same pattern playing
+ *    out across an entire domain rather than one word.
+ *
+ * Both are auto-detected, unconfigured signals — deliberately a softer
+ * downgrade than the researcher's own excludeTerms, which get treated as
+ * settled fact. The reason text tells the researcher exactly what to add
+ * to excludeTerms to turn this from "verify" into "confirmed noise".
+ */
+const NAME_SUFFIX_EXEMPT = new Set([
+  'inc', 'llc', 'ltd', 'limited', 'corp', 'corporation', 'company', 'co',
+  'plc', 'gmbh', 'pvt', 'private', 'sa', 'bv', 'ag', 'nv', 'llp', 'group', 'holdings'
+]);
+
+/** "Psypher" + "AI" -> "AI", the extra word turning it into a different name. */
+export function detectNameExtension(haystack, term, knownWords) {
+  const t = String(term || '').trim();
+  if (!t || /\s/.test(t)) return null; // only single-word matches are collision-prone this way
+  // Case-insensitive on the root — real text is "PSYPHER AI" or "Psypher Ai"
+  // as often as "Psypher AI" — but the captured word must actually be
+  // capitalized as typed, so a lowercase continuation ("Psypher raises")
+  // doesn't get mistaken for a different company's name.
+  const re = new RegExp(`\\b${escapeRe(t)}\\s+([A-Za-z][A-Za-z]{1,24})\\b`, 'iu');
+  const m = String(haystack || '').match(re);
+  if (!m || !/^[A-Z]/.test(m[1])) return null;
+  const word = m[1];
+  const wl = word.toLowerCase();
+  if (NAME_SUFFIX_EXEMPT.has(wl) || knownWords.has(wl)) return null;
+  return word;
+}
+
+const domainRoot = (host) => String(host || '').split('.')[0];
+
+/** "psypher.in" vs. "psypher.ai" — same brand root, different domain entirely. */
+export function detectConfusableDomain(candidateHost, entityDomain) {
+  if (!entityDomain || !candidateHost) return null;
+  if (candidateHost === entityDomain || candidateHost.endsWith(`.${entityDomain}`)) return null;
+  const root = domainRoot(candidateHost);
+  return root && root === domainRoot(entityDomain) ? candidateHost : null;
+}
+
+const DOMAIN_MENTION_RE = /\b([a-z0-9-]+\.(?:com|net|org|io|ai|co|in|app|dev|xyz|tech|biz))\b/gi;
+
+/** A confusable domain named in the text itself, not just the page's own URL. */
+export function findConfusableDomainMention(haystack, entityDomain) {
+  if (!entityDomain) return null;
+  for (const m of String(haystack || '').matchAll(DOMAIN_MENTION_RE)) {
+    const found = detectConfusableDomain(m[1].toLowerCase(), entityDomain);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** Tokens of the company name that are distinctive enough to match on. */
 const STOPWORDS = new Set([
   'inc', 'llc', 'ltd', 'limited', 'corp', 'corporation', 'company', 'co', 'the',
@@ -270,16 +336,48 @@ export function scoreResult(result, ctx) {
   const isCollision = entityScore > 0 && collisionHits.length > 0;
   if (isCollision) reasons.push(`possible different company — also mentions "${collisionHits[0]}"`);
 
+  // 1b-ii. Auto-detected collision — no excludeTerms required. Either the
+  // page itself (or something it mentions) lives at a different domain
+  // sharing this one's brand root ("psypher.ai" vs. the target's
+  // "psypher.in"), or the matched name is immediately followed by another
+  // word turning it into a different company's name ("Psypher" + "AI").
+  // Softer than an explicit exclude-term match: this is a good guess, not
+  // researcher-confirmed fact.
+  let confusableDomain = null;
+  let extensionWord = null;
+  if (!isCollision && domainClass !== 'official' && entityScore > 0) {
+    confusableDomain = detectConfusableDomain(hostOf(result.url), ctx.entityDomain)
+      || findConfusableDomainMention(haystack, ctx.entityDomain);
+    if (!confusableDomain) {
+      const knownNameWords = new Set(
+        [ctx.company, ...(ctx.entitySignals || [])]
+          .flatMap((s) => String(s || '').toLowerCase().split(/[^\p{L}\p{N}]+/u))
+          .filter(Boolean)
+      );
+      for (const term of entityHits) {
+        extensionWord = detectNameExtension(haystack, term, knownNameWords);
+        if (extensionWord) break;
+      }
+    }
+  }
+  const possibleDifferentCompany = !isCollision && (confusableDomain !== null || extensionWord !== null);
+  if (confusableDomain) {
+    reasons.push(`note: also associated with ${confusableDomain} — a different domain than the target's own ${ctx.entityDomain}; add it under "Not this company if it also mentions" to confirm`);
+  } else if (extensionWord) {
+    reasons.push(`note: text also says "${entityHits[0] || ctx.company} ${extensionWord}" — possibly a different company; add "${extensionWord}" under "Not this company if it also mentions" to confirm`);
+  }
+
   // 1c. Context guard. If the researcher gave distinguishing context terms
   // (industry, sector — whatever the name alone doesn't convey) and the name
   // matched but none of that context showed up, it's worth a second look
   // rather than a confident "critical".
   const hasContextConfig = (ctx.contextTerms || []).length > 0;
   const contextHits = hasContextConfig ? findTerms(haystack, ctx.contextTerms) : [];
-  const contextMismatch = !isCollision && hasContextConfig && entityScore > 0 && contextHits.length === 0;
+  const contextMismatch = !isCollision && !possibleDifferentCompany && hasContextConfig && entityScore > 0 && contextHits.length === 0;
   if (contextMismatch) reasons.push('name matched but none of the expected context found — verify');
 
   if (isCollision) entityScore = Math.min(entityScore, 6);
+  else if (possibleDifferentCompany) entityScore = Math.round(entityScore * 0.5);
   else if (contextMismatch) entityScore = Math.round(entityScore * 0.5);
 
   // 2. Does it carry the signal the boolean was looking for? A match sitting
@@ -329,11 +427,15 @@ export function scoreResult(result, ctx) {
   let score = Math.round(entityScore + signalScore + domainScore + recencyScore);
   let tier = score >= 70 ? 'critical' : score >= 45 ? 'strong' : score >= 25 ? 'weak' : 'noise';
 
-  // A collision hit is noise by definition, whatever the raw arithmetic says;
-  // a context mismatch is downgraded, not dismissed, since the researcher
-  // might just not have listed every context term.
+  // A confirmed collision is noise by definition, whatever the raw arithmetic
+  // says. An auto-detected one is downgraded rather than dismissed — it's a
+  // good guess, not a researcher-confirmed fact, so it stays visible; a
+  // context mismatch gets the same softer treatment for the same reason.
   if (isCollision) { tier = 'noise'; score = Math.min(score, 15); }
-  else if (contextMismatch && (tier === 'critical' || tier === 'strong')) { tier = 'weak'; score = Math.min(score, 44); }
+  else if ((possibleDifferentCompany || contextMismatch) && (tier === 'critical' || tier === 'strong')) {
+    tier = 'weak';
+    score = Math.min(score, 44);
+  }
 
   // The finding, named: the company is confirmed present AND the boolean's
   // own target phrase showed up, from a source that isn't a bought-data
@@ -343,7 +445,7 @@ export function scoreResult(result, ctx) {
   const hasSignal = signalHits.length > 0;
   const credibleSource = domainClass !== 'aggregator';
   let flag = null;
-  if (namesCompany && hasSignal && credibleSource && !isCollision) {
+  if (namesCompany && hasSignal && credibleSource && !isCollision && !possibleDifferentCompany) {
     const spec = (ctx.category && CATEGORY_FLAG[ctx.category]) || DEFAULT_FLAG;
     flag = { ...spec, category: ctx.category || null };
   }
@@ -359,6 +461,9 @@ export function scoreResult(result, ctx) {
     ambiguousHits,
     isCollision,
     contextMismatch,
+    possibleDifferentCompany,
+    confusableDomain,
+    extensionWord,
     reasons,
     flag,
     // Everything worth painting yellow on the page.
