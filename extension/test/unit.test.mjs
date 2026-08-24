@@ -49,6 +49,40 @@ check('multi-word signal matched', amp.signalHits.includes('chapter 11'));
 const empty = scoreResult({ title: '', url: '', snippet: '' }, { company: 'X', entityDomain: '', entitySignals: [], signals: [] });
 check('empty result does not throw and scores as noise', empty.tier === 'noise', String(empty.score));
 
+console.log('\n[flagging: company + signal co-occurrence]');
+const backingCtx = {
+  company: 'Acme Robotics', entityDomain: 'acme.com', category: 'Prior Backing',
+  entitySignals: ['Acme Robotics', 'acme.com'], signals: ['raised', 'venture funding']
+};
+const backingHit = scoreResult(
+  { title: 'Acme Robotics raised $10M in venture funding', url: 'https://www.businesswire.com/news/x',
+    snippet: 'Acme Robotics raised a Series A round.' }, backingCtx);
+check('company + signal from a press source is flagged', backingHit.flag !== null, JSON.stringify(backingHit.flag));
+check('flag label is category-specific', backingHit.flag?.label === 'Investor backing detected', backingHit.flag?.label);
+
+const nameOnly = scoreResult(
+  { title: 'Acme Robotics office relocation announced', url: 'https://www.businesswire.com/news/y',
+    snippet: 'Acme Robotics moved offices.' }, backingCtx);
+check('company mention without the target signal is not flagged', nameOnly.flag === null, JSON.stringify(nameOnly.flag));
+
+const noiseHit = scoreResult(
+  { title: 'Industry roundup', url: 'https://example.org/news', snippet: 'General commentary, no company named.' },
+  backingCtx);
+check('unrelated noise result is not flagged', noiseHit.flag === null);
+
+const aggregatorHit = scoreResult(
+  { title: 'Acme Robotics - PitchBook Profile', url: 'https://pitchbook.com/profiles/acme',
+    snippet: 'Acme Robotics raised funding.' }, backingCtx);
+check('aggregator source does not get flagged even with a full match',
+  aggregatorHit.flag === null, JSON.stringify(aggregatorHit.flag));
+
+const oobCtx = { ...backingCtx, category: 'Out of Business', signals: ['chapter 11', 'bankrupt'] };
+const oobHit = scoreResult(
+  { title: 'Acme Robotics files for chapter 11', url: 'https://www.reuters.com/business/acme',
+    snippet: 'Acme Robotics filed for bankruptcy protection.' }, oobCtx);
+check('flag label follows the boolean category, not just Prior Backing',
+  oobHit.flag?.label === 'Out-of-business signal', oobHit.flag?.label);
+
 console.log('\n[exports]');
 const run = {
   entity: { company: 'L&L Exhibition Management', website: 'www.homeshowcenter.com' },
@@ -75,7 +109,7 @@ const rows = csv.split('\n');
 check('csv has header + one row per result + one for the empty query', rows.length === 3, String(rows.length));
 check('csv quotes embedded quotes', rows[1].includes('""raised""'), rows[1].slice(0, 140));
 check('csv flattens newlines', !rows[1].includes('\n') && rows[1].includes('$4M across rounds'));
-check('csv header order stable', rows[0] === 'company,category,boolean,result_count,rank,score,tier,title,url,date,signals,snippet');
+check('csv header order stable', rows[0] === 'company,category,boolean,result_count,rank,score,tier,flag,title,url,date,signals,snippet');
 
 check('slug is filename safe', slug('L&L Exhibition Management!') === 'l-l-exhibition-management', slug('L&L Exhibition Management!'));
 check('category grouping follows the sheet order',

@@ -54,6 +54,28 @@ const DOMAIN_WEIGHT = {
   aggregator: 2
 };
 
+/**
+ * What it means for a result to actually confirm the thing a boolean went
+ * looking for: the company's own name AND one of the boolean's target
+ * phrases showing up together, from a source credible enough to cite. A
+ * "General Financing" hit that only matches the company name is just a
+ * mention; one that also matches "raised" from a press source is the
+ * researcher's answer — flag it as such rather than leaving it as an
+ * unlabeled number.
+ */
+const CATEGORY_FLAG = {
+  'Prior Backing': { label: 'Investor backing detected', icon: '\u{1F4B0}' },
+  'Entity Recognition': { label: 'Entity confirmed', icon: '\u{1F4CB}' },
+  'SMI': { label: 'Social profile confirmed', icon: '\u{1F517}' },
+  'Site Search': { label: 'HQ / site confirmed', icon: '\u{1F3E2}' },
+  'Management': { label: 'Management named', icon: '\u{1F464}' },
+  'Service Providers': { label: 'Service provider named', icon: '\u{1F91D}' },
+  'Out of Business': { label: 'Out-of-business signal', icon: '\u{26A0}\u{FE0F}' },
+  'Spin Out (USO)': { label: 'Spin-out signal', icon: '\u{1F500}' },
+  'Boolean Backup': { label: 'Figure mentioned', icon: '\u{1F4CA}' }
+};
+const DEFAULT_FLAG = { label: 'Company + signal match', icon: '\u{2705}' };
+
 /** Escape a term for use inside a RegExp. */
 export function escapeRe(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -153,6 +175,19 @@ export function scoreResult(result, ctx) {
   const score = Math.round(entityScore + signalScore + domainScore + recencyScore);
   const tier = score >= 70 ? 'critical' : score >= 45 ? 'strong' : score >= 25 ? 'weak' : 'noise';
 
+  // The finding, named: the company is confirmed present AND the boolean's
+  // own target phrase showed up, from a source that isn't a bought-data
+  // aggregator. This is the line between "Google returned something" and
+  // "we found what we were looking for."
+  const namesCompany = entityHits.length > 0 || (tokens.length > 0 && tokenHits.length === tokens.length);
+  const hasSignal = signalHits.length > 0;
+  const credibleSource = domainClass !== 'aggregator';
+  let flag = null;
+  if (namesCompany && hasSignal && credibleSource) {
+    const spec = (ctx.category && CATEGORY_FLAG[ctx.category]) || DEFAULT_FLAG;
+    flag = { ...spec, category: ctx.category || null };
+  }
+
   return {
     score,
     tier,
@@ -161,6 +196,7 @@ export function scoreResult(result, ctx) {
     entityHits: entityHits.length ? entityHits : tokenHits,
     signalHits,
     reasons,
+    flag,
     // Everything worth painting yellow on the page.
     highlightTerms: [...new Set([...(entityHits.length ? entityHits : tokenHits), ...signalHits])]
   };

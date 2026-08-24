@@ -42,7 +42,8 @@ export function toMarkdown(run) {
       const keep = (q.results || []).filter((r) => r.tier === 'critical' || r.tier === 'strong');
       if (!keep.length) lines.push('_No strong hits._', '');
       keep.forEach((r) => {
-        lines.push(`- **[${r.score}] [${r.title}](${r.url})**${r.date ? ` · ${r.date}` : ''}`);
+        const flag = r.flag ? ` **${r.flag.icon} ${r.flag.label}**` : '';
+        lines.push(`- **[${r.score}] [${r.title}](${r.url})**${r.date ? ` · ${r.date}` : ''}${flag}`);
         if (r.snippet) lines.push(`  > ${r.snippet.replace(/\n+/g, ' ').slice(0, 300)}`);
         if (r.signalHits?.length) lines.push(`  _signals: ${r.signalHits.join(', ')}_`);
       });
@@ -54,19 +55,20 @@ export function toMarkdown(run) {
 
 export function toCsv(run) {
   const head = ['company', 'category', 'boolean', 'result_count', 'rank', 'score', 'tier',
-    'title', 'url', 'date', 'signals', 'snippet'];
+    'flag', 'title', 'url', 'date', 'signals', 'snippet'];
   const cell = (v) => `"${String(v ?? '').replaceAll('"', '""').replace(/\r?\n/g, ' ')}"`;
   const rows = [head.join(',')];
 
   for (const q of run.queries) {
     if (!(q.results || []).length) {
       rows.push([run.entity.company, q.category, q.name, q.resultCount ?? '', '', '', q.status,
-        '', '', '', '', ''].map(cell).join(','));
+        '', '', '', '', '', ''].map(cell).join(','));
       continue;
     }
     for (const r of q.results) {
       rows.push([run.entity.company, q.category, q.name, q.resultCount ?? '', r.rank, r.score, r.tier,
-        r.title, r.url, r.date ?? '', (r.signalHits || []).join('; '), r.snippet].map(cell).join(','));
+        r.flag ? r.flag.label : '', r.title, r.url, r.date ?? '', (r.signalHits || []).join('; '), r.snippet]
+        .map(cell).join(','));
     }
   }
   return rows.join('\n');

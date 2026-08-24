@@ -7,15 +7,20 @@
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
   <header class="head">
     <div class="brand">
       <span class="logo">SX</span>
       <div>
         <h1>ScraperX</h1>
-        <p class="sub">Boolean run automation</p>
+        <p class="sub">Boolean research automation</p>
       </div>
     </div>
-    <button class="icon-btn" id="openOptions" title="Settings">&#9881;</button>
+    <div class="head-actions">
+      <button class="icon-btn" id="expandView" title="Open full-screen view">&#x26F6;</button>
+      <button class="icon-btn" id="openOptions" title="Settings">&#9881;</button>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist">
@@ -31,53 +36,61 @@
     <button class="btn btn-sm" id="resumeAfterBlock">Resume run</button>
   </div>
 
+  <main class="content">
   <!-- ── Run ──────────────────────────────────────────────────────────────── -->
   <section class="panel is-active" data-panel="run">
-    <div class="card">
-      <h2>Company</h2>
+    <div class="card card-accent">
+      <h2>Company identity</h2>
+      <p class="hint hint-top">
+        Every boolean below is scoped to this exact entity. Get the name and website
+        right and each query is unique to this company — get either wrong and every
+        result underneath inherits the mistake.
+      </p>
       <label class="field">
-        <span>Company name</span>
-        <input id="company" type="text" placeholder="L&amp;L Exhibition Management" autocomplete="off">
+        <span>Company name <em>(formal / legal name)</em></span>
+        <input id="company" type="text" placeholder="e.g. Reliance Industries Limited" autocomplete="off">
       </label>
       <label class="field">
-        <span>Website</span>
-        <input id="website" type="text" placeholder="www.homeshowcenter.com" autocomplete="off">
+        <span>Website <em>(the company's own domain)</em></span>
+        <input id="website" type="text" placeholder="e.g. www.ril.com" autocomplete="off">
       </label>
       <label class="field">
-        <span>Aliases <em>(one per line — DBAs, former names)</em></span>
-        <textarea id="aliases" rows="2" placeholder="Home Show Center&#10;L&amp;L Expo"></textarea>
+        <span>Name variations <em>(one per line — DBAs, former names, short forms)</em></span>
+        <textarea id="aliases" rows="2" placeholder="Reliance&#10;RIL"></textarea>
       </label>
       <div class="preview">
-        <span class="preview-label">Entity group</span>
+        <span class="preview-label">Entity group Google will receive</span>
         <code id="entityPreview">—</code>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <h2>Booleans to run</h2>
-        <span class="muted" id="selectedCount">0 selected</span>
+    <div class="run-col">
+      <div class="card">
+        <div class="card-head">
+          <h2>Booleans to run</h2>
+          <span class="muted" id="selectedCount">0 selected</span>
+        </div>
+        <div class="row row-wrap">
+          <button class="btn btn-ghost btn-sm" id="selAll">All</button>
+          <button class="btn btn-ghost btn-sm" id="selNone">None</button>
+          <button class="btn btn-ghost btn-sm" id="selDefault">Defaults</button>
+          <button class="btn btn-ghost btn-sm" id="selRovoDown">+ ROVO-down backups</button>
+        </div>
+        <div id="selector" class="selector"></div>
       </div>
-      <div class="row row-wrap">
-        <button class="btn btn-ghost btn-sm" id="selAll">All</button>
-        <button class="btn btn-ghost btn-sm" id="selNone">None</button>
-        <button class="btn btn-ghost btn-sm" id="selDefault">Defaults</button>
-        <button class="btn btn-ghost btn-sm" id="selRovoDown">+ ROVO-down backups</button>
-      </div>
-      <div id="selector" class="selector"></div>
-    </div>
 
-    <div class="card">
-      <div class="row">
-        <button class="btn btn-primary" id="startBtn">Run all booleans</button>
-        <button class="btn" id="pauseBtn" hidden>Pause</button>
-        <button class="btn btn-danger" id="stopBtn" hidden>Stop</button>
+      <div class="card">
+        <div class="row">
+          <button class="btn btn-primary" id="startBtn">Run all booleans</button>
+          <button class="btn" id="pauseBtn" hidden>Pause</button>
+          <button class="btn btn-danger" id="stopBtn" hidden>Stop</button>
+        </div>
+        <div id="progressWrap" hidden>
+          <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+          <p class="progress-text" id="progressText"></p>
+        </div>
+        <p class="hint" id="etaHint"></p>
       </div>
-      <div id="progressWrap" hidden>
-        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-        <p class="progress-text" id="progressText"></p>
-      </div>
-      <p class="hint" id="etaHint"></p>
     </div>
   </section>
 
@@ -108,11 +121,12 @@
     </div>
 
     <div class="filters" id="resultFilters" hidden>
+      <label><input type="checkbox" id="onlyFlagged"> <span class="flag-dot"></span> Only flagged findings</label>
       <label><input type="checkbox" id="onlyStrong"> Only critical &amp; strong</label>
       <label><input type="checkbox" id="hideEmpty" checked> Hide empty queries</label>
     </div>
 
-    <div id="resultsList"></div>
+    <div id="resultsList" class="results-grid"></div>
     <p class="empty" id="resultsEmpty">No run yet. Fill in a company on the Run tab and start.</p>
   </section>
 
@@ -128,7 +142,7 @@
         <button class="btn btn-ghost btn-sm" id="libGrab">Grab from open tab</button>
       </div>
     </div>
-    <div id="libraryList"></div>
+    <div id="libraryList" class="library-grid"></div>
   </section>
 
   <!-- ── History ──────────────────────────────────────────────────────────── -->
@@ -139,8 +153,9 @@
         <button class="btn btn-ghost btn-sm" id="clearHistory">Clear</button>
       </div>
     </div>
-    <div id="historyList"></div>
+    <div id="historyList" class="library-grid"></div>
   </section>
+  </main>
 
   <dialog id="editDialog" class="dialog">
     <form method="dialog">

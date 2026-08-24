@@ -185,12 +185,14 @@
       if (!container || container.querySelector('.sx-badge')) continue;
 
       container.classList.add('sx-result', `sx-tier-${item.tier}`);
+      if (item.flag) container.classList.add('sx-flagged');
 
       const badge = document.createElement('div');
       badge.className = `sx-badge sx-badge-${item.tier}`;
       badge.innerHTML =
         `<span class="sx-score">${item.score}</span>` +
         `<span class="sx-tier">${item.tier}</span>` +
+        (item.flag ? `<span class="sx-flag">${item.flag.icon} ${item.flag.label}</span>` : '') +
         `<span class="sx-why">${(item.reasons || []).slice(0, 3).join(' · ')}</span>`;
       container.prepend(badge);
     }

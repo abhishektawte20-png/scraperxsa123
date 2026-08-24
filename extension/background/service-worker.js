@@ -88,7 +88,8 @@ function processSerp(job, payload, settings, entity) {
     company: entity.company,
     entityDomain: bareDomain(entity.website),
     entitySignals: job.entitySignals || [],
-    signals: job.signals || []
+    signals: job.signals || [],
+    category: job.category
   };
 
   const scored = (payload.results || [])
@@ -386,7 +387,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       managed: true,
       highlight: state.settings.highlightSerp,
       terms,
-      scored: scored.map((r) => ({ rank: r.rank, score: r.score, tier: r.tier, reasons: r.reasons })),
+      scored: scored.map((r) => ({ rank: r.rank, score: r.score, tier: r.tier, reasons: r.reasons, flag: r.flag })),
       job: { category: job.category, name: job.name },
       summary
     });

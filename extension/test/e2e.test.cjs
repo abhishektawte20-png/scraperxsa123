@@ -100,6 +100,8 @@ function check(name, cond, extra = '') {
   } catch { switched = false; }
   check('switched to the results tab on start', switched);
   check('progress bar rendered', (await panel.locator('#progressWrap').count()) === 1);
+  check('the Run tab actually hides once another tab is active — not just deactivated in class',
+    await panel.evaluate(() => getComputedStyle(document.querySelector('.panel[data-panel="run"]')).display) === 'none');
 
   const done = await donePromise;
 
@@ -132,6 +134,11 @@ function check(name, cond, extra = '') {
     first.results.find((r) => r.url.includes('example.org'))?.tier);
   check('signal terms recorded', (top.signalHits || []).length > 0, (top.signalHits || []).join(', '));
   check('snippet date parsed', top.date === '2024-03-12', String(top.date));
+  check('company + funding signal from a press source is flagged',
+    top.flag && top.flag.label === 'Investor backing detected', JSON.stringify(top.flag));
+  check('aggregator hit on the same boolean is not flagged',
+    first.results.find((r) => r.url.includes('pitchbook'))?.flag == null,
+    JSON.stringify(first.results.find((r) => r.url.includes('pitchbook'))?.flag));
 
   const hq = ok.find((q) => q.id === 'site.hq');
   check('HQ boolean finds the headquarters sentence',
@@ -171,6 +178,58 @@ function check(name, cond, extra = '') {
     return true;
   });
   check('report copy button wired', md === true);
+
+  // --- flag UI + filter ----------------------------------------------------
+  log('\n[flag ui]');
+  check('flagged result rendered with the co-occurrence badge',
+    (await panel.locator('.result.is-flagged .result-flag').count()) > 0,
+    `${await panel.locator('.result.is-flagged .result-flag').count()} badges`);
+  check('flag badge names the finding', (await panel.locator('.result-flag').first().textContent() || '').includes('Investor backing'),
+    await panel.locator('.result-flag').first().textContent());
+  check('query group carries the flagged-count chip', (await panel.locator('.chip-flag').count()) > 0);
+
+  const beforeFilter = await panel.locator('.result').count();
+  await panel.check('#onlyFlagged');
+  await panel.waitForTimeout(150);
+  const afterFilter = await panel.locator('.result').count();
+  const unflaggedVisible = await panel.locator('.result:not(.is-flagged)').count();
+  check('only-flagged filter narrows the result list', afterFilter > 0 && afterFilter <= beforeFilter,
+    `${beforeFilter} -> ${afterFilter}`);
+  check('only-flagged filter hides everything unflagged', unflaggedVisible === 0, `${unflaggedVisible} unflagged still visible`);
+  await panel.uncheck('#onlyFlagged');
+
+  // --- full-screen / expand view -------------------------------------------
+  log('\n[expand to full screen]');
+  const [fullTab] = await Promise.all([
+    context.waitForEvent('page', { timeout: 8000 }),
+    panel.click('#expandView')
+  ]);
+  await fullTab.waitForLoadState('domcontentloaded');
+  check('expand button opens the panel as its own tab',
+    fullTab.url().endsWith('sidepanel/panel.html'), fullTab.url());
+
+  await fullTab.setViewportSize({ width: 1200, height: 900 });
+  await fullTab.waitForSelector('#selector .sel-item');
+  const layout = await fullTab.evaluate(() => {
+    const section = document.querySelector('section[data-panel="run"]');
+    const company = section.querySelector('.card');
+    const runCol = section.querySelector('.run-col');
+    return {
+      direction: getComputedStyle(section).flexDirection,
+      sideBySide: runCol.getBoundingClientRect().left > company.getBoundingClientRect().right - 5
+    };
+  });
+  check('wide viewport switches the Run tab into a side-by-side layout',
+    layout.direction === 'row' && layout.sideBySide, JSON.stringify(layout));
+
+  // The dashboard layout only applies `.is-active`-gated rules to the Run
+  // panel; confirm switching away in the wide tab still actually hides it
+  // (this is exactly where the display:none-vs-flex specificity bug showed up).
+  await fullTab.click('[data-tab="library"]');
+  const runHiddenWide = await fullTab.evaluate(() =>
+    getComputedStyle(document.querySelector('.panel[data-panel="run"]')).display === 'none');
+  check('Run tab hides in the wide/full-screen layout too', runHiddenWide);
+  await fullTab.close();
 
   // --- SERP overlay -------------------------------------------------------
   log('\n[serp overlay]');

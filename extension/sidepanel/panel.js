@@ -204,12 +204,17 @@ function tierChip(entry) {
          '<span class="chip">weak only</span>';
 }
 
+function flaggedCount(entry) {
+  return (entry.results || []).filter((r) => r.flag).length;
+}
+
 function resultRow(r) {
   const terms = r.highlightTerms || [];
   return `
-    <div class="result tier-${esc(r.tier)}">
+    <div class="result tier-${esc(r.tier)}${r.flag ? ' is-flagged' : ''}">
       <div class="result-top">
         <span class="result-score">${r.score}</span>
+        ${r.flag ? `<span class="result-flag">${r.flag.icon} ${esc(r.flag.label)}</span>` : ''}
         <a class="result-title" href="${esc(r.url)}" target="_blank" rel="noreferrer">${highlight(r.title, terms)}</a>
       </div>
       <div class="result-url">${esc(r.displayUrl || r.url)}</div>
@@ -221,9 +226,10 @@ function resultRow(r) {
 function queryGroup(entry) {
   const hasResults = (entry.results || []).length > 0;
   const countLabel = entry.resultCount != null ? `${entry.resultCount.toLocaleString()} results` : '';
+  const flagged = flaggedCount(entry);
 
   return `
-    <div class="qgroup${hasResults && (entry.summary?.critical || entry.summary?.strong) ? ' is-open' : ''}" data-id="${esc(entry.id)}">
+    <div class="qgroup${flagged ? ' has-flag' : ''}${hasResults && (entry.summary?.critical || entry.summary?.strong) ? ' is-open' : ''}" data-id="${esc(entry.id)}">
       <button class="qgroup-head" type="button">
         <div>
           <div class="qgroup-cat">${esc(entry.category)}</div>
@@ -231,6 +237,7 @@ function queryGroup(entry) {
         </div>
         <div class="qgroup-meta">
           ${countLabel ? `<span class="chip">${esc(countLabel)}</span>` : ''}
+          ${flagged ? `<span class="chip chip-flag">${flagged} flagged</span>` : ''}
           ${tierChip(entry)}
         </div>
       </button>
@@ -251,12 +258,15 @@ function renderResults() {
   if (!run || !run.queries.length) return;
 
   const onlyStrong = $('#onlyStrong').checked;
+  const onlyFlagged = $('#onlyFlagged').checked;
   const hideEmpty = $('#hideEmpty').checked;
 
   const entries = run.queries
     .map((e) => {
-      if (!onlyStrong) return e;
-      return { ...e, results: (e.results || []).filter((r) => r.tier === 'critical' || r.tier === 'strong') };
+      let results = e.results || [];
+      if (onlyStrong) results = results.filter((r) => r.tier === 'critical' || r.tier === 'strong');
+      if (onlyFlagged) results = results.filter((r) => r.flag);
+      return results === e.results ? e : { ...e, results };
     })
     .filter((e) => !hideEmpty || (e.results || []).length || e.status === 'manual' || e.status === 'error');
 
@@ -517,6 +527,10 @@ chrome.runtime.onMessage.addListener((msg) => {
 function wire() {
   $$('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
+  // The docked side panel is narrow by design; this reopens the same page as
+  // a normal tab, where the CSS grid widens into a full dashboard layout.
+  $('#expandView').addEventListener('click', () => send('SX_OPEN', { url: chrome.runtime.getURL('sidepanel/panel.html') }));
+
   ['#company', '#website', '#aliases'].forEach((sel) =>
     $(sel).addEventListener('input', refreshEntityPreview));
 
@@ -537,6 +551,7 @@ function wire() {
   });
 
   $('#onlyStrong').addEventListener('change', renderResults);
+  $('#onlyFlagged').addEventListener('change', renderResults);
   $('#hideEmpty').addEventListener('change', renderResults);
 
   $('#copyMd').addEventListener('click', (e) => app.run && copy(toMarkdown(app.run), e.target));
