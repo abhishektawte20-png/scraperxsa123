@@ -43,6 +43,21 @@ export function renderQuery(template, entity) {
 }
 
 /**
+ * The same {{company}}/{{website}}/{{domain}} placeholders, but URL-encoded
+ * and for a plain link rather than a boolean — an external.engine template's
+ * `url` (a manual "go check this yourself" deep link, e.g. a registry site
+ * search) that wants the company name baked into the URL. A template with no
+ * placeholders (the Rovo agent links) passes through unchanged.
+ */
+export function renderExternalUrl(urlTemplate, entity) {
+  const domain = bareDomain(entity?.website);
+  return String(urlTemplate || '')
+    .replaceAll('{{company}}', encodeURIComponent(entity?.company || ''))
+    .replaceAll('{{website}}', encodeURIComponent(entity?.website || ''))
+    .replaceAll('{{domain}}', encodeURIComponent(domain));
+}
+
+/**
  * The `-"Psypher AI"` tail that keeps a known-different company out of the
  * results in the first place.
  *
@@ -146,7 +161,7 @@ export function buildJobs(library, entity, opts = {}) {
       if (t.engine === 'external') {
         return {
           id: t.id, category: t.category, name: t.name, engine: 'external',
-          url: t.url, notes: t.notes || '', query: '', signals: []
+          url: renderExternalUrl(t.url, entity), notes: t.notes || '', query: '', signals: []
         };
       }
       const base = renderQuery(t, entity);

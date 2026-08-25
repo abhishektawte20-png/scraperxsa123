@@ -550,7 +550,8 @@ export function scoreResult(result, ctx) {
   // someone's account of it. Only applies where it was actually asked about.
   if (ctx.registryOutOfBusiness && ctx.category === 'Out of Business' && signalHits.length) {
     signalScore += 10;
-    reasons.push('corroborated by a company registry (GLEIF / SEC EDGAR)');
+    const sources = (ctx.registryOutOfBusinessSources || []).join(' / ') || 'GLEIF / SEC EDGAR';
+    reasons.push(`corroborated by a company registry (${sources})`);
   }
   if (onLegalPage && signalMatches.length) reasons.push('on a terms/privacy page — generic wording, not counted');
   else if (negatedHits.length) reasons.push(`note: "${negatedHits[0]}" appears negated — not counted`);

@@ -23,11 +23,19 @@ export const DEFAULT_SETTINGS = {
   // name that matches two different companies before it contaminates all of
   // them. Silent unless a rival actually turns up.
   preflightProbe: true,
-  // Two free, official registries checked once per run: GLEIF (Legal Entity
-  // Identifier index) and SEC EDGAR full-text search. Coverage is narrow —
-  // most private, non-US companies won't be in either — so this only ever
+  // Free, official registries checked once per run: GLEIF (Legal Entity
+  // Identifier index), SEC EDGAR full-text search, and OpenCorporates — all
+  // keyless or usable without one. Coverage is narrow per source — most
+  // private, non-US companies won't be in any of them — so this only ever
   // adds corroboration, never a penalty for coming back empty.
   registryCheck: true,
+  // Optional, researcher-supplied. OpenCorporates works without a token
+  // (capped at 500 requests/month on the researcher's own connection); a
+  // free token from opencorporates.com raises that. Companies House requires
+  // its own free key (developer.company-information.service.gov.uk) and is
+  // skipped entirely without one — there's no useful anonymous allowance.
+  openCorporatesToken: '',
+  companiesHouseKey: '',
 
   highlightSerp: true,       // paint terms on the SERP itself
   closeTabWhenDone: true,

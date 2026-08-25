@@ -95,7 +95,8 @@ function processSerp(job, payload, settings, entity, registry) {
     templateId: job.id,
     excludeTerms: entity.excludeTerms || [],
     contextTerms: entity.contextTerms || [],
-    registryOutOfBusiness: !!registry?.outOfBusiness
+    registryOutOfBusiness: !!registry?.outOfBusiness,
+    registryOutOfBusinessSources: registry?.outOfBusinessSources || []
   };
 
   const scored = (payload.results || [])
@@ -343,7 +344,10 @@ async function runProbe() {
  */
 async function runRegistryCheck() {
   try {
-    const registry = await checkRegistries(state.entity);
+    const registry = await checkRegistries(state.entity, {
+      openCorporatesToken: state.settings.openCorporatesToken,
+      companiesHouseKey: state.settings.companiesHouseKey
+    });
     if (!state) return;
     state.run.registry = registry;
     await persist();

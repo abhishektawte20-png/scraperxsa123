@@ -345,12 +345,25 @@ function renderAggregate() {
     </div>`).join('');
 }
 
+/** OpenCorporates and Companies House records share the same shape. */
+function regCompanyRow(r) {
+  return `
+    <div class="reg-item${r.outOfBusiness ? ' is-alert' : ''}">
+      <div class="reg-name">
+        ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(r.name)}</a>` : esc(r.name)}
+        ${r.outOfBusiness ? ' <span class="reg-alert-tag">registry shows inactive</span>' : ''}
+      </div>
+      <div class="reg-meta">${esc([r.companyNumber && `no. ${r.companyNumber}`, r.jurisdiction].filter(Boolean).join(' · ') || '')}</div>
+      <div class="reg-meta">status: ${esc(r.status || 'n/a')}</div>
+    </div>`;
+}
+
 function renderRegistry() {
   const registry = app.run?.registry;
   $('#registryCard').hidden = !registry;
   if (!registry) return;
 
-  const { gleif, edgar } = registry;
+  const { gleif, edgar, openCorporates, companiesHouse } = registry;
 
   const gleifBody = !gleif?.ok
     ? `<p class="hint">GLEIF lookup unavailable${gleif?.error ? ` (${esc(gleif.error)})` : ''}.</p>`
@@ -376,9 +389,25 @@ function renderRegistry() {
           <div class="reg-meta">${esc(h.fileDate || 'date n/a')} · ${esc(h.companyNames.join(', '))}</div>
         </div>`).join('');
 
+  const openCorporatesBody = !openCorporates?.ok
+    ? `<p class="hint">OpenCorporates lookup unavailable${openCorporates?.error ? ` (${esc(openCorporates.error)})` : ''}.</p>`
+    : !openCorporates.records.length
+      ? '<p class="hint">No matching company found across 140+ jurisdictions. Not a signal either way.</p>'
+      : openCorporates.records.slice(0, 3).map(regCompanyRow).join('');
+
+  const companiesHouseBody = companiesHouse?.skipped
+    ? '<p class="hint">Skipped — no API key configured (Settings → free key from developer.company-information.service.gov.uk).</p>'
+    : !companiesHouse?.ok
+      ? `<p class="hint">Companies House lookup unavailable${companiesHouse?.error ? ` (${esc(companiesHouse.error)})` : ''}.</p>`
+      : !companiesHouse.records.length
+        ? '<p class="hint">No matching UK company found. Expected for any non-UK company — not a signal either way.</p>'
+        : companiesHouse.records.slice(0, 3).map(regCompanyRow).join('');
+
   $('#registryBody').innerHTML = `
     <div class="reg-section"><h3 class="reg-heading">GLEIF (LEI index)</h3>${gleifBody}</div>
-    <div class="reg-section"><h3 class="reg-heading">SEC EDGAR full-text search</h3>${edgarBody}</div>`;
+    <div class="reg-section"><h3 class="reg-heading">SEC EDGAR full-text search</h3>${edgarBody}</div>
+    <div class="reg-section"><h3 class="reg-heading">OpenCorporates</h3>${openCorporatesBody}</div>
+    <div class="reg-section"><h3 class="reg-heading">UK Companies House</h3>${companiesHouseBody}</div>`;
 }
 
 // ── library tab ──────────────────────────────────────────────────────────────

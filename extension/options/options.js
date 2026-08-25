@@ -2,7 +2,7 @@ import { getSettings, saveSettings, DEFAULT_SETTINGS } from '../lib/store.js';
 
 const NUMERIC = ['minDelayMs', 'maxDelayMs', 'longPauseEvery', 'longPauseMs', 'resultsPerQuery', 'keepTopResults', 'navTimeoutMs'];
 const BOOLEAN = ['recentOnly', 'queryExclusions', 'preflightProbe', 'registryCheck', 'highlightSerp', 'closeTabWhenDone', 'autoEnrich'];
-const TEXT = ['country', 'enrichEndpoint', 'windowMode'];
+const TEXT = ['country', 'enrichEndpoint', 'windowMode', 'openCorporatesToken', 'companiesHouseKey'];
 
 const $ = (id) => document.getElementById(id);
 

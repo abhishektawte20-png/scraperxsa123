@@ -72,7 +72,6 @@ export function parseGleifResponse(json) {
 export function matchGleifRecords(records, entity) {
   const wanted = nameTokens(entity?.company);
   if (!wanted.length) return [];
-  const wantedSet = new Set(wanted);
   return records
     .map((r) => {
       const got = new Set(nameTokens(r.legalName));
@@ -161,19 +160,159 @@ export async function secEdgarLookup(entity, fetchImpl = fetch) {
   }
 }
 
+// ── OpenCorporates (140+ jurisdictions, broadest geographic coverage) ────────
+
+// Free without a key, but capped at 500 requests/month per requesting IP —
+// that's the researcher's own connection, not shared across every ScraperX
+// user, so it's usable for normal day-to-day volume. A researcher's own token
+// (free tier or paid) raises that; entirely optional.
+export function openCorporatesSearchUrl(company, apiToken) {
+  const q = String(company || '').trim();
+  if (!q) return '';
+  const params = new URLSearchParams({ q, per_page: '10' });
+  if (apiToken) params.set('api_token', apiToken);
+  return `https://api.opencorporates.com/v0.4/companies/search?${params.toString()}`;
+}
+
+const OC_INACTIVE_STATUS_RE = /dissolved|struck.?off|liquidat|inactive|merged|amalgamat|withdrawn|revoked|terminat|no longer/i;
+
+export function parseOpenCorporatesResponse(json) {
+  const rows = json?.results?.companies;
+  if (!Array.isArray(rows)) return [];
+  const out = [];
+  for (const row of rows) {
+    const c = row?.company;
+    const name = String(c?.name || '').trim();
+    if (!name) continue;
+    const status = String(c?.current_status || '').trim();
+    out.push({
+      name,
+      companyNumber: String(c?.company_number || ''),
+      jurisdiction: String(c?.jurisdiction_code || ''),
+      status,
+      outOfBusiness: c?.inactive === true || !!c?.dissolution_date || OC_INACTIVE_STATUS_RE.test(status),
+      url: String(c?.opencorporates_url || '')
+    });
+  }
+  return out;
+}
+
+export function matchOpenCorporatesRecords(records, entity) {
+  const wanted = nameTokens(entity?.company);
+  if (!wanted.length) return [];
+  return records
+    .map((r) => {
+      const got = new Set(nameTokens(r.name));
+      return { ...r, matchRatio: wanted.filter((t) => got.has(t)).length / wanted.length };
+    })
+    .filter((r) => r.matchRatio >= 0.6)
+    .sort((a, b) => b.matchRatio - a.matchRatio || Number(b.outOfBusiness) - Number(a.outOfBusiness));
+}
+
+export async function openCorporatesLookup(entity, apiToken, fetchImpl = fetch) {
+  const url = openCorporatesSearchUrl(entity?.company, apiToken);
+  if (!url) return { ok: false, source: 'OpenCorporates', records: [] };
+  try {
+    const res = await fetchImpl(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) {
+      // A 401/403 here almost always means the shared unauthenticated
+      // allowance (500/month) is exhausted, not that anything is broken.
+      const hint = res.status === 401 || res.status === 403 ? ' — likely the free monthly allowance is used up' : '';
+      return { ok: false, source: 'OpenCorporates', records: [], error: `http ${res.status}${hint}` };
+    }
+    const json = await res.json();
+    return { ok: true, source: 'OpenCorporates', records: matchOpenCorporatesRecords(parseOpenCorporatesResponse(json), entity) };
+  } catch (e) {
+    return { ok: false, source: 'OpenCorporates', records: [], error: e?.message || 'lookup failed' };
+  }
+}
+
+// ── UK Companies House (free, but requires the researcher's own free key) ───
+
+// Unlike GLEIF/EDGAR/OpenCorporates, this one 401s on every call with no key
+// at all — there is no useful anonymous allowance to fall back to, so it is
+// simply skipped rather than fired and left to fail.
+export function companiesHouseSearchUrl(company) {
+  const q = String(company || '').trim();
+  if (!q) return '';
+  return `https://api.company-information.service.gov.uk/search/companies?${new URLSearchParams({ q, items_per_page: '10' })}`;
+}
+
+const CH_INACTIVE_STATUS_RE = /^(?!active$).+/i; // anything other than exactly "active"
+
+export function parseCompaniesHouseResponse(json) {
+  const rows = Array.isArray(json?.items) ? json.items : [];
+  const out = [];
+  for (const row of rows) {
+    const name = String(row?.title || '').trim();
+    if (!name) continue;
+    const status = String(row?.company_status || '').trim();
+    out.push({
+      name,
+      companyNumber: String(row?.company_number || ''),
+      status,
+      outOfBusiness: !!status && CH_INACTIVE_STATUS_RE.test(status),
+      url: row?.company_number ? `https://find-and-update.company-information.service.gov.uk/company/${row.company_number}` : ''
+    });
+  }
+  return out;
+}
+
+export function matchCompaniesHouseRecords(records, entity) {
+  const wanted = nameTokens(entity?.company);
+  if (!wanted.length) return [];
+  return records
+    .map((r) => {
+      const got = new Set(nameTokens(r.name));
+      return { ...r, matchRatio: wanted.filter((t) => got.has(t)).length / wanted.length };
+    })
+    .filter((r) => r.matchRatio >= 0.6)
+    .sort((a, b) => b.matchRatio - a.matchRatio || Number(b.outOfBusiness) - Number(a.outOfBusiness));
+}
+
+export async function companiesHouseLookup(entity, apiKey, fetchImpl = fetch) {
+  if (!apiKey) return { ok: false, source: 'Companies House', records: [], skipped: true };
+  const url = companiesHouseSearchUrl(entity?.company);
+  if (!url) return { ok: false, source: 'Companies House', records: [] };
+  try {
+    // HTTP Basic auth, key as username, blank password — the documented
+    // scheme for this API. btoa is available in the extension service worker.
+    const res = await fetchImpl(url, { headers: { Authorization: `Basic ${btoa(`${apiKey}:`)}`, Accept: 'application/json' } });
+    if (!res.ok) return { ok: false, source: 'Companies House', records: [], error: `http ${res.status}` };
+    const json = await res.json();
+    return { ok: true, source: 'Companies House', records: matchCompaniesHouseRecords(parseCompaniesHouseResponse(json), entity) };
+  } catch (e) {
+    return { ok: false, source: 'Companies House', records: [], error: e?.message || 'lookup failed' };
+  }
+}
+
 // ── combined run-once-per-run check ──────────────────────────────────────────
 
 /**
- * Both lookups, combined into the one thing scoring actually needs: is there
- * registry-level corroboration that this company is out of business (merged,
- * retired LEI registration, or a material-event 8-K on file)? Never throws —
- * a network failure on either just means that source contributes nothing.
+ * Every lookup, combined into the one thing scoring actually needs: is there
+ * registry-level corroboration that this company is out of business? Never
+ * throws — a failure on any one source just means that source contributes
+ * nothing. `opts.openCorporatesToken` and `opts.companiesHouseKey` are the
+ * researcher's own, optional; Companies House is skipped outright without one.
  */
-export async function checkRegistries(entity, fetchImpl = fetch) {
-  const [gleif, edgar] = await Promise.all([
+export async function checkRegistries(entity, opts = {}, fetchImpl = fetch) {
+  const [gleif, edgar, openCorporates, companiesHouse] = await Promise.all([
     gleifLookup(entity, fetchImpl),
-    secEdgarLookup(entity, fetchImpl)
+    secEdgarLookup(entity, fetchImpl),
+    openCorporatesLookup(entity, opts.openCorporatesToken, fetchImpl),
+    companiesHouseLookup(entity, opts.companiesHouseKey, fetchImpl)
   ]);
-  const outOfBusiness = gleif.records.some((r) => r.outOfBusiness) || edgar.hits.some((h) => h.isMaterialEvent);
-  return { gleif, edgar, outOfBusiness, checkedAt: Date.now() };
+
+  const outOfBusinessSources = [];
+  if (gleif.records.some((r) => r.outOfBusiness)) outOfBusinessSources.push('GLEIF');
+  if (edgar.hits.some((h) => h.isMaterialEvent)) outOfBusinessSources.push('SEC EDGAR');
+  if (openCorporates.records.some((r) => r.outOfBusiness)) outOfBusinessSources.push('OpenCorporates');
+  if (companiesHouse.records.some((r) => r.outOfBusiness)) outOfBusinessSources.push('Companies House');
+
+  return {
+    gleif, edgar, openCorporates, companiesHouse,
+    outOfBusiness: outOfBusinessSources.length > 0,
+    outOfBusinessSources,
+    checkedAt: Date.now()
+  };
 }

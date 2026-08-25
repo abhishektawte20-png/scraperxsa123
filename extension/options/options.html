@@ -54,12 +54,28 @@
         sharing the name, you settle it once instead of in every boolean. Silent
         when the name is unambiguous.
       </p>
-      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="registryCheck"><span>Cross-check GLEIF &amp; SEC EDGAR (free, official registries)</span></label>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="registryCheck"><span>Cross-check company registries (free, official)</span></label>
       <p class="hint" style="margin:2px 0 0 22px">
-        Two extra JSON lookups per run, not search queries — GLEIF's Legal Entity
-        Identifier index and the SEC's full-text filing search. Coverage is narrow
-        (mostly US filers and companies that hold an LEI), so this only ever adds
-        corroboration; coming back empty is not treated as a signal either way.
+        A few extra JSON lookups per run, not search queries — GLEIF (LEI index),
+        SEC EDGAR full-text search, and OpenCorporates. Coverage is narrow per
+        source, so this only ever adds corroboration; coming back empty is not
+        treated as a signal either way.
+      </p>
+      <label class="field" style="margin-top:10px">
+        <span>OpenCorporates API token <em>— optional, works without one</em></span>
+        <input type="text" id="openCorporatesToken" placeholder="leave blank to use the free 500/month allowance" autocomplete="off">
+      </label>
+      <p class="hint" style="margin:2px 0 0 2px">
+        Works with no token at all, capped at 500 requests/month on your own
+        connection. A free token from <code>opencorporates.com</code> raises that.
+      </p>
+      <label class="field" style="margin-top:10px">
+        <span>UK Companies House API key <em>— optional, UK companies only</em></span>
+        <input type="text" id="companiesHouseKey" placeholder="leave blank to skip this source" autocomplete="off">
+      </label>
+      <p class="hint" style="margin:2px 0 0 2px">
+        Free, self-serve key from <code>developer.company-information.service.gov.uk</code>.
+        Skipped entirely without a key — there's no useful anonymous allowance for this one.
       </p>
     </div>
 

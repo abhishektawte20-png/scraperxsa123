@@ -46,8 +46,13 @@ function check(name, cond, extra = '') {
   // Default: empty, matching what a private/non-US company actually gets back.
   let gleifCalls = 0;
   let edgarCalls = 0;
+  let openCorporatesCalls = 0;
+  let companiesHouseCalls = 0;
   let gleifFixture = { data: [] };
   let edgarFixture = { hits: { hits: [] } };
+  let openCorporatesFixture = { results: { companies: [] } };
+  let companiesHouseFixture = { items: [] };
+  let companiesHouseAuthHeader = null;
   await context.route('https://api.gleif.org/**', (route) => {
     gleifCalls++;
     route.fulfill({ status: 200, contentType: 'application/vnd.api+json', body: JSON.stringify(gleifFixture) });
@@ -55,6 +60,15 @@ function check(name, cond, extra = '') {
   await context.route('https://efts.sec.gov/**', (route) => {
     edgarCalls++;
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(edgarFixture) });
+  });
+  await context.route('https://api.opencorporates.com/**', (route) => {
+    openCorporatesCalls++;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(openCorporatesFixture) });
+  });
+  await context.route('https://api.company-information.service.gov.uk/**', (route) => {
+    companiesHouseCalls++;
+    companiesHouseAuthHeader = route.request().headers()['authorization'] || null;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(companiesHouseFixture) });
   });
 
   let [sw] = context.serviceWorkers();
@@ -696,13 +710,16 @@ function check(name, cond, extra = '') {
     }
   }] };
   edgarFixture = { hits: { hits: [] } };
-  gleifCalls = 0; edgarCalls = 0;
+  openCorporatesFixture = { results: { companies: [{ company: { name: 'Some Unrelated Ltd', current_status: 'Active' } }] } };
+  companiesHouseFixture = { items: [] };
+  gleifCalls = 0; edgarCalls = 0; openCorporatesCalls = 0; companiesHouseCalls = 0;
 
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
       resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
       preflightProbe: false, registryCheck: true, queryExclusions: true,
+      openCorporatesToken: '', companiesHouseKey: '',
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -720,12 +737,18 @@ function check(name, cond, extra = '') {
   await panel.click('#startBtn');
   const registryRun = await registryRunDone;
 
-  check('both registries were actually queried', gleifCalls >= 1 && edgarCalls >= 1, `gleif=${gleifCalls} edgar=${edgarCalls}`);
+  check('GLEIF, EDGAR and OpenCorporates all fired (keyless-capable); Companies House did not (no key set)',
+    gleifCalls >= 1 && edgarCalls >= 1 && openCorporatesCalls >= 1 && companiesHouseCalls === 0,
+    `gleif=${gleifCalls} edgar=${edgarCalls} oc=${openCorporatesCalls} ch=${companiesHouseCalls}`);
   check('the run carries a registry result', !!registryRun.registry, JSON.stringify(registryRun.registry));
   check('a MERGED GLEIF record is recognised as an out-of-business signal',
     registryRun.registry?.outOfBusiness === true, JSON.stringify(registryRun.registry?.gleif));
   check('the matched GLEIF record is the right company, not a stranger',
     registryRun.registry?.gleif?.records?.[0]?.legalName === 'Psypher Streetwear Private Limited');
+  check('an unrelated OpenCorporates hit is filtered out by name matching',
+    registryRun.registry?.openCorporates?.records?.length === 0, JSON.stringify(registryRun.registry?.openCorporates));
+  check('Companies House is skipped outright with no key configured, not fired and ignored',
+    registryRun.registry?.companiesHouse?.skipped === true);
 
   const bankruptcyHit = registryRun.queries[0].results.find((r) => r.url.includes('reuters.com'));
   check('the press hit itself still carries the bankruptcy flag', bankruptcyHit?.flag?.label === 'Out-of-business signal',
@@ -744,11 +767,56 @@ function check(name, cond, extra = '') {
     /MERGED/.test(registryCardText), registryCardText.trim().slice(0, 200));
   check('the card says EDGAR found nothing, plainly — not as a red flag',
     /no sec filings found/i.test(registryCardText), registryCardText.trim());
+  check('the card explains Companies House was skipped, not silently blank',
+    /no api key configured/i.test(registryCardText), registryCardText.trim());
 
-  // Reset for the rest of the suite — a private company should get nothing
-  // back from either registry the vast majority of the time.
+  // --- Companies House: only fires once a key is actually configured -------
+  log('\n[registry check: Companies House only with a key configured]');
+  companiesHouseFixture = { items: [{ title: 'Psypher Streetwear Ltd', company_number: '09999999', company_status: 'dissolved' }] };
+  companiesHouseCalls = 0; companiesHouseAuthHeader = null;
+
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: false, registryCheck: true, queryExclusions: true,
+      openCorporatesToken: '', companiesHouseKey: 'test-free-key',
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.click('#selNone');
+  await panel.check('#chk_oob\\.bankruptcy_us');
+
+  const chRunDone = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const chRun = await chRunDone;
+
+  check('Companies House is actually queried once a key is set', companiesHouseCalls >= 1);
+  check('the key goes over as HTTP Basic auth, not exposed in the URL',
+    /^Basic /.test(companiesHouseAuthHeader || ''), companiesHouseAuthHeader);
+  check('a dissolved Companies House record is recognised as out-of-business',
+    chRun.registry?.companiesHouse?.records?.[0]?.outOfBusiness === true,
+    JSON.stringify(chRun.registry?.companiesHouse));
+  check('Companies House is named among the corroborating sources',
+    (chRun.registry?.outOfBusinessSources || []).includes('Companies House'), JSON.stringify(chRun.registry?.outOfBusinessSources));
+
+  await panel.waitForTimeout(300);
+  await panel.click('[data-tab="results"]');
+  await panel.waitForTimeout(200);
+  const chCardText = await panel.locator('#registryCard').textContent();
+  check('the card shows the matched Companies House record',
+    /Psypher Streetwear Ltd/.test(chCardText) && /dissolved/.test(chCardText), chCardText.trim().slice(0, 300));
+
+  // Reset for the rest of the suite — a private non-UK, non-US company should
+  // get nothing back from any of these registries the vast majority of the time.
   gleifFixture = { data: [] };
   edgarFixture = { hits: { hits: [] } };
+  openCorporatesFixture = { results: { companies: [] } };
+  companiesHouseFixture = { items: [] };
 
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');

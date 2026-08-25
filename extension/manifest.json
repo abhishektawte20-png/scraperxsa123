@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ScraperX Research Automation",
   "short_name": "ScraperX",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "Automates the boolean Google searches researchers run by hand when profiling private companies. Runs the whole library, highlights the results that matter.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -17,7 +17,9 @@
     "https://www.google.com/*",
     "https://google.com/*",
     "https://api.gleif.org/*",
-    "https://efts.sec.gov/*"
+    "https://efts.sec.gov/*",
+    "https://api.opencorporates.com/*",
+    "https://api.company-information.service.gov.uk/*"
   ],
   "optional_host_permissions": [
     "https://*/*",

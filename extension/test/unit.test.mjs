@@ -1,5 +1,5 @@
 import { toMarkdown, toCsv, slug, groupByCategory } from '../lib/export.js';
-import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword } from '../lib/query.js';
+import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword, renderExternalUrl } from '../lib/query.js';
 import { DEFAULT_LIBRARY } from '../lib/library.js';
 import { scoreResult, classifyDomain, isLegalBoilerplatePage, signalProximity } from '../lib/scoring.js';
 import { buildExclusionTail, exclusionTerms } from '../lib/query.js';
@@ -7,6 +7,8 @@ import { clusterProbeResults, isAmbiguous, exclusionsFromClusters, probeQuery, e
 import {
   gleifSearchUrl, parseGleifResponse, matchGleifRecords, gleifLookup,
   secEdgarSearchUrl, parseSecEdgarResponse, matchSecEdgarHits, secEdgarLookup,
+  openCorporatesSearchUrl, parseOpenCorporatesResponse, matchOpenCorporatesRecords, openCorporatesLookup,
+  companiesHouseSearchUrl, parseCompaniesHouseResponse, matchCompaniesHouseRecords, companiesHouseLookup,
   checkRegistries
 } from '../lib/registries.js';
 
@@ -32,6 +34,19 @@ check('external jobs carry a url not a query',
   jobs.every((j) => j.engine !== 'external' || (j.url && !j.query)));
 check('every google job has a search url',
   jobs.filter((j) => j.engine === 'google').every((j) => j.url.startsWith('https://www.google.com/search?q=')));
+
+check('renderExternalUrl substitutes and URL-encodes the company name',
+  renderExternalUrl('https://example.com/search/{{company}}', { company: 'Acme & Co', website: '' }) === 'https://example.com/search/Acme%20%26%20Co',
+  renderExternalUrl('https://example.com/search/{{company}}', { company: 'Acme & Co', website: '' }));
+check('renderExternalUrl leaves a template with no placeholders untouched',
+  renderExternalUrl('https://home.atlassian.com/agent/123', { company: 'Acme' }) === 'https://home.atlassian.com/agent/123');
+check('an external job\'s url is company-specific, not a static template',
+  buildJobs([{ id: 'x', category: 'C', name: 'N', engine: 'external', url: 'https://www.zaubacorp.com/companysearchresults/{{company}}', enabled: true }],
+    { company: 'Psypher', website: '' })[0].url === 'https://www.zaubacorp.com/companysearchresults/Psypher');
+check('Zauba Corp is in the default library, off by default (it is a manual link, not scraped)',
+  DEFAULT_LIBRARY.find((t) => t.id === 'registry.zaubacorp')?.enabled === false);
+check('Zauba Corp is engine: external — never fetched or parsed by the extension',
+  DEFAULT_LIBRARY.find((t) => t.id === 'registry.zaubacorp')?.engine === 'external');
 check('only= filter respected', buildJobs(DEFAULT_LIBRARY, entity, { only: ['smi.linkedin'] }).length === 1);
 
 console.log('\n[signals]');
@@ -705,6 +720,40 @@ check('matchSecEdgarHits drops an unrelated company',
     { _source: { display_names: ['Zephyr Traders Ltd'], form: '8-K', adsh: 'x-1' } }
   ] } }), acmeEntity).length === 0);
 
+check('OpenCorporates url is blank for no company', openCorporatesSearchUrl('') === '');
+check('OpenCorporates url works with no token', openCorporatesSearchUrl('Acme Robotics') === 'https://api.opencorporates.com/v0.4/companies/search?q=Acme+Robotics&per_page=10',
+  openCorporatesSearchUrl('Acme Robotics'));
+check('OpenCorporates url carries an optional token', openCorporatesSearchUrl('Acme', 'tok123').includes('api_token=tok123'));
+
+const ocJson = { results: { companies: [
+  { company: { name: 'Acme Robotics Inc', company_number: '123', jurisdiction_code: 'us_de', current_status: 'Active', opencorporates_url: 'https://opencorporates.com/companies/us_de/123' } },
+  { company: { name: 'Acme Robotics UK Ltd', company_number: '456', jurisdiction_code: 'gb', current_status: 'Dissolved', dissolution_date: '2020-01-01' } }
+] } };
+const parsedOc = parseOpenCorporatesResponse(ocJson);
+check('OpenCorporates records parsed', parsedOc.length === 2, JSON.stringify(parsedOc));
+check('OpenCorporates active company is not flagged out-of-business', parsedOc[0].outOfBusiness === false);
+check('OpenCorporates dissolved company is flagged out-of-business', parsedOc[1].outOfBusiness === true);
+check('parseOpenCorporatesResponse tolerates a missing/odd shape', JSON.stringify(parseOpenCorporatesResponse({})) === '[]');
+check('matchOpenCorporatesRecords keeps both real matches', matchOpenCorporatesRecords(parsedOc, acmeEntity).length === 2);
+check('matchOpenCorporatesRecords drops an unrelated company',
+  matchOpenCorporatesRecords(parseOpenCorporatesResponse({ results: { companies: [{ company: { name: 'Zephyr Traders Ltd' } }] } }), acmeEntity).length === 0);
+
+check('Companies House url has no key in it — auth is a header, not a query param',
+  !companiesHouseSearchUrl('Acme Robotics').includes('key'), companiesHouseSearchUrl('Acme Robotics'));
+
+const chJson = { items: [
+  { title: 'ACME ROBOTICS LTD', company_number: '01234567', company_status: 'active' },
+  { title: 'ACME ROBOTICS (UK) LIMITED', company_number: '07654321', company_status: 'dissolved' }
+] };
+const parsedCh = parseCompaniesHouseResponse(chJson);
+check('Companies House records parsed', parsedCh.length === 2, JSON.stringify(parsedCh));
+check('Companies House "active" is not flagged out-of-business', parsedCh[0].outOfBusiness === false);
+check('Companies House "dissolved" is flagged out-of-business', parsedCh[1].outOfBusiness === true);
+check('Companies House filing url built from the company number',
+  parsedCh[0].url === 'https://find-and-update.company-information.service.gov.uk/company/01234567', parsedCh[0].url);
+check('parseCompaniesHouseResponse tolerates a missing/odd shape', JSON.stringify(parseCompaniesHouseResponse({})) === '[]');
+check('matchCompaniesHouseRecords keeps the real matches', matchCompaniesHouseRecords(parsedCh, acmeEntity).length === 2);
+
 // gleifLookup / secEdgarLookup / checkRegistries — network-free via an injected fetch.
 const fakeJsonFetch = (json, ok = true) => async () => ({ ok, status: ok ? 200 : 500, json: async () => json });
 const gleifLookupResult = await gleifLookup(acmeEntity, fakeJsonFetch(gleifActiveJson));
@@ -717,20 +766,51 @@ check('gleifLookup degrades gracefully instead of throwing', gleifOffline.ok ===
 const edgarHttpError = await secEdgarLookup(acmeEntity, fakeJsonFetch({}, false));
 check('secEdgarLookup surfaces a non-2xx without throwing', edgarHttpError.ok === false);
 
-const combined = await checkRegistries(acmeEntity, async (url) =>
-  url.includes('gleif') ? { ok: true, status: 200, json: async () => gleifMergedJson }
-    : { ok: true, status: 200, json: async () => ({ hits: { hits: [] } }) });
-check('checkRegistries combines both sources', combined.gleif.ok && combined.edgar.ok);
-check('checkRegistries flags out-of-business from a merged GLEIF record alone', combined.outOfBusiness === true);
+const openCorporatesResult = await openCorporatesLookup(acmeEntity, null, fakeJsonFetch(ocJson));
+check('openCorporatesLookup works with no token at all', openCorporatesResult.ok && openCorporatesResult.records.length === 2);
 
-const combinedFromEdgar = await checkRegistries(acmeEntity, async (url) =>
-  url.includes('gleif') ? { ok: true, status: 200, json: async () => gleifActiveJson }
-    : { ok: true, status: 200, json: async () => edgarJson });
-check('checkRegistries flags out-of-business from an EDGAR 8-K alone', combinedFromEdgar.outOfBusiness === true);
+const chNoKey = await companiesHouseLookup(acmeEntity, '', fakeJsonFetch(chJson));
+check('companiesHouseLookup is skipped outright without a key, never fired blind', chNoKey.ok === false && chNoKey.skipped === true);
 
-const combinedClean = await checkRegistries(acmeEntity, async (url) =>
-  url.includes('gleif') ? { ok: true, status: 200, json: async () => gleifActiveJson }
-    : { ok: true, status: 200, json: async () => ({ hits: { hits: [] } }) });
+let chAuthHeader = null;
+const chWithKey = await companiesHouseLookup(acmeEntity, 'my-free-key', async (url, opts) => {
+  chAuthHeader = opts?.headers?.Authorization;
+  return { ok: true, status: 200, json: async () => chJson };
+});
+check('companiesHouseLookup sends the key as HTTP Basic auth, not a query param',
+  chAuthHeader === `Basic ${Buffer.from('my-free-key:').toString('base64')}`, chAuthHeader);
+check('companiesHouseLookup with a key returns matched records', chWithKey.ok && chWithKey.records.length === 2);
+
+const registryRouter = (fixtures) => async (url) => {
+  if (url.includes('gleif')) return { ok: true, status: 200, json: async () => fixtures.gleif ?? gleifActiveJson };
+  if (url.includes('efts.sec.gov')) return { ok: true, status: 200, json: async () => fixtures.edgar ?? { hits: { hits: [] } } };
+  if (url.includes('opencorporates')) return { ok: true, status: 200, json: async () => fixtures.oc ?? { results: { companies: [] } } };
+  return { ok: true, status: 200, json: async () => fixtures.ch ?? { items: [] } };
+};
+
+const combined = await checkRegistries(acmeEntity, {}, registryRouter({ gleif: gleifMergedJson }));
+check('checkRegistries combines every source', combined.gleif.ok && combined.edgar.ok && combined.openCorporates.ok);
+check('checkRegistries flags out-of-business from a merged GLEIF record alone',
+  combined.outOfBusiness === true && combined.outOfBusinessSources.includes('GLEIF'));
+
+const combinedFromEdgar = await checkRegistries(acmeEntity, {}, registryRouter({ edgar: edgarJson }));
+check('checkRegistries flags out-of-business from an EDGAR 8-K alone',
+  combinedFromEdgar.outOfBusiness === true && combinedFromEdgar.outOfBusinessSources.includes('SEC EDGAR'));
+
+const combinedFromOc = await checkRegistries(acmeEntity, {},
+  registryRouter({ oc: { results: { companies: [{ company: { name: 'Acme Robotics', current_status: 'Dissolved', inactive: true } }] } } }));
+check('checkRegistries flags out-of-business from a dissolved OpenCorporates record alone',
+  combinedFromOc.outOfBusiness === true && combinedFromOc.outOfBusinessSources.includes('OpenCorporates'));
+
+check('checkRegistries skips Companies House without a key, without even trying',
+  combined.companiesHouse.skipped === true);
+
+const combinedWithChKey = await checkRegistries(acmeEntity, { companiesHouseKey: 'k' },
+  registryRouter({ ch: { items: [{ title: 'Acme Robotics Ltd', company_number: '1', company_status: 'dissolved' }] } }));
+check('checkRegistries uses Companies House once a key is configured',
+  combinedWithChKey.companiesHouse.ok && combinedWithChKey.outOfBusinessSources.includes('Companies House'));
+
+const combinedClean = await checkRegistries(acmeEntity, {}, registryRouter({}));
 check('checkRegistries stays false when nothing indicates out-of-business', combinedClean.outOfBusiness === false);
 
 console.log('\n[exports]');

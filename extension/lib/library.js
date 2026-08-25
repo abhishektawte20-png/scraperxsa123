@@ -144,6 +144,15 @@ export const DEFAULT_LIBRARY = [
     url: 'https://home.atlassian.com/o/b572df62-3309-42bc-be93-b9141d4045a3/people/agent/2c3978fc-8fbd-494c-acde-553fa36f1b77',
     notes: 'Rovo agent — opened in a tab for you to run, never auto-scraped.'
   },
+  {
+    id: 'registry.zaubacorp',
+    category: 'Entity Recognition',
+    name: 'Zauba Corp (India registry — manual check)',
+    engine: 'external',
+    enabled: false, // India-specific; off by default like the Rovo agents
+    url: 'https://www.zaubacorp.com/companysearchresults/{{company}}',
+    notes: 'Zauba Corp has no public API of its own — what shows up calling itself one is a paid third-party scraper, not a free service Zauba offers. This opens their site search for you to check by hand, same as before, rather than scraping a commercial data vendor\'s site automatically.'
+  },
 
   // ── Out of Business ────────────────────────────────────────────────────────
   {
