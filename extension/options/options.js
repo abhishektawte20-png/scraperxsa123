@@ -1,7 +1,7 @@
 import { getSettings, saveSettings, DEFAULT_SETTINGS } from '../lib/store.js';
 
 const NUMERIC = ['minDelayMs', 'maxDelayMs', 'longPauseEvery', 'longPauseMs', 'resultsPerQuery', 'keepTopResults', 'navTimeoutMs'];
-const BOOLEAN = ['recentOnly', 'queryExclusions', 'preflightProbe', 'highlightSerp', 'closeTabWhenDone', 'autoEnrich'];
+const BOOLEAN = ['recentOnly', 'queryExclusions', 'preflightProbe', 'registryCheck', 'highlightSerp', 'closeTabWhenDone', 'autoEnrich'];
 const TEXT = ['country', 'enrichEndpoint', 'windowMode'];
 
 const $ = (id) => document.getElementById(id);

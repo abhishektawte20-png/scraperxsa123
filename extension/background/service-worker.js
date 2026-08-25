@@ -10,6 +10,7 @@ import { getLibrary, getSettings, getRuns, saveRun, saveEntity } from '../lib/st
 import { buildJobs, bareDomain } from '../lib/query.js';
 import { scoreResult } from '../lib/scoring.js';
 import { probeUrl, clusterProbeResults, isAmbiguous, exclusionsFromClusters } from '../lib/probe.js';
+import { checkRegistries } from '../lib/registries.js';
 
 // ── run state (in memory; the run itself is mirrored to storage each step) ────
 
@@ -84,7 +85,7 @@ function navigateAndWait(tabId, url, timeoutMs) {
 
 // ── scoring a page of results ────────────────────────────────────────────────
 
-function processSerp(job, payload, settings, entity) {
+function processSerp(job, payload, settings, entity, registry) {
   const ctx = {
     company: entity.company,
     entityDomain: bareDomain(entity.website),
@@ -93,7 +94,8 @@ function processSerp(job, payload, settings, entity) {
     category: job.category,
     templateId: job.id,
     excludeTerms: entity.excludeTerms || [],
-    contextTerms: entity.contextTerms || []
+    contextTerms: entity.contextTerms || [],
+    registryOutOfBusiness: !!registry?.outOfBusiness
   };
 
   const scored = (payload.results || [])
@@ -164,7 +166,7 @@ async function drive() {
         results: [], summary: null
       };
     } else {
-      const { kept, summary } = processSerp(job, payload, state.settings, state.entity);
+      const { kept, summary } = processSerp(job, payload, state.settings, state.entity, state.run.registry);
       entry = {
         id: job.id, category: job.category, name: job.name, engine: 'google',
         query: job.query, url: job.url, status: 'ok',
@@ -333,6 +335,24 @@ async function runProbe() {
   return true;
 }
 
+/**
+ * GLEIF + SEC EDGAR, once per run. Plain fetch() calls — no tab, no SERP,
+ * runs independently of the probe. A lookup failure (offline, rate limited,
+ * unexpected response) never blocks or fails the run; it just means that
+ * source contributes nothing this time.
+ */
+async function runRegistryCheck() {
+  try {
+    const registry = await checkRegistries(state.entity);
+    if (!state) return;
+    state.run.registry = registry;
+    await persist();
+    broadcast({ type: 'SX_REGISTRY_READY', runId: state.runId, registry });
+  } catch {
+    // Never let a registry lookup problem take down the run itself.
+  }
+}
+
 async function startRun({ entity, only }) {
   if (state && state.status === 'running') throw new Error('a run is already in progress');
 
@@ -365,6 +385,11 @@ async function startRun({ entity, only }) {
 
   await persist();
   (async () => {
+    // Awaited (not fire-and-forget): a boolean scored before this resolves
+    // would silently miss the corroboration bonus. It's two small JSON
+    // fetches, not a page load — negligible next to the probe/query pacing.
+    if (settings.registryCheck) await runRegistryCheck();
+    if (!state || state.status !== 'running') return;
     if (settings.preflightProbe) {
       const paused = await runProbe();
       if (paused) return; // waiting on the researcher to pick the right company

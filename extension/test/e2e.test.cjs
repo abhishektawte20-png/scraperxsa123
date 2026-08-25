@@ -31,12 +31,30 @@ function check(name, cond, extra = '') {
     const q = url.searchParams.get('q') || '';
     const bare = q.trim();
     const body = q.includes('"nested-layout"') ? serp.nestedSerp(q)   // multi-result wrapper
+      : q.includes('"chapter 11"') ? serp.registryConfirmedSerp(q)    // registry corroboration
       : bare === '"Psypher"' ? serp.probeSerp(q)                      // pre-flight probe
       : bare === '"Acme Robotics"' ? serp.soloSerp(q)                // unambiguous probe
       : q.includes('psypher.in') ? serp.autoCollisionSerp(q)
       : q.includes('Psypher') ? serp.collisionSerp(q)
       : serp(q);
     route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
+  });
+
+  // Serve the two registry APIs too — every run hits them once (registryCheck
+  // defaults on), so an unrouted request here would stall or fail every test
+  // in this file, not just the ones that care about the registry feature.
+  // Default: empty, matching what a private/non-US company actually gets back.
+  let gleifCalls = 0;
+  let edgarCalls = 0;
+  let gleifFixture = { data: [] };
+  let edgarFixture = { hits: { hits: [] } };
+  await context.route('https://api.gleif.org/**', (route) => {
+    gleifCalls++;
+    route.fulfill({ status: 200, contentType: 'application/vnd.api+json', body: JSON.stringify(gleifFixture) });
+  });
+  await context.route('https://efts.sec.gov/**', (route) => {
+    edgarCalls++;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(edgarFixture) });
   });
 
   let [sw] = context.serviceWorkers();
@@ -662,6 +680,75 @@ function check(name, cond, extra = '') {
   check('nothing without a domain match survives the filter',
     (await panel.locator('.result:not(:has(.result-id))').count()) === 0);
   await panel.uncheck('#onlyIdentity');
+
+  // --- registry check: GLEIF + SEC EDGAR ------------------------------------
+  log('\n[registry check: GLEIF + SEC EDGAR corroboration]');
+  gleifFixture = { data: [{
+    id: '5493009XYZLEI00001',
+    attributes: {
+      entity: {
+        legalName: { name: 'Psypher Streetwear Private Limited' },
+        legalAddress: { city: 'Delhi', country: 'IN' },
+        status: 'ACTIVE',
+        successorEntity: { leiRecordExists: false }
+      },
+      registration: { status: 'MERGED' }
+    }
+  }] };
+  edgarFixture = { hits: { hits: [] } };
+  gleifCalls = 0; edgarCalls = 0;
+
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: false, registryCheck: true, queryExclusions: true,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'Psypher');
+  await panel.fill('#website', 'www.psypher.in');
+  await panel.fill('#excludeTerms', '');
+  await panel.click('#selNone');
+  await panel.check('#chk_oob\\.bankruptcy_us');
+
+  const registryRunDone = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const registryRun = await registryRunDone;
+
+  check('both registries were actually queried', gleifCalls >= 1 && edgarCalls >= 1, `gleif=${gleifCalls} edgar=${edgarCalls}`);
+  check('the run carries a registry result', !!registryRun.registry, JSON.stringify(registryRun.registry));
+  check('a MERGED GLEIF record is recognised as an out-of-business signal',
+    registryRun.registry?.outOfBusiness === true, JSON.stringify(registryRun.registry?.gleif));
+  check('the matched GLEIF record is the right company, not a stranger',
+    registryRun.registry?.gleif?.records?.[0]?.legalName === 'Psypher Streetwear Private Limited');
+
+  const bankruptcyHit = registryRun.queries[0].results.find((r) => r.url.includes('reuters.com'));
+  check('the press hit itself still carries the bankruptcy flag', bankruptcyHit?.flag?.label === 'Out-of-business signal',
+    JSON.stringify(bankruptcyHit?.flag));
+  check('registry corroboration is named in that result\'s reasons',
+    (bankruptcyHit?.reasons || []).some((r) => r.includes('registry')), (bankruptcyHit?.reasons || []).join(' | '));
+
+  await panel.waitForTimeout(300);
+  await panel.click('[data-tab="results"]');
+  await panel.waitForTimeout(200);
+  check('the registry check card is visible', await panel.locator('#registryCard').isVisible());
+  const registryCardText = await panel.locator('#registryCard').textContent();
+  check('the card names the matched legal entity',
+    /Psypher Streetwear Private Limited/.test(registryCardText), registryCardText.trim().slice(0, 120));
+  check('the card surfaces the inactive/merged registration status',
+    /MERGED/.test(registryCardText), registryCardText.trim().slice(0, 200));
+  check('the card says EDGAR found nothing, plainly — not as a red flag',
+    /no sec filings found/i.test(registryCardText), registryCardText.trim());
+
+  // Reset for the rest of the suite — a private company should get nothing
+  // back from either registry the vast majority of the time.
+  gleifFixture = { data: [] };
+  edgarFixture = { hits: { hits: [] } };
 
   // --- pause / resume ------------------------------------------------------
   log('\n[pause and resume]');

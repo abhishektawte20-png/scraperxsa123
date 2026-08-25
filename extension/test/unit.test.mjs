@@ -4,6 +4,11 @@ import { DEFAULT_LIBRARY } from '../lib/library.js';
 import { scoreResult, classifyDomain, isLegalBoilerplatePage, signalProximity } from '../lib/scoring.js';
 import { buildExclusionTail, exclusionTerms } from '../lib/query.js';
 import { clusterProbeResults, isAmbiguous, exclusionsFromClusters, probeQuery, extractPlaces } from '../lib/probe.js';
+import {
+  gleifSearchUrl, parseGleifResponse, matchGleifRecords, gleifLookup,
+  secEdgarSearchUrl, parseSecEdgarResponse, matchSecEdgarHits, secEdgarLookup,
+  checkRegistries
+} from '../lib/registries.js';
 
 let fail = 0;
 const check = (n, c, x = '') => { console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
@@ -110,6 +115,20 @@ const oobHit = scoreResult(
     snippet: 'Acme Robotics filed for bankruptcy protection.' }, oobCtx);
 check('flag label follows the boolean category, not just Prior Backing',
   oobHit.flag?.label === 'Out-of-business signal', oobHit.flag?.label);
+
+const oobHitRegistryConfirmed = scoreResult(
+  { title: 'Acme Robotics files for chapter 11', url: 'https://www.reuters.com/business/acme',
+    snippet: 'Acme Robotics filed for bankruptcy protection.' }, { ...oobCtx, registryOutOfBusiness: true });
+check('a registry-corroborated out-of-business hit scores higher than the same hit uncorroborated',
+  oobHitRegistryConfirmed.score > oobHit.score, `${oobHitRegistryConfirmed.score} vs ${oobHit.score}`);
+check('the corroboration is named in the reasons',
+  oobHitRegistryConfirmed.reasons.some((r) => r.includes('registry')), oobHitRegistryConfirmed.reasons.join(' | '));
+
+const backingHitWithRegistryFlag = scoreResult(
+  { title: 'Acme Robotics raised $10M in venture funding', url: 'https://www.businesswire.com/news/x',
+    snippet: 'Acme Robotics raised a Series A round.' }, { ...backingCtx, registryOutOfBusiness: true });
+check('registry corroboration is scoped to Out of Business — a Prior Backing hit is unaffected',
+  backingHitWithRegistryFlag.score === backingHit.score, `${backingHitWithRegistryFlag.score} vs ${backingHit.score}`);
 
 console.log('\n[entity disambiguation: same name, different company]');
 const psypherCtx = {
@@ -612,6 +631,107 @@ check('a single stray mention is below the interrupt threshold',
     ...probeResults.slice(0, 1),
     { title: 'Psypher Labs one-off', url: 'https://example.com/a', snippet: 'Psypher Labs is unrelated.' }
   ], probeEntity)) === false);
+
+console.log('\n[registries: GLEIF + SEC EDGAR]');
+
+check('GLEIF url uses fulltext filter', gleifSearchUrl('Acme Robotics').includes('filter%5Bfulltext%5D=Acme'),
+  gleifSearchUrl('Acme Robotics'));
+check('GLEIF url is blank for no company', gleifSearchUrl('') === '');
+check('EDGAR url quotes the company name', secEdgarSearchUrl('Acme Robotics') === 'https://efts.sec.gov/LATEST/search-index?q=%22Acme+Robotics%22',
+  secEdgarSearchUrl('Acme Robotics'));
+check('EDGAR url carries an optional forms filter', secEdgarSearchUrl('Acme', { forms: '8-K' }).includes('forms=8-K'));
+
+const acmeEntity = { company: 'Acme Robotics' };
+
+const gleifActiveJson = { data: [{
+  id: '5493001KJTIIGC8Y1R12',
+  attributes: {
+    entity: {
+      legalName: { name: 'Acme Robotics Inc' },
+      legalAddress: { city: 'Boston', country: 'US' },
+      status: 'ACTIVE',
+      successorEntity: { leiRecordExists: false }
+    },
+    registration: { status: 'ISSUED' }
+  }
+}] };
+const parsedActive = parseGleifResponse(gleifActiveJson);
+check('GLEIF record parsed', parsedActive.length === 1 && parsedActive[0].legalName === 'Acme Robotics Inc',
+  JSON.stringify(parsedActive));
+check('GLEIF active/issued record is not flagged out-of-business', parsedActive[0].outOfBusiness === false);
+
+const gleifMergedJson = { data: [{
+  id: 'LEI2',
+  attributes: {
+    entity: {
+      legalName: { name: 'Old Acme Robotics Ltd' },
+      legalAddress: { city: 'London', country: 'GB' },
+      status: 'INACTIVE',
+      successorEntity: { leiRecordExists: true, legalName: { name: 'New Parent Ltd' } }
+    },
+    registration: { status: 'MERGED' }
+  }
+}] };
+const parsedMerged = parseGleifResponse(gleifMergedJson);
+check('GLEIF merged/inactive record is flagged out-of-business', parsedMerged[0].outOfBusiness === true);
+check('GLEIF successor name captured', parsedMerged[0].successorName === 'New Parent Ltd');
+
+check('parseGleifResponse tolerates a missing/odd shape', JSON.stringify(parseGleifResponse({})) === '[]');
+check('parseGleifResponse drops rows with no legal name',
+  parseGleifResponse({ data: [{ attributes: { entity: {} } }] }).length === 0);
+
+check('matchGleifRecords keeps the real match',
+  matchGleifRecords(parsedActive, acmeEntity).length === 1);
+check('matchGleifRecords drops an unrelated company sharing no name tokens',
+  matchGleifRecords(parseGleifResponse({ data: [{ id: 'x', attributes: { entity: { legalName: { name: 'Zephyr Traders Ltd' } } } }] }), acmeEntity).length === 0);
+
+const edgarJson = { hits: { total: { value: 2 }, hits: [
+  { _id: 'a', _source: { display_names: ['Acme Robotics Inc (CIK 0001234567)'], ciks: ['0001234567'], form: '8-K', file_date: '2023-05-01', adsh: '0001193125-23-123456' } },
+  { _id: 'b', _source: { display_names: ['Acme Robotics Inc (CIK 0001234567)'], ciks: ['0001234567'], form: '10-K', file_date: '2022-03-01', adsh: '0001193125-22-000111' } }
+] } };
+const parsedEdgar = parseSecEdgarResponse(edgarJson);
+check('EDGAR hits parsed', parsedEdgar.length === 2, JSON.stringify(parsedEdgar));
+check('EDGAR 8-K flagged as a material event', parsedEdgar[0].form === '8-K' && parsedEdgar[0].isMaterialEvent === true);
+check('EDGAR 10-K not flagged as a material event', parsedEdgar[1].isMaterialEvent === false);
+check('EDGAR filing url built from cik + accession number',
+  parsedEdgar[0].url === 'https://www.sec.gov/Archives/edgar/data/1234567/000119312523123456/0001193125-23-123456-index.htm',
+  parsedEdgar[0].url);
+
+check('parseSecEdgarResponse tolerates a missing/odd shape', JSON.stringify(parseSecEdgarResponse({})) === '[]');
+
+check('matchSecEdgarHits keeps the real match', matchSecEdgarHits(parsedEdgar, acmeEntity).length === 2);
+check('matchSecEdgarHits drops an unrelated company',
+  matchSecEdgarHits(parseSecEdgarResponse({ hits: { hits: [
+    { _source: { display_names: ['Zephyr Traders Ltd'], form: '8-K', adsh: 'x-1' } }
+  ] } }), acmeEntity).length === 0);
+
+// gleifLookup / secEdgarLookup / checkRegistries — network-free via an injected fetch.
+const fakeJsonFetch = (json, ok = true) => async () => ({ ok, status: ok ? 200 : 500, json: async () => json });
+const gleifLookupResult = await gleifLookup(acmeEntity, fakeJsonFetch(gleifActiveJson));
+check('gleifLookup returns matched records via an injected fetch', gleifLookupResult.ok && gleifLookupResult.records.length === 1);
+
+const failingFetch = async () => { throw new Error('offline'); };
+const gleifOffline = await gleifLookup(acmeEntity, failingFetch);
+check('gleifLookup degrades gracefully instead of throwing', gleifOffline.ok === false && gleifOffline.records.length === 0);
+
+const edgarHttpError = await secEdgarLookup(acmeEntity, fakeJsonFetch({}, false));
+check('secEdgarLookup surfaces a non-2xx without throwing', edgarHttpError.ok === false);
+
+const combined = await checkRegistries(acmeEntity, async (url) =>
+  url.includes('gleif') ? { ok: true, status: 200, json: async () => gleifMergedJson }
+    : { ok: true, status: 200, json: async () => ({ hits: { hits: [] } }) });
+check('checkRegistries combines both sources', combined.gleif.ok && combined.edgar.ok);
+check('checkRegistries flags out-of-business from a merged GLEIF record alone', combined.outOfBusiness === true);
+
+const combinedFromEdgar = await checkRegistries(acmeEntity, async (url) =>
+  url.includes('gleif') ? { ok: true, status: 200, json: async () => gleifActiveJson }
+    : { ok: true, status: 200, json: async () => edgarJson });
+check('checkRegistries flags out-of-business from an EDGAR 8-K alone', combinedFromEdgar.outOfBusiness === true);
+
+const combinedClean = await checkRegistries(acmeEntity, async (url) =>
+  url.includes('gleif') ? { ok: true, status: 200, json: async () => gleifActiveJson }
+    : { ok: true, status: 200, json: async () => ({ hits: { hits: [] } }) });
+check('checkRegistries stays false when nothing indicates out-of-business', combinedClean.outOfBusiness === false);
 
 console.log('\n[exports]');
 const run = {

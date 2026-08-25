@@ -196,6 +196,7 @@ async function start() {
   $('#resultsEmpty').hidden = true;
   $('#summaryCard').hidden = true;
   $('#aggregateCard').hidden = true;
+  $('#registryCard').hidden = true;
   $('#resultFilters').hidden = false;
 
   try {
@@ -325,6 +326,7 @@ function renderSummary() {
 
   $('#enrichBtn').hidden = !app.settings.enrichEndpoint;
   renderAggregate();
+  renderRegistry();
 }
 
 function renderAggregate() {
@@ -341,6 +343,42 @@ function renderAggregate() {
         <div class="agg-meta">${esc(a.queries.map((q) => q.name).join(' · '))}${a.date ? ` · ${esc(a.date)}` : ''}</div>
       </div>
     </div>`).join('');
+}
+
+function renderRegistry() {
+  const registry = app.run?.registry;
+  $('#registryCard').hidden = !registry;
+  if (!registry) return;
+
+  const { gleif, edgar } = registry;
+
+  const gleifBody = !gleif?.ok
+    ? `<p class="hint">GLEIF lookup unavailable${gleif?.error ? ` (${esc(gleif.error)})` : ''}.</p>`
+    : !gleif.records.length
+      ? '<p class="hint">No matching LEI record — expected for most private or non-US companies. Not a signal either way.</p>'
+      : gleif.records.slice(0, 3).map((r) => `
+        <div class="reg-item${r.outOfBusiness ? ' is-alert' : ''}">
+          <div class="reg-name">${esc(r.legalName)}${r.outOfBusiness ? ' <span class="reg-alert-tag">registry shows inactive</span>' : ''}</div>
+          <div class="reg-meta">LEI ${esc(r.lei)} · ${esc([r.city, r.country].filter(Boolean).join(', ') || 'location n/a')}</div>
+          <div class="reg-meta">entity: ${esc(r.entityStatus || 'n/a')} · registration: ${esc(r.registrationStatus || 'n/a')}${r.successorName ? ` · successor: ${esc(r.successorName)}` : ''}</div>
+        </div>`).join('');
+
+  const edgarBody = !edgar?.ok
+    ? `<p class="hint">SEC EDGAR lookup unavailable${edgar?.error ? ` (${esc(edgar.error)})` : ''}.</p>`
+    : !edgar.hits.length
+      ? '<p class="hint">No SEC filings found — expected for private or non-US companies.</p>'
+      : edgar.hits.slice(0, 5).map((h) => `
+        <div class="reg-item${h.isMaterialEvent ? ' is-alert' : ''}">
+          <div class="reg-name">
+            ${h.url ? `<a href="${esc(h.url)}" target="_blank" rel="noreferrer">${esc(h.form)}</a>` : esc(h.form)}
+            ${h.isMaterialEvent ? ' <span class="reg-alert-tag">material event — review</span>' : ''}
+          </div>
+          <div class="reg-meta">${esc(h.fileDate || 'date n/a')} · ${esc(h.companyNames.join(', '))}</div>
+        </div>`).join('');
+
+  $('#registryBody').innerHTML = `
+    <div class="reg-section"><h3 class="reg-heading">GLEIF (LEI index)</h3>${gleifBody}</div>
+    <div class="reg-section"><h3 class="reg-heading">SEC EDGAR full-text search</h3>${edgarBody}</div>`;
 }
 
 // ── library tab ──────────────────────────────────────────────────────────────
@@ -602,6 +640,12 @@ chrome.runtime.onMessage.addListener((msg) => {
     setRunning(false);
     renderResults();
     renderHistory();
+  }
+
+  if (msg.type === 'SX_REGISTRY_READY') {
+    if (!app.run) app.run = { queries: [], entity: app.entity, startedAt: Date.now() };
+    app.run.registry = msg.registry;
+    renderRegistry();
   }
 
   if (msg.type === 'SX_AMBIGUOUS') {

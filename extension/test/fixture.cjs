@@ -107,6 +107,18 @@ module.exports.soloSerp = function soloSerp(query) {
   return renderSerp(query, results);
 };
 
+// A genuine, non-legal-page bankruptcy hit for Psypher — used to test the
+// registry-corroboration bonus (GLEIF/SEC EDGAR agreeing with what the page
+// itself already says).
+module.exports.registryConfirmedSerp = function registryConfirmedSerp(query) {
+  const results = [
+    { t: 'Indian streetwear brand Psypher files for Chapter 11 bankruptcy protection',
+      u: 'https://www.reuters.com/business/retail/psypher-bankruptcy-2026',
+      s: '2 Aug 2026 — Psypher, the Delhi-based streetwear label, filed for Chapter 11 bankruptcy protection this week after mounting losses.' }
+  ];
+  return renderSerp(query, results);
+};
+
 /**
  * The layout that produced the reported title/URL mismatch: Google wrapping
  * several results inside one `div.g`, so a container picked by class name

@@ -54,6 +54,13 @@
         sharing the name, you settle it once instead of in every boolean. Silent
         when the name is unambiguous.
       </p>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="registryCheck"><span>Cross-check GLEIF &amp; SEC EDGAR (free, official registries)</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        Two extra JSON lookups per run, not search queries — GLEIF's Legal Entity
+        Identifier index and the SEC's full-text filing search. Coverage is narrow
+        (mostly US filers and companies that hold an LEI), so this only ever adds
+        corroboration; coming back empty is not treated as a signal either way.
+      </p>
     </div>
 
     <div class="card">

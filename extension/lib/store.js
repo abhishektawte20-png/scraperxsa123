@@ -23,6 +23,11 @@ export const DEFAULT_SETTINGS = {
   // name that matches two different companies before it contaminates all of
   // them. Silent unless a rival actually turns up.
   preflightProbe: true,
+  // Two free, official registries checked once per run: GLEIF (Legal Entity
+  // Identifier index) and SEC EDGAR full-text search. Coverage is narrow —
+  // most private, non-US companies won't be in either — so this only ever
+  // adds corroboration, never a penalty for coming back empty.
+  registryCheck: true,
 
   highlightSerp: true,       // paint terms on the SERP itself
   closeTabWhenDone: true,

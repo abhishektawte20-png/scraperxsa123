@@ -542,8 +542,16 @@ export function scoreResult(result, ctx) {
     reasons.push('note: signal appears far from any mention of the company — may belong to a different item on the page');
   }
 
-  const signalScore = Math.min(30, signalHits.length * 12) * (distantSignal ? 0.5 : 1);
+  let signalScore = Math.min(30, signalHits.length * 12) * (distantSignal ? 0.5 : 1);
   if (signalHits.length) reasons.push(`signal: ${signalHits.slice(0, 3).join(', ')}`);
+  // A registry (GLEIF's own registration status, or a material-event 8-K on
+  // SEC EDGAR) independently saying this company is out of business is
+  // corroboration a web page can never carry — it's the record itself, not
+  // someone's account of it. Only applies where it was actually asked about.
+  if (ctx.registryOutOfBusiness && ctx.category === 'Out of Business' && signalHits.length) {
+    signalScore += 10;
+    reasons.push('corroborated by a company registry (GLEIF / SEC EDGAR)');
+  }
   if (onLegalPage && signalMatches.length) reasons.push('on a terms/privacy page — generic wording, not counted');
   else if (negatedHits.length) reasons.push(`note: "${negatedHits[0]}" appears negated — not counted`);
   if (ambiguousHits.length) {
