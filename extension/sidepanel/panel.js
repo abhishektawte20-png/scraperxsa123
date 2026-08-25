@@ -262,6 +262,7 @@ function queryGroup(entry) {
           <div class="qgroup-name">${esc(entry.name)}</div>
         </div>
         <div class="qgroup-meta">
+          ${entry.isSiteCompanion ? '<span class="chip chip-site">official site</span>' : ''}
           ${countLabel ? `<span class="chip">${esc(countLabel)}</span>` : ''}
           ${flagged ? `<span class="chip chip-flag">${flagged} flagged</span>` : ''}
           ${tierChip(entry)}

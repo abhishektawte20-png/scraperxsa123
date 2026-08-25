@@ -1,5 +1,5 @@
 import { toMarkdown, toCsv, slug, groupByCategory } from '../lib/export.js';
-import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword, renderExternalUrl } from '../lib/query.js';
+import { buildJobs, renderQuery, bareDomain, buildEntityGroup, deriveSignals, insertKeyword, renderExternalUrl, buildSiteQuery } from '../lib/query.js';
 import { DEFAULT_LIBRARY } from '../lib/library.js';
 import { scoreResult, classifyDomain, isLegalBoilerplatePage, signalProximity } from '../lib/scoring.js';
 import { buildExclusionTail, exclusionTerms } from '../lib/query.js';
@@ -48,6 +48,38 @@ check('Zauba Corp is in the default library, off by default (it is a manual link
 check('Zauba Corp is engine: external — never fetched or parsed by the extension',
   DEFAULT_LIBRARY.find((t) => t.id === 'registry.zaubacorp')?.engine === 'external');
 check('only= filter respected', buildJobs(DEFAULT_LIBRARY, entity, { only: ['smi.linkedin'] }).length === 1);
+
+console.log('\n[site: companion queries — searching the official website itself]');
+check('siteSearch off (default) leaves job count unchanged — byte-identical to before',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['oob.legalname'] }).length === 1);
+check('siteSearch on adds one companion job for a boolean with real content signals',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['oob.legalname'], siteSearch: true }).length === 2);
+
+const withSite = buildJobs(DEFAULT_LIBRARY, entity, { only: ['oob.legalname'], siteSearch: true });
+const companion = withSite.find((j) => j.isSiteCompanion);
+check('the companion query is restricted to site:{{domain}}, not the open web',
+  companion?.query.startsWith('site:homeshowcenter.com AND ('), companion?.query);
+check('the companion drops the entity OR-group and pitchbook exclusion — irrelevant once scoped to one site',
+  !companion?.query.includes('OR "www.homeshowcenter.com"') && !companion?.query.includes('pitchbook'), companion?.query);
+check('the companion carries the same content signals as its parent',
+  companion?.signals.includes('privacy policy') && companion?.signals.includes('trademark'), companion?.signals.join(', '));
+check('the companion is named so it is recognisable as the site-restricted twin',
+  companion?.name === 'Legal Name — official site', companion?.name);
+check('the companion points back to its parent boolean for scoring purposes (e.g. legal-page exemptions)',
+  companion?.templateId === 'oob.legalname', companion?.templateId);
+
+check('a boolean whose only "signal" is the company\'s own name gets no companion — nothing to ask the site',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['smi.linkedin'], siteSearch: true }).length === 1);
+check('a boolean already scoped to specific third-party sites (no quoted content) gets no companion either',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['oob.website'], siteSearch: true }).length === 1);
+check('no companion is generated when the entity has no website at all',
+  buildJobs(DEFAULT_LIBRARY, { company: 'Acme', website: '', aliases: [] }, { only: ['oob.legalname'], siteSearch: true }).length === 1);
+
+check('buildSiteQuery quotes and ORs the content signals, called directly',
+  buildSiteQuery(DEFAULT_LIBRARY.find((t) => t.id === 'backing.general'), entity).startsWith('site:homeshowcenter.com AND ('),
+  buildSiteQuery(DEFAULT_LIBRARY.find((t) => t.id === 'backing.general'), entity));
+check('buildSiteQuery returns empty when there is no website to scope to',
+  buildSiteQuery(DEFAULT_LIBRARY.find((t) => t.id === 'backing.general'), { company: 'Acme', website: '' }) === '');
 
 console.log('\n[signals]');
 const sig = deriveSignals(DEFAULT_LIBRARY.find((t) => t.id === 'oob.bankruptcy_us'), entity);

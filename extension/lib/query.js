@@ -127,6 +127,38 @@ export function deriveSignals(template, entity) {
 }
 
 /**
+ * The boolean's own signal terms, minus the entity's own name/domain/aliases
+ * — what's left is what the boolean is actually asking about, as opposed to
+ * just "is this the company." A companion search restricted to the official
+ * site doesn't need the name check (site: already settles that), so this is
+ * the useful half.
+ */
+function contentOnlySignals(signals, entity) {
+  const entityTerms = new Set(
+    [entity?.company, bareDomain(entity?.website), ...(entity?.aliases || [])]
+      .filter(Boolean).map((s) => String(s).toLowerCase())
+  );
+  return (signals || []).filter((s) => !entityTerms.has(String(s).toLowerCase()));
+}
+
+/**
+ * A companion query restricted to the company's own website: the same
+ * boolean, asking the same question, but `site:{{domain}} AND (...)` instead
+ * of hoping the page happens to rank organically for the phrasing against
+ * press coverage and aggregators. Returns '' when there's nothing to ask —
+ * no domain configured, or a boolean (LinkedIn, Facebook/Twitter) whose only
+ * "signal" is the company's own name, where searching the company's own site
+ * for its own name says nothing.
+ */
+export function buildSiteQuery(template, entity) {
+  const domain = bareDomain(entity?.website);
+  if (!domain) return '';
+  const content = contentOnlySignals(deriveSignals(template, entity), entity);
+  if (!content.length) return '';
+  return `site:${domain} AND (${content.map((t) => `"${t}"`).join(' OR ')})`;
+}
+
+/**
  * Add a keyword to a boolean without the researcher having to hand-edit
  * OR-syntax. Drops the new term into the first quoted OR-group in the query
  * (that's the boolean's main "what am I looking for" list — a multi-group
@@ -157,12 +189,12 @@ export function buildJobs(library, entity, opts = {}) {
   return library
     .filter((t) => t.enabled)
     .filter((t) => !opts.only || opts.only.includes(t.id))
-    .map((t) => {
+    .flatMap((t) => {
       if (t.engine === 'external') {
-        return {
+        return [{
           id: t.id, category: t.category, name: t.name, engine: 'external',
           url: renderExternalUrl(t.url, entity), notes: t.notes || '', query: '', signals: []
-        };
+        }];
       }
       const base = renderQuery(t, entity);
       // Off unless the caller asks: a researcher who has not opted in gets
@@ -170,7 +202,8 @@ export function buildJobs(library, entity, opts = {}) {
       const excluded = opts.queryExclusions ? exclusionTerms(entity.excludeTerms) : [];
       const tail = buildExclusionTail(excluded);
       const q = tail ? `${base} ${tail}` : base;
-      return {
+      const entitySignals = [entity.company, bareDomain(entity.website), ...(entity.aliases || [])].filter(Boolean);
+      const job = {
         id: t.id,
         category: t.category,
         name: t.name,
@@ -179,8 +212,27 @@ export function buildJobs(library, entity, opts = {}) {
         excludedInQuery: excluded,
         url: googleUrl(q, opts),
         signals: deriveSignals(t, entity),
-        entitySignals: [entity.company, bareDomain(entity.website), ...(entity.aliases || [])].filter(Boolean),
+        entitySignals,
         notes: t.notes || ''
       };
+
+      if (!opts.siteSearch) return [job];
+      const siteQ = buildSiteQuery(t, entity);
+      if (!siteQ) return [job]; // nothing to ask the official site that isn't just its own name
+
+      return [job, {
+        id: `${t.id}.site`,
+        category: t.category,
+        name: `${t.name} — official site`,
+        engine: 'google',
+        query: siteQ,
+        excludedInQuery: [],
+        url: googleUrl(siteQ, opts),
+        signals: deriveSignals(t, entity),
+        entitySignals,
+        notes: 'Same question, restricted to pages Google has indexed from the company’s own website.',
+        isSiteCompanion: true,
+        templateId: t.id // for scoring: this shares the parent boolean's legal-page exemptions etc.
+      }];
     });
 }

@@ -315,6 +315,7 @@ input[type="text"]:focus, textarea:focus {
 .chip-zero { background: var(--weak-soft); color: var(--ink-faint); }
 .chip-error { background: var(--warn-bg); color: #8a6100; }
 .chip-flag { background: var(--flag-grad); color: #fff; font-weight: 700; }
+.chip-site { background: var(--accent-soft); color: var(--accent-solid); font-weight: 700; }
 
 .qgroup-body { display: none; border-top: 1px solid var(--line); padding: 10px 11px; }
 .qgroup.is-open .qgroup-body { display: block; }

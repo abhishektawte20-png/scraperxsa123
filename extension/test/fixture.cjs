@@ -107,6 +107,19 @@ module.exports.soloSerp = function soloSerp(query) {
   return renderSerp(query, results);
 };
 
+// What a site:{{domain}} companion query actually turns up: the company's own
+// legal/privacy page, mentioning exactly the phrases the parent boolean (Legal
+// Name) is asking about, plus the usual boilerplate that would otherwise trip
+// the legal-page discount if the companion didn't inherit its parent's exemption.
+module.exports.siteScopedLegalSerp = function siteScopedLegalSerp(query) {
+  const results = [
+    { t: 'Privacy Policy & Terms of Use',
+      u: 'https://www.psypher.in/legal/privacy-policy',
+      s: '1 Jan 2026 — This Privacy Policy and Terms of Use, together with our trademark notice, apply to psypher.in. All rights reserved.' }
+  ];
+  return renderSerp(query, results);
+};
+
 // A genuine, non-legal-page bankruptcy hit for Psypher — used to test the
 // registry-corroboration bonus (GLEIF/SEC EDGAR agreeing with what the page
 // itself already says).

@@ -92,7 +92,7 @@ function processSerp(job, payload, settings, entity, registry) {
     entitySignals: job.entitySignals || [],
     signals: job.signals || [],
     category: job.category,
-    templateId: job.id,
+    templateId: job.templateId || job.id,
     excludeTerms: entity.excludeTerms || [],
     contextTerms: entity.contextTerms || [],
     registryOutOfBusiness: !!registry?.outOfBusiness,
@@ -162,14 +162,14 @@ async function drive() {
     let entry;
     if (payload?.error) {
       entry = {
-        id: job.id, category: job.category, name: job.name, engine: 'google',
+        id: job.id, category: job.category, name: job.name, engine: 'google', isSiteCompanion: !!job.isSiteCompanion,
         query: job.query, url: job.url, status: 'error', error: payload.error,
         results: [], summary: null
       };
     } else {
       const { kept, summary } = processSerp(job, payload, state.settings, state.entity, state.run.registry);
       entry = {
-        id: job.id, category: job.category, name: job.name, engine: 'google',
+        id: job.id, category: job.category, name: job.name, engine: 'google', isSiteCompanion: !!job.isSiteCompanion,
         query: job.query, url: job.url, status: 'ok',
         resultCount: payload.stats?.count ?? null,
         resultStatsText: payload.stats?.text || '',
@@ -295,6 +295,7 @@ function compileJobs(library, entity, settings, only) {
     recentOnly: settings.recentOnly,
     country: settings.country,
     queryExclusions: settings.queryExclusions,
+    siteSearch: settings.siteSearch,
     only
   });
 }

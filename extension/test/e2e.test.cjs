@@ -30,7 +30,8 @@ function check(name, cond, extra = '') {
     serves++;
     const q = url.searchParams.get('q') || '';
     const bare = q.trim();
-    const body = q.includes('"nested-layout"') ? serp.nestedSerp(q)   // multi-result wrapper
+    const body = q.startsWith('site:') ? serp.siteScopedLegalSerp(q)  // site: companion queries
+      : q.includes('"nested-layout"') ? serp.nestedSerp(q)   // multi-result wrapper
       : q.includes('"chapter 11"') ? serp.registryConfirmedSerp(q)    // registry corroboration
       : bare === '"Psypher"' ? serp.probeSerp(q)                      // pre-flight probe
       : bare === '"Acme Robotics"' ? serp.soloSerp(q)                // unambiguous probe
@@ -105,7 +106,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false, siteSearch: false,
       highlightSerp: true, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -343,7 +344,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false, siteSearch: false,
       highlightSerp: true, closeTabWhenDone: false, windowMode: 'current'
     }
   }));
@@ -435,7 +436,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false, siteSearch: false,
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -541,7 +542,7 @@ function check(name, cond, extra = '') {
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
       resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
-      preflightProbe: true, queryExclusions: true,
+      preflightProbe: true, queryExclusions: true, siteSearch: false,
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -630,7 +631,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false, siteSearch: false,
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));
@@ -695,6 +696,67 @@ function check(name, cond, extra = '') {
     (await panel.locator('.result:not(:has(.result-id))').count()) === 0);
   await panel.uncheck('#onlyIdentity');
 
+  // --- site: companion queries — searching the official website itself -----
+  log('\n[site search: also asking the company\'s own website directly]');
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: false, siteSearch: true, registryCheck: false, queryExclusions: true,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'Psypher');
+  await panel.fill('#website', 'www.psypher.in');
+  await panel.fill('#excludeTerms', '');
+  await panel.click('#selNone');
+  await panel.check('#chk_oob\\.legalname');
+  await panel.check('#chk_smi\\.linkedin');
+  check('two booleans selected, not four — the selector still only lists real library entries',
+    (await panel.locator('#selectedCount').textContent()).startsWith('2'));
+
+  const siteRunDone = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const siteRun = await siteRunDone;
+
+  check('a companion query was added for Legal Name (it has real content signals)',
+    siteRun.queries.some((q) => q.id === 'oob.legalname.site'), siteRun.queries.map((q) => q.id).join(', '));
+  check('no companion was added for LinkedIn — searching the site for its own name says nothing',
+    !siteRun.queries.some((q) => q.id === 'smi.linkedin.site'), siteRun.queries.map((q) => q.id).join(', '));
+  check('three query entries total: two real booleans, one companion', siteRun.queries.length === 3,
+    String(siteRun.queries.length));
+
+  const siteCompanion = siteRun.queries.find((q) => q.id === 'oob.legalname.site');
+  check('the companion query is actually restricted to site:', siteCompanion?.query.startsWith('site:psypher.in AND ('),
+    siteCompanion?.query);
+  check('the companion found the result on the official domain', siteCompanion?.results?.[0]?.url === 'https://www.psypher.in/legal/privacy-policy',
+    siteCompanion?.results?.[0]?.url);
+  check('the companion result is NOT discounted as boilerplate — it inherits its parent\'s legal-page exemption',
+    siteCompanion?.results?.[0]?.tier === 'critical' && siteCompanion?.results?.[0]?.flag != null,
+    JSON.stringify({ tier: siteCompanion?.results?.[0]?.tier, flag: siteCompanion?.results?.[0]?.flag }));
+
+  await panel.waitForTimeout(300);
+  await panel.click('[data-tab="results"]');
+  await panel.waitForTimeout(200);
+  check('the companion card is visibly labelled as the official-site twin, not mistaken for a duplicate',
+    (await panel.locator('.qgroup:has-text("official site")').count()) === 1);
+  check('the companion card shows the "official site" chip',
+    (await panel.locator('.chip-site:has-text("official site")').count()) === 1);
+
+  // Reset for the rest of the suite.
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: false, siteSearch: false, registryCheck: false, queryExclusions: true,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+
   // --- registry check: GLEIF + SEC EDGAR ------------------------------------
   log('\n[registry check: GLEIF + SEC EDGAR corroboration]');
   gleifFixture = { data: [{
@@ -718,7 +780,7 @@ function check(name, cond, extra = '') {
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
       resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
-      preflightProbe: false, registryCheck: true, queryExclusions: true,
+      preflightProbe: false, siteSearch: false, registryCheck: true, queryExclusions: true,
       openCorporatesToken: '', companiesHouseKey: '',
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
@@ -779,7 +841,7 @@ function check(name, cond, extra = '') {
     sx_settings: {
       minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
       resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
-      preflightProbe: false, registryCheck: true, queryExclusions: true,
+      preflightProbe: false, siteSearch: false, registryCheck: true, queryExclusions: true,
       openCorporatesToken: '', companiesHouseKey: 'test-free-key',
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
@@ -823,7 +885,7 @@ function check(name, cond, extra = '') {
   await panel.evaluate(() => chrome.storage.local.set({
     sx_settings: {
       minDelayMs: 700, maxDelayMs: 900, longPauseEvery: 0, longPauseMs: 0,
-      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000, preflightProbe: false, siteSearch: false,
       highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
     }
   }));

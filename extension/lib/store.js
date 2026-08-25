@@ -36,6 +36,11 @@ export const DEFAULT_SETTINGS = {
   // skipped entirely without one — there's no useful anonymous allowance.
   openCorporatesToken: '',
   companiesHouseKey: '',
+  // A companion query per boolean, restricted to site:{{domain}} — the same
+  // question, asked directly of the company's own website, instead of
+  // relying on its pages happening to rank organically against press
+  // coverage and aggregators. Roughly doubles query count and run time.
+  siteSearch: true,
 
   highlightSerp: true,       // paint terms on the SERP itself
   closeTabWhenDone: true,
