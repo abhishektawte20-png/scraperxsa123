@@ -651,6 +651,48 @@ check('proximity says nothing when the company is never named',
 check('an abbreviation is not mistaken for a sentence end',
   signalProximity('Psypher Inc. raised money', 21, [0]) === 'same-sentence');
 
+console.log('\n[reported: an ellipsis splices together two unrelated items in a roundup article]');
+// Real report: "JAL Precision Products … Eclipse Raises $23 Million" — Google's
+// own snippet cut the middle out of a digest article; the funding news belongs
+// to "Eclipse", a different company entirely, not the one actually being searched.
+const roundupCtx = {
+  company: 'JAL Precision', entityDomain: 'jalprecision.com', category: 'Prior Backing',
+  entitySignals: ['JAL Precision', 'jalprecision.com'],
+  signals: ['raises', 'raised', 'received funding', 'JAL Precision', 'jalprecision.com']
+};
+const roundupHit = scoreResult({
+  title: 'JAL Precision Installs Rooftop Solar, Eyes 4.5 MW …', url: 'https://www.mercomindia.com/archive',
+  snippet: 'Pune-based precision transmission components manufacturer JAL Precision Products … Eclipse Raises $23 Million to Expand Battery Storage Platform in Europe.'
+}, roundupCtx);
+check('it never carries the flag — the whole point of the fix',
+  roundupHit.flag === null, JSON.stringify(roundupHit.flag));
+check('proximity is reported as far, not near, despite the short character gap',
+  roundupHit.proximity === 'far' && roundupHit.distantSignal === true, roundupHit.proximity);
+check('the reason names it as belonging to a different item on the page',
+  roundupHit.reasons.some((r) => r.includes('far from any mention')), roundupHit.reasons.join(' | '));
+
+// Google renders its own ellipsis as a single "…" glyph as often as three
+// literal periods — both have to work, and a plain sentence break must not
+// be confused for the (stronger) ellipsis case.
+check('a real ellipsis character forces "far" regardless of character distance',
+  signalProximity('Acme Corp … raised $5M', 12, [0]) === 'far');
+check('three literal periods are recognised the same way',
+  signalProximity('Acme Corp ... raised $5M', 13, [0]) === 'far');
+check('an ordinary sentence break (no ellipsis) still gets the softer "near" treatment',
+  signalProximity('Acme Corp. It raised $5M this year.', 14, [0]) === 'near');
+
+// The common "...Read more" truncation at the very END of a snippet — after
+// both the company and the signal — must not retroactively demote a genuine
+// same-sentence match just because an ellipsis appears somewhere on the page.
+const trailingEllipsis = scoreResult({
+  title: 'Acme Robotics raises $8M Series A', url: 'https://www.businesswire.com/x',
+  snippet: 'Acme Robotics raised $8M in Series A funding this week ...Read more'
+}, { ...roundupCtx, company: 'Acme Robotics', entityDomain: 'acme.com', entitySignals: ['Acme Robotics', 'acme.com'],
+  signals: ['raises', 'raised', 'received funding', 'Acme Robotics', 'acme.com'] });
+check('a trailing "...Read more" after both terms does not demote a genuine same-sentence hit',
+  trailingEllipsis.proximity === 'same-sentence' && trailingEllipsis.flag !== null,
+  JSON.stringify({ proximity: trailingEllipsis.proximity, flag: trailingEllipsis.flag }));
+
 console.log('\n[query-side exclusions]');
 check('exclusion terms are quoted and negated',
   buildExclusionTail(['Psypher AI', 'Interactive']) === '-"Psypher AI" -"Interactive"',

@@ -150,7 +150,24 @@ function allTermPositions(text, terms) {
  */
 function sentenceBreakBetween(text, a, b) {
   const seg = String(text).slice(Math.min(a, b), Math.max(a, b));
-  return /[.!?]\s+[A-Z"'(]|\n|\s[—–|]\s|\.{3}/.test(seg);
+  return /[.!?]\s+[A-Z"'(]|\n|\s[—–|]\s/.test(seg);
+}
+
+/**
+ * An ellipsis in a Google snippet is not punctuation, it's a splice mark:
+ * Google is saying "unrelated content sat here and we cut it out" — most
+ * often because the result is a roundup/digest article and the snippet
+ * stitched together two mentions from different items in the list. That's
+ * categorically stronger evidence of a topic change than an ordinary
+ * sentence break, and character distance can't be trusted to measure it —
+ * removing the skipped middle can leave what's left only a few characters
+ * apart even though it bridged two entirely different companies' news.
+ * Google renders its own ellipsis as a single "…" character as often as
+ * three literal periods, so both are checked.
+ */
+function ellipsisBetween(text, a, b) {
+  const seg = String(text).slice(Math.min(a, b), Math.max(a, b));
+  return /…|\.{3}/.test(seg);
 }
 
 /**
@@ -176,6 +193,9 @@ export function signalProximity(text, signalAt, entityPositions) {
     if (d < best) { best = d; nearest = pos; }
   }
   if (nearest === null) return 'no-entity';
+  // Unconditional — an ellipsis bridging the two means the gap between them
+  // isn't measurable at all, not just a large one.
+  if (ellipsisBetween(text, nearest, signalAt)) return 'far';
   if (!sentenceBreakBetween(text, nearest, signalAt)) return 'same-sentence';
   return best <= NEAR_WINDOW ? 'near' : 'far';
 }
