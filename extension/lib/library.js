@@ -39,7 +39,8 @@ export const DEFAULT_LIBRARY = [
     name: 'General Financing',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("raises" OR "raised" OR "received" OR "received funding" OR "receives financing" OR "received financing" OR "receives funding" OR "venture funding") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("raises" OR "raised" OR "received" OR "received funding" OR "receives financing" OR "received financing" OR "receives funding" OR "venture funding") ${EXCLUDE_PB}`,
+    expandedSignals: ['secures funding', 'secured funding', 'closes funding round', 'lands funding', 'nets funding', 'bags funding', 'investment from', 'seed round', 'pre-seed round', 'series funding']
   },
   {
     id: 'backing.grant',
@@ -47,7 +48,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Grant',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("won" OR "grant" OR "sbic" OR "sbir" OR "was awarded") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("won" OR "grant" OR "sbic" OR "sbir" OR "was awarded") ${EXCLUDE_PB}`,
+    expandedSignals: ['receives grant', 'awarded grant', 'grant funding']
   },
 
   // ── Entity Recognition ─────────────────────────────────────────────────────
@@ -57,7 +59,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Start Date',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("incorporated in" OR "founded in" OR "founded on" OR "established in" OR "started in" OR "launched in" OR "was founded") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("incorporated in" OR "founded in" OR "founded on" OR "established in" OR "started in" OR "launched in" OR "was founded") ${EXCLUDE_PB}`,
+    expandedSignals: ['incorporated on', 'registered in', 'formed in', 'founded by', 'co-founded in', 'dates back to']
   },
   {
     id: 'entity.nonprofit',
@@ -65,7 +68,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Non-Profit Entity',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("non-profit" OR "nonprofit" OR "not-for-profit" OR "non-governmental organization" OR "social enterprise")`
+    query: `{{entity}} AND ("non-profit" OR "nonprofit" OR "not-for-profit" OR "non-governmental organization" OR "social enterprise")`,
+    expandedSignals: ['registered charity', 'charitable organization', 'public charity']
   },
   {
     id: 'entity.winddown',
@@ -102,7 +106,8 @@ export const DEFAULT_LIBRARY = [
     name: 'HQ Search',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("headquarters" OR "based out of" OR "headquartered" OR "head office") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("headquarters" OR "based out of" OR "headquartered" OR "head office") ${EXCLUDE_PB}`,
+    expandedSignals: ['based in', 'registered office', 'principal place of business', 'corporate headquarters']
   },
 
   // ── Management ─────────────────────────────────────────────────────────────
@@ -112,7 +117,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Top Level Management Search',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("chief executive officer" OR "ceo" OR "coo" OR "founder" OR "co-founder" OR "chief financial officer" OR "cfo" OR "managing director" OR "management" OR "chief" OR "president" OR "cto") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("chief executive officer" OR "ceo" OR "coo" OR "founder" OR "co-founder" OR "chief financial officer" OR "cfo" OR "managing director" OR "management" OR "chief" OR "president" OR "cto") ${EXCLUDE_PB}`,
+    expandedSignals: ['appointed as', 'joins as', 'joined as', 'promoted to', 'named as', 'steps down as', 'resigns as', 'chief operating officer', 'chief technology officer', 'vice president']
   },
 
   // ── Service Providers ──────────────────────────────────────────────────────
@@ -122,7 +128,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Service Provider Search',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("advise" OR "advisor" OR "advised" OR "legal") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("advise" OR "advisor" OR "advised" OR "legal") ${EXCLUDE_PB}`,
+    expandedSignals: ['law firm', 'general counsel', 'outside counsel', 'represented by', 'auditor', 'accounting firm']
   },
 
   // ── ROVO agents (external, opened not scraped) ─────────────────────────────
@@ -161,7 +168,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Out of Business',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("closes operations" OR "closed their doors" OR "closes its doors" OR "closed its doors" OR "files for bankruptcy" OR "bankruptcy" OR "bankrupt") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("closes operations" OR "closed their doors" OR "closes its doors" OR "closed its doors" OR "files for bankruptcy" OR "bankruptcy" OR "bankrupt") ${EXCLUDE_PB}`,
+    expandedSignals: ['ceases operations', 'winds down', 'goes out of business', 'discontinues operations']
   },
   {
     id: 'oob.bankruptcy_us',
@@ -169,7 +177,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Bankruptcy (U.S.)',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("ch. 11" OR "ch 11" OR "ch 7" OR "ch. 7" OR "closes their doors" OR "chapter 11" OR "chapter 7" OR "shuts down" OR "dead pool" OR "ends operations" OR "out of business" OR "bankruptcy" OR "bankrupt") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("ch. 11" OR "ch 11" OR "ch 7" OR "ch. 7" OR "closes their doors" OR "chapter 11" OR "chapter 7" OR "shuts down" OR "dead pool" OR "ends operations" OR "out of business" OR "bankruptcy" OR "bankrupt") ${EXCLUDE_PB}`,
+    expandedSignals: ['files chapter 11', 'voluntary bankruptcy', 'debtor-in-possession']
   },
   {
     id: 'oob.bankruptcy_intl',
@@ -177,7 +186,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Bankruptcy (Outside U.S.)',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("into administration" OR "enters administration" OR "filing for protection" OR "into receivership" OR "debt reorganizing" OR "debt restructuring") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("into administration" OR "enters administration" OR "filing for protection" OR "into receivership" OR "debt reorganizing" OR "debt restructuring") ${EXCLUDE_PB}`,
+    expandedSignals: ['insolvency proceedings', 'voluntary liquidation', 'winding up petition', 'corporate insolvency resolution process', 'nclt']
   },
   {
     id: 'oob.acquisition',
@@ -185,7 +195,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Acquisition',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("acquired" OR "merged" OR "buyout" OR "merges" OR "merger" OR "lbo" OR "leveraged buyout" OR "acquisition" OR "purchased" OR "acquires" OR "placement") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("acquired" OR "merged" OR "buyout" OR "merges" OR "merger" OR "lbo" OR "leveraged buyout" OR "acquisition" OR "purchased" OR "acquires" OR "placement") ${EXCLUDE_PB}`,
+    expandedSignals: ['agrees to acquire', 'definitive agreement', 'asset purchase']
   },
   {
     id: 'oob.legalname',
@@ -193,7 +204,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Legal Name',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("privacy policy" OR "terms of use" OR "legal notice" OR "privacy notice" OR "all rights reserved" OR "registered" OR "trademark") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("privacy policy" OR "terms of use" OR "legal notice" OR "privacy notice" OR "all rights reserved" OR "registered" OR "trademark") ${EXCLUDE_PB}`,
+    expandedSignals: ['doing business as', 'formerly known as', 'trading as']
   },
   {
     id: 'oob.website',
@@ -211,7 +223,8 @@ export const DEFAULT_LIBRARY = [
     name: 'Spin Out',
     engine: 'google',
     enabled: true,
-    query: `{{entity}} AND ("spin out" OR "spun out of" OR "spin off") ${EXCLUDE_PB}`
+    query: `{{entity}} AND ("spin out" OR "spun out of" OR "spin off") ${EXCLUDE_PB}`,
+    expandedSignals: ['spun off from', 'carved out of', 'divested from']
   },
 
   // ── Boolean Backup (only when ROVO is down) ────────────────────────────────
@@ -223,6 +236,7 @@ export const DEFAULT_LIBRARY = [
     enabled: false,
     tag: 'rovo-down',
     query: `{{entity}} AND ("number of employees" OR "total employees" OR "employee count") ${BACKUP_EXCLUSIONS}`,
+    expandedSignals: ['headcount', 'workforce of'],
     notes: 'Run only when ROVO is down.'
   },
   {
@@ -233,6 +247,7 @@ export const DEFAULT_LIBRARY = [
     enabled: false,
     tag: 'rovo-down',
     query: `{{entity}} AND ("gross receipts" OR "revenue" OR "revenues" OR "sales of" OR "in sales" OR "turnover" OR "bookings" OR "annual recurring" OR "run rate") ${BACKUP_EXCLUSIONS}`,
+    expandedSignals: ['annual revenue', 'reported revenue'],
     notes: 'Run only when ROVO is down.'
   },
   {
@@ -243,6 +258,7 @@ export const DEFAULT_LIBRARY = [
     enabled: false,
     tag: 'rovo-down',
     query: `{{entity}} AND ("ebitda" OR "ebit" OR "earnings before interest") AND ("million" OR "billion") ${BACKUP_EXCLUSIONS}`,
+    expandedSignals: ['adjusted ebitda'],
     notes: 'Run only when ROVO is down.'
   },
   {
@@ -253,6 +269,7 @@ export const DEFAULT_LIBRARY = [
     enabled: false,
     tag: 'rovo-down',
     query: `{{entity}} AND ("net income" OR "annual income" OR "earnings" OR "profits") AND ("million" OR "billion") ${BACKUP_EXCLUSIONS}`,
+    expandedSignals: ['net profit', 'profit after tax', 'bottom line'],
     notes: 'Run only when ROVO is down.'
   }
 ];

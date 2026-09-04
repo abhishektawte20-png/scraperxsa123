@@ -162,14 +162,16 @@ async function drive() {
     let entry;
     if (payload?.error) {
       entry = {
-        id: job.id, category: job.category, name: job.name, engine: 'google', isSiteCompanion: !!job.isSiteCompanion,
+        id: job.id, category: job.category, name: job.name, engine: 'google',
+        isSiteCompanion: !!job.isSiteCompanion, isExpandedCompanion: !!job.isExpandedCompanion,
         query: job.query, url: job.url, status: 'error', error: payload.error,
         results: [], summary: null
       };
     } else {
       const { kept, summary } = processSerp(job, payload, state.settings, state.entity, state.run.registry);
       entry = {
-        id: job.id, category: job.category, name: job.name, engine: 'google', isSiteCompanion: !!job.isSiteCompanion,
+        id: job.id, category: job.category, name: job.name, engine: 'google',
+        isSiteCompanion: !!job.isSiteCompanion, isExpandedCompanion: !!job.isExpandedCompanion,
         query: job.query, url: job.url, status: 'ok',
         resultCount: payload.stats?.count ?? null,
         resultStatsText: payload.stats?.text || '',
@@ -296,6 +298,7 @@ function compileJobs(library, entity, settings, only) {
     country: settings.country,
     queryExclusions: settings.queryExclusions,
     siteSearch: settings.siteSearch,
+    expandedKeywords: settings.expandedKeywords,
     only
   });
 }

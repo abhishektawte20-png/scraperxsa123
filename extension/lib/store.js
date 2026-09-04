@@ -41,6 +41,11 @@ export const DEFAULT_SETTINGS = {
   // relying on its pages happening to rank organically against press
   // coverage and aggregators. Roughly doubles query count and run time.
   siteSearch: true,
+  // A companion query per boolean using a wider phrase list, run alongside
+  // (not instead of) the classic one, so a researcher can compare which
+  // actually finds more. Off by default — this is deliberate A/B tooling,
+  // not a strict improvement like the other toggles.
+  expandedKeywords: false,
 
   highlightSerp: true,       // paint terms on the SERP itself
   closeTabWhenDone: true,

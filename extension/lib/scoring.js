@@ -240,7 +240,7 @@ const AMBIGUOUS_SENSE = {
     topic: 'financing'
   }],
   'Out of Business': [{
-    terms: new Set(['acquired', 'merged', 'purchased', 'placement']),
+    terms: new Set(['acquired', 'merged', 'purchased', 'placement', 'definitive agreement', 'asset purchase']),
     confirm: /(\$|€|£|₹|\bmillion\b|\bbillion\b|\bdeal\b|\btransaction\b|\bstake\b|\bshares?\b|\bbuyout\b|\blbo\b|\bprivate equity\b)/i,
     topic: 'a deal'
   }, {

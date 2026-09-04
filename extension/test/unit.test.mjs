@@ -81,6 +81,40 @@ check('buildSiteQuery quotes and ORs the content signals, called directly',
 check('buildSiteQuery returns empty when there is no website to scope to',
   buildSiteQuery(DEFAULT_LIBRARY.find((t) => t.id === 'backing.general'), { company: 'Acme', website: '' }) === '');
 
+console.log('\n[expanded keyword companion — old vs. new, run side by side]');
+check('expandedKeywords off (default) leaves job count unchanged — byte-identical to before',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['backing.general'] }).length === 1);
+check('expandedKeywords on adds one companion job for a boolean with an expanded list',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['backing.general'], expandedKeywords: true }).length === 2);
+
+const withExpanded = buildJobs(DEFAULT_LIBRARY, entity, { only: ['backing.general'], expandedKeywords: true });
+const classic = withExpanded.find((j) => !j.isExpandedCompanion);
+const expanded = withExpanded.find((j) => j.isExpandedCompanion);
+check('the classic boolean is untouched — old and new run side by side, not a replacement',
+  classic.query === buildJobs(DEFAULT_LIBRARY, entity, { only: ['backing.general'] })[0].query, classic.query);
+check('the expanded companion is a strict superset — every classic term still present',
+  ['raises', 'raised', 'received funding', 'venture funding'].every((t) => expanded.query.includes(`"${t}"`)), expanded.query);
+check('the expanded companion actually adds the new phrasing',
+  ['secures funding', 'bags funding', 'seed round'].every((t) => expanded.query.includes(`"${t}"`)), expanded.query);
+check('the entity group is untouched by the new phrases — they land in the signal group, not diluting "is this the company"',
+  expanded.query.startsWith('("L&L Exhibition Management" OR "www.homeshowcenter.com") AND ('), expanded.query);
+check('the new phrases sit inside the same OR-group as the classic signal terms',
+  /AND \("raises" OR .*"secures funding".*\)/.test(expanded.query), expanded.query);
+check('the expanded companion is named so it is recognisable, not mistaken for a duplicate',
+  expanded.name === 'General Financing — expanded keywords', expanded.name);
+check('the expanded companion carries both the classic and the new signals for highlighting/scoring',
+  expanded.signals.includes('raises') && expanded.signals.includes('secures funding'), expanded.signals.join(', '));
+check('the expanded companion points back to its parent boolean for scoring purposes',
+  expanded.templateId === 'backing.general', expanded.templateId);
+
+check('a boolean with no expandedSignals list gets no companion even when the toggle is on',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['smi.linkedin'], expandedKeywords: true }).length === 1);
+check('every template with an expandedSignals list is a real, non-empty list of additional phrases',
+  DEFAULT_LIBRARY.filter((t) => t.expandedSignals).every((t) => t.expandedSignals.length > 0));
+check('site: search and expanded keywords compose — both companions can run in the same call',
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['oob.legalname'], siteSearch: true, expandedKeywords: true }).length === 3,
+  buildJobs(DEFAULT_LIBRARY, entity, { only: ['oob.legalname'], siteSearch: true, expandedKeywords: true }).map((j) => j.id).join(', '));
+
 console.log('\n[signals]');
 const sig = deriveSignals(DEFAULT_LIBRARY.find((t) => t.id === 'oob.bankruptcy_us'), entity);
 check('quoted phrases become signals', sig.includes('chapter 11') && sig.includes('bankrupt'));
@@ -391,6 +425,20 @@ const acquiredRightSense = scoreResult({
 }, oobSenseCtx);
 check('"acquired ... in a $50M deal" — deal context present — counts normally',
   acquiredRightSense.signalHits.includes('acquired'), acquiredRightSense.signalHits.join(', '));
+
+const dealCtx = { ...senseCtx, category: 'Out of Business', signals: ['definitive agreement', 'asset purchase', 'Acme Robotics', 'acme.com'] };
+const definitiveAgreementWrongSense = scoreResult({
+  title: 'Acme Robotics signs definitive agreement to license its patents', url: 'https://blog.example.com/a',
+  snippet: 'The definitive agreement covers a routine patent license between the two engineering teams.'
+}, dealCtx);
+check('a bare "definitive agreement" with no deal-shaped context is not counted (licensing, not M&A)',
+  definitiveAgreementWrongSense.signalHits.length === 0, JSON.stringify(definitiveAgreementWrongSense.signalHits));
+const definitiveAgreementRightSense = scoreResult({
+  title: 'Acme Robotics enters definitive agreement to be acquired for $80 million', url: 'https://www.businesswire.com/news/x',
+  snippet: 'BigCorp and Acme Robotics signed a definitive agreement under which BigCorp will acquire Acme in an $80 million transaction.'
+}, dealCtx);
+check('"definitive agreement ... $80 million transaction" — deal context present — counts normally',
+  definitiveAgreementRightSense.signalHits.includes('definitive agreement'), definitiveAgreementRightSense.signalHits.join(', '));
 
 console.log('\n[sense-checking: extended to Management, Service Providers, Boolean Backup]');
 const mgmtCtx = {

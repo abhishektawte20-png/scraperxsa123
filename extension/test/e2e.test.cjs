@@ -757,6 +757,63 @@ function check(name, cond, extra = '') {
     }
   }));
 
+  // --- expanded keyword companion — old vs. new, run side by side ----------
+  log('\n[expanded keywords: old and new booleans compared side by side]');
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: false, siteSearch: false, expandedKeywords: true, registryCheck: false, queryExclusions: true,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+  await panel.click('[data-tab="run"]');
+  await panel.waitForTimeout(150);
+  await panel.fill('#company', 'L&L Exhibition Management');
+  await panel.fill('#website', 'www.homeshowcenter.com');
+  await panel.fill('#excludeTerms', '');
+  await panel.click('#selNone');
+  await panel.check('#chk_backing\\.general');
+
+  const expandedRunDone = panel.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.onMessage.addListener(function h(m) { if (m.type === 'SX_RUN_DONE') { chrome.runtime.onMessage.removeListener(h); resolve(m.run); } });
+  }));
+  await panel.click('#startBtn');
+  const expandedRun = await expandedRunDone;
+
+  check('the classic boolean and its expanded companion both ran — old kept, not replaced',
+    expandedRun.queries.some((q) => q.id === 'backing.general') && expandedRun.queries.some((q) => q.id === 'backing.general.expanded'),
+    expandedRun.queries.map((q) => q.id).join(', '));
+
+  const classicEntry = expandedRun.queries.find((q) => q.id === 'backing.general');
+  const expandedEntry = expandedRun.queries.find((q) => q.id === 'backing.general.expanded');
+  const classicTop = classicEntry.results.find((r) => r.url.includes('businesswire.com'));
+  const expandedTop = expandedEntry.results.find((r) => r.url.includes('businesswire.com'));
+  check('the classic boolean still finds and flags the genuine press hit, unaffected',
+    classicTop?.tier === 'critical' && classicTop?.flag != null, JSON.stringify({ tier: classicTop?.tier, flag: classicTop?.flag }));
+  check('the expanded companion finds the same hit too — it is a superset, nothing lost',
+    expandedTop?.tier === 'critical' && expandedTop?.flag != null, JSON.stringify({ tier: expandedTop?.tier, flag: expandedTop?.flag }));
+  check('the expanded companion query actually widens the phrase list',
+    expandedEntry.query.includes('"secures funding"') && expandedEntry.query.includes('"raises"'), expandedEntry.query);
+
+  await panel.waitForTimeout(300);
+  await panel.click('[data-tab="results"]');
+  await panel.waitForTimeout(200);
+  check('the expanded companion card is labelled distinctly from the classic one',
+    (await panel.locator('.qgroup:has-text("expanded keywords")').count()) === 1);
+  check('the expanded companion card shows the "expanded keywords" chip',
+    (await panel.locator('.chip-expanded:has-text("expanded keywords")').count()) === 1);
+
+  // Reset for the rest of the suite.
+  await panel.evaluate(() => chrome.storage.local.set({
+    sx_settings: {
+      minDelayMs: 10, maxDelayMs: 20, longPauseEvery: 0, longPauseMs: 0,
+      resultsPerQuery: 20, keepTopResults: 8, navTimeoutMs: 15000,
+      preflightProbe: false, siteSearch: false, expandedKeywords: false, registryCheck: false, queryExclusions: true,
+      highlightSerp: false, closeTabWhenDone: true, windowMode: 'current'
+    }
+  }));
+
   // --- registry check: GLEIF + SEC EDGAR ------------------------------------
   log('\n[registry check: GLEIF + SEC EDGAR corroboration]');
   gleifFixture = { data: [{

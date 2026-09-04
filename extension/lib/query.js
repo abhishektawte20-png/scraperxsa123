@@ -216,23 +216,58 @@ export function buildJobs(library, entity, opts = {}) {
         notes: t.notes || ''
       };
 
-      if (!opts.siteSearch) return [job];
-      const siteQ = buildSiteQuery(t, entity);
-      if (!siteQ) return [job]; // nothing to ask the official site that isn't just its own name
+      const jobs = [job];
 
-      return [job, {
-        id: `${t.id}.site`,
-        category: t.category,
-        name: `${t.name} — official site`,
-        engine: 'google',
-        query: siteQ,
-        excludedInQuery: [],
-        url: googleUrl(siteQ, opts),
-        signals: deriveSignals(t, entity),
-        entitySignals,
-        notes: 'Same question, restricted to pages Google has indexed from the company’s own website.',
-        isSiteCompanion: true,
-        templateId: t.id // for scoring: this shares the parent boolean's legal-page exemptions etc.
-      }];
+      if (opts.siteSearch) {
+        const siteQ = buildSiteQuery(t, entity);
+        if (siteQ) { // '' when there's nothing to ask the official site beyond its own name
+          jobs.push({
+            id: `${t.id}.site`,
+            category: t.category,
+            name: `${t.name} — official site`,
+            engine: 'google',
+            query: siteQ,
+            excludedInQuery: [],
+            url: googleUrl(siteQ, opts),
+            signals: deriveSignals(t, entity),
+            entitySignals,
+            notes: 'Same question, restricted to pages Google has indexed from the company’s own website.',
+            isSiteCompanion: true,
+            templateId: t.id // for scoring: shares the parent boolean's legal-page exemptions etc.
+          });
+        }
+      }
+
+      // A wider phrase list run as its own boolean, not a silent replacement —
+      // the point is letting a researcher compare it against the classic
+      // version, not deciding for them which one is "right".
+      if (opts.expandedKeywords && t.expandedSignals?.length) {
+        // insertKeyword expects the raw template text — {{entity}} still a bare
+        // placeholder, no parentheses of its own yet — so the new phrase lands
+        // in the boolean's own OR-group. Running it on the already-rendered `q`
+        // would instead insert into the entity group (the first parenthesized
+        // group once {{entity}} has been substituted), diluting the "is this
+        // even about the company" requirement rather than adding search terms.
+        let expandedTemplateQuery = t.query;
+        for (const kw of t.expandedSignals) expandedTemplateQuery = insertKeyword(expandedTemplateQuery, kw);
+        const expandedBase = renderQuery({ query: expandedTemplateQuery }, entity);
+        const expandedQ = tail ? `${expandedBase} ${tail}` : expandedBase;
+        jobs.push({
+          id: `${t.id}.expanded`,
+          category: t.category,
+          name: `${t.name} — expanded keywords`,
+          engine: 'google',
+          query: expandedQ,
+          excludedInQuery: excluded,
+          url: googleUrl(expandedQ, opts),
+          signals: [...deriveSignals(t, entity), ...t.expandedSignals],
+          entitySignals,
+          notes: 'The classic boolean plus additional phrasing, run side by side so you can judge which finds more.',
+          isExpandedCompanion: true,
+          templateId: t.id
+        });
+      }
+
+      return jobs;
     });
 }
