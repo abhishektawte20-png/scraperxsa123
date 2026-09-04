@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScraperX</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <header class="head">
+    <div class="brand">
+      <span class="logo">SX</span>
+      <div>
+        <h1>ScraperX</h1>
+        <p class="sub">Boolean research automation</p>
+      </div>
+    </div>
+    <div class="head-actions">
+      <button class="icon-btn" id="expandView" title="Open full-screen view">&#x26F6;</button>
+      <button class="icon-btn" id="openOptions" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-tab="run" role="tab">Run</button>
+    <button class="tab" data-tab="results" role="tab">Results <span class="pill" id="resultsCount">0</span></button>
+    <button class="tab" data-tab="library" role="tab">Booleans</button>
+    <button class="tab" data-tab="history" role="tab">History</button>
+  </nav>
+
+  <div id="blockedBanner" class="banner banner-warn" hidden>
+    <strong>Google is asking for verification.</strong>
+    <span>The run tab has been brought forward — solve it there, then resume.</span>
+    <button class="btn btn-sm" id="resumeAfterBlock">Resume run</button>
+  </div>
+
+  <main class="content">
+  <!-- ── Run ──────────────────────────────────────────────────────────────── -->
+  <section class="panel is-active" data-panel="run">
+    <div class="card card-accent">
+      <h2>Company identity</h2>
+      <p class="hint hint-top">
+        Every boolean below is scoped to this exact entity. Get the name and website
+        right and each query is unique to this company — get either wrong and every
+        result underneath inherits the mistake.
+      </p>
+      <label class="field">
+        <span>Company name <em>(formal / legal name)</em></span>
+        <input id="company" type="text" placeholder="e.g. Reliance Industries Limited" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Website <em>(the company's own domain)</em></span>
+        <input id="website" type="text" placeholder="e.g. www.ril.com" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Name variations <em>(one per line — DBAs, former names, short forms)</em></span>
+        <textarea id="aliases" rows="2" placeholder="Reliance&#10;RIL"></textarea>
+      </label>
+      <div class="preview">
+        <span class="preview-label">Entity group Google will receive</span>
+        <code id="entityPreview">—</code>
+      </div>
+
+      <details class="disambig">
+        <summary>Disambiguation <em>— for a name that collides with other companies</em></summary>
+        <p class="hint">
+          "Psypher" matches inside "Psypher Interactive" too — a different company. Tell the
+          extension what tells them apart and matches on the wrong one get scored as noise
+          instead of a false "critical" hit.
+        </p>
+        <label class="field">
+          <span>Not this company if it also mentions <em>(one per line)</em></span>
+          <textarea id="excludeTerms" rows="2" placeholder="Interactive&#10;Games&#10;Studio"></textarea>
+        </label>
+        <label class="field">
+          <span>Distinguishing context <em>(one per line — industry, sector, whatever the bare name doesn't say)</em></span>
+          <textarea id="contextTerms" rows="2" placeholder="AI&#10;healthcare&#10;fintech"></textarea>
+        </label>
+      </details>
+    </div>
+
+    <div class="run-col">
+      <div class="card">
+        <div class="card-head">
+          <h2>Booleans to run</h2>
+          <span class="muted" id="selectedCount">0 selected</span>
+        </div>
+        <div class="row row-wrap">
+          <button class="btn btn-ghost btn-sm" id="selAll">All</button>
+          <button class="btn btn-ghost btn-sm" id="selNone">None</button>
+          <button class="btn btn-ghost btn-sm" id="selDefault">Defaults</button>
+          <button class="btn btn-ghost btn-sm" id="selRovoDown">+ ROVO-down backups</button>
+        </div>
+        <div id="selector" class="selector"></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <button class="btn btn-primary" id="startBtn">Run all booleans</button>
+          <button class="btn" id="pauseBtn" hidden>Pause</button>
+          <button class="btn btn-danger" id="stopBtn" hidden>Stop</button>
+        </div>
+        <div id="progressWrap" hidden>
+          <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+          <p class="progress-text" id="progressText"></p>
+        </div>
+        <p class="hint" id="etaHint"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Results ──────────────────────────────────────────────────────────── -->
+  <section class="panel" data-panel="results">
+    <div class="card" id="summaryCard" hidden>
+      <div class="card-head">
+        <h2 id="summaryTitle">Run summary</h2>
+        <div class="row row-tight">
+          <button class="btn btn-ghost btn-sm" id="copyMd">Copy report</button>
+          <button class="btn btn-ghost btn-sm" id="exportJson">JSON</button>
+          <button class="btn btn-ghost btn-sm" id="exportCsv">CSV</button>
+        </div>
+      </div>
+      <div class="stats" id="summaryStats"></div>
+      <div class="row row-tight">
+        <button class="btn btn-ghost btn-sm" id="enrichBtn" hidden>Send to enrichment AI</button>
+      </div>
+      <pre id="enrichOut" class="enrich-out" hidden></pre>
+    </div>
+
+    <div class="card" id="aggregateCard" hidden>
+      <div class="card-head">
+        <h2>Corroborated across booleans</h2>
+        <span class="muted">sources found by more than one query</span>
+      </div>
+      <div id="aggregateList"></div>
+    </div>
+
+    <div class="card" id="registryCard" hidden>
+      <div class="card-head">
+        <h2>Company registry check</h2>
+        <span class="muted">GLEIF, SEC EDGAR, OpenCorporates &amp; Companies House — free, official, narrow coverage</span>
+      </div>
+      <div id="registryBody"></div>
+    </div>
+
+    <div class="filters" id="resultFilters" hidden>
+      <label><input type="checkbox" id="onlyFlagged"> <span class="flag-dot"></span> Only flagged findings</label>
+      <label><input type="checkbox" id="onlyIdentity"> <span class="id-dot"></span> Domain-confirmed only</label>
+      <label><input type="checkbox" id="onlyStrong"> Only critical &amp; strong</label>
+      <label><input type="checkbox" id="hideEmpty" checked> Hide empty queries</label>
+    </div>
+
+    <div id="resultsList" class="results-grid"></div>
+    <p class="empty" id="resultsEmpty">No run yet. Fill in a company on the Run tab and start.</p>
+  </section>
+
+  <!-- ── Library ──────────────────────────────────────────────────────────── -->
+  <section class="panel" data-panel="library">
+    <div class="card">
+      <h2>Boolean library</h2>
+      <p class="hint">These are the strings behind each “Copy Boolean” button. Edit them here and every future run uses the new version.</p>
+      <div class="row row-wrap">
+        <button class="btn btn-primary btn-sm" id="libNew">+ New boolean</button>
+        <button class="btn btn-ghost btn-sm" id="libExport">Export</button>
+        <button class="btn btn-ghost btn-sm" id="libImport">Import</button>
+        <button class="btn btn-ghost btn-sm" id="libReset">Reset to defaults</button>
+        <button class="btn btn-ghost btn-sm" id="libGrab">Grab from open tab</button>
+      </div>
+    </div>
+    <div id="libraryList" class="library-grid"></div>
+  </section>
+
+  <!-- ── History ──────────────────────────────────────────────────────────── -->
+  <section class="panel" data-panel="history">
+    <div class="card">
+      <div class="card-head">
+        <h2>Previous runs</h2>
+        <button class="btn btn-ghost btn-sm" id="clearHistory">Clear</button>
+      </div>
+    </div>
+    <div id="historyList" class="library-grid"></div>
+  </section>
+  </main>
+
+  <dialog id="ambiguityDialog" class="dialog">
+    <h3>More than one company matches this name</h3>
+    <p class="hint" id="ambiguityIntro">
+      A quick check on the name alone turned up more than one company. Mark the ones
+      that aren't yours — they'll be excluded from every boolean in this run, and
+      remembered for this company from now on.
+    </p>
+    <div id="ambiguityList" class="ambig-list"></div>
+    <div class="row row-end">
+      <button class="btn btn-ghost" id="ambiguitySkip">Run anyway</button>
+      <button class="btn btn-primary" id="ambiguityConfirm">Exclude &amp; run</button>
+    </div>
+  </dialog>
+
+  <dialog id="editDialog" class="dialog">
+    <form method="dialog">
+      <h3 id="editTitle">Edit boolean</h3>
+      <label class="field"><span>Name</span><input id="editName" type="text"></label>
+      <label class="field"><span>Category</span><input id="editCategory" type="text"></label>
+      <label class="field">
+        <span>Query <em>{{entity}}, {{company}}, {{website}}, {{domain}}</em></span>
+        <textarea id="editQuery" rows="6"></textarea>
+      </label>
+      <label class="field">
+        <span>Add a keyword <em>— dropped into the query above, OR-joined with what's already there</em></span>
+        <div class="row row-tight">
+          <input id="newKeyword" type="text" placeholder="e.g. secured investment" autocomplete="off">
+          <button class="btn btn-ghost btn-sm" id="addKeywordBtn" type="button">Add</button>
+        </div>
+      </label>
+      <div class="row row-end">
+        <button class="btn btn-ghost" value="cancel">Cancel</button>
+        <button class="btn btn-primary" id="editSave" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="importFile" accept="application/json" hidden>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

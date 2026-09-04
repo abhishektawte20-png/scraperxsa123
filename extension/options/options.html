@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ScraperX settings</title>
+  <link rel="stylesheet" href="../sidepanel/panel.css">
+  <style>
+    body { background: var(--bg); }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .saved { color: #188038; font-size: 12px; opacity: 0; transition: opacity .2s; }
+    .saved.show { opacity: 1; }
+    h1.page { font-size: 18px; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page">ScraperX settings</h1>
+    <p class="hint" style="margin-bottom:16px">These apply to every run.</p>
+
+    <div class="card">
+      <h2>Pacing</h2>
+      <p class="hint" style="margin-bottom:10px">
+        The extension runs one query at a time through a real browser tab, at the speed a
+        person would. Shortening these makes Google far more likely to serve a CAPTCHA and
+        stall the run.
+      </p>
+      <div class="grid2">
+        <label class="field"><span>Minimum gap (ms)</span><input type="text" id="minDelayMs"></label>
+        <label class="field"><span>Maximum gap (ms)</span><input type="text" id="maxDelayMs"></label>
+        <label class="field"><span>Long pause every N queries</span><input type="text" id="longPauseEvery"></label>
+        <label class="field"><span>Long pause length (ms)</span><input type="text" id="longPauseMs"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Search</h2>
+      <div class="grid2">
+        <label class="field"><span>Results requested per query</span><input type="text" id="resultsPerQuery"></label>
+        <label class="field"><span>Top results kept per query</span><input type="text" id="keepTopResults"></label>
+        <label class="field"><span>Page load timeout (ms)</span><input type="text" id="navTimeoutMs"></label>
+        <label class="field"><span>Country code (gl) — optional</span><input type="text" id="country" placeholder="us"></label>
+      </div>
+      <label class="sel-item"><input type="checkbox" id="recentOnly"><span>Restrict to the last 2 years</span></label>
+      <label class="sel-item"><input type="checkbox" id="queryExclusions"><span>Exclude known-different companies in the query itself</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        Sends your "Not this company if it also mentions" terms to Google as
+        <code>-"term"</code>, so the wrong company never takes up a result slot.
+        Only your own typed terms are used, never the auto-detected guesses.
+      </p>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="preflightProbe"><span>Check the name for other companies before running</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        One extra query on the bare company name. If it turns up a second company
+        sharing the name, you settle it once instead of in every boolean. Silent
+        when the name is unambiguous.
+      </p>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="siteSearch"><span>Also search the company's own website directly</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        Adds a <code>site:{{domain}}</code> companion query per boolean — the same
+        question, asked of the company's own site instead of hoping it ranks
+        organically. Roughly doubles the query count and run time.
+      </p>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="expandedKeywords"><span>Try expanded keyword sets (compare against the classic booleans)</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        Adds a second companion query per boolean with a wider phrase list
+        (e.g. "secures funding", "steps down as", "winding up petition") run
+        <em>alongside</em> the classic one, not instead of it — both show up
+        in Results so you can judge which finds more. Adds another query per
+        boolean on top of anything else enabled here.
+      </p>
+      <label class="sel-item" style="margin-top:8px"><input type="checkbox" id="registryCheck"><span>Cross-check company registries (free, official)</span></label>
+      <p class="hint" style="margin:2px 0 0 22px">
+        A few extra JSON lookups per run, not search queries — GLEIF (LEI index),
+        SEC EDGAR full-text search, and OpenCorporates. Coverage is narrow per
+        source, so this only ever adds corroboration; coming back empty is not
+        treated as a signal either way.
+      </p>
+      <label class="field" style="margin-top:10px">
+        <span>OpenCorporates API token <em>— optional, works without one</em></span>
+        <input type="text" id="openCorporatesToken" placeholder="leave blank to use the free 500/month allowance" autocomplete="off">
+      </label>
+      <p class="hint" style="margin:2px 0 0 2px">
+        Works with no token at all, capped at 500 requests/month on your own
+        connection. A free token from <code>opencorporates.com</code> raises that.
+      </p>
+      <label class="field" style="margin-top:10px">
+        <span>UK Companies House API key <em>— optional, UK companies only</em></span>
+        <input type="text" id="companiesHouseKey" placeholder="leave blank to skip this source" autocomplete="off">
+      </label>
+      <p class="hint" style="margin:2px 0 0 2px">
+        Free, self-serve key from <code>developer.company-information.service.gov.uk</code>.
+        Skipped entirely without a key — there's no useful anonymous allowance for this one.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Behaviour</h2>
+      <label class="sel-item"><input type="checkbox" id="highlightSerp"><span>Highlight matched terms on the results page</span></label>
+      <label class="sel-item"><input type="checkbox" id="closeTabWhenDone"><span>Close the run tab when a run finishes</span></label>
+      <label class="field" style="margin-top:8px">
+        <span>Run window</span>
+        <select id="windowMode">
+          <option value="background">Separate minimised window</option>
+          <option value="current">Background tab in the current window</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Enrichment</h2>
+      <p class="hint" style="margin-bottom:10px">
+        Optional. Points at the ScraperX enrichment server in this repo; a finished run can be
+        POSTed there for the AI extraction pass.
+      </p>
+      <label class="field"><span>Endpoint URL</span><input type="text" id="enrichEndpoint" placeholder="https://your-project.up.railway.app/enrich"></label>
+      <label class="sel-item"><input type="checkbox" id="autoEnrich"><span>Send automatically when a run finishes</span></label>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary" id="save">Save</button>
+      <button class="btn" id="reset">Restore defaults</button>
+      <span class="saved" id="saved">Saved</span>
+    </div>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

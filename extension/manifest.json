@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "ScraperX Research Automation",
+  "short_name": "ScraperX",
+  "version": "3.9.1",
+  "description": "Automates the boolean Google searches researchers run by hand when profiling private companies. Runs the whole library, highlights the results that matter.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "tabs",
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "sidePanel",
+    "windows"
+  ],
+  "host_permissions": [
+    "https://www.google.com/*",
+    "https://google.com/*",
+    "https://api.gleif.org/*",
+    "https://efts.sec.gov/*",
+    "https://api.opencorporates.com/*",
+    "https://api.company-information.service.gov.uk/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/panel.html"
+  },
+  "action": {
+    "default_title": "ScraperX \u2014 open research panel",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.google.com/search*",
+        "https://google.com/search*",
+        "https://www.google.com/sorry/*"
+      ],
+      "js": [
+        "content/serp.js"
+      ],
+      "css": [
+        "content/serp.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

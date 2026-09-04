@@ -1,0 +1,103 @@
+/** Thin wrapper over chrome.storage so the rest of the code stops thinking about it. */
+
+import { DEFAULT_LIBRARY } from './library.js';
+
+export const DEFAULT_SETTINGS = {
+  // Pacing. These are deliberately human-speed: the extension is standing in
+  // for a researcher pasting queries, not a crawler.
+  minDelayMs: 4000,
+  maxDelayMs: 9000,
+  longPauseEvery: 12,
+  longPauseMs: 30000,
+
+  resultsPerQuery: 20,       // &num=
+  keepTopResults: 8,         // how many we store per query
+  navTimeoutMs: 25000,
+  recentOnly: false,         // tbs=qdr:y2
+  country: '',               // gl=
+  // Push the researcher's own exclude terms into the query as -"term", so the
+  // wrong company never occupies a result slot. Only their typed terms are
+  // ever used — never the auto-detected collision guesses.
+  queryExclusions: true,
+  // One query on the bare company name before the library runs, to catch a
+  // name that matches two different companies before it contaminates all of
+  // them. Silent unless a rival actually turns up.
+  preflightProbe: true,
+  // Free, official registries checked once per run: GLEIF (Legal Entity
+  // Identifier index), SEC EDGAR full-text search, and OpenCorporates — all
+  // keyless or usable without one. Coverage is narrow per source — most
+  // private, non-US companies won't be in any of them — so this only ever
+  // adds corroboration, never a penalty for coming back empty.
+  registryCheck: true,
+  // Optional, researcher-supplied. OpenCorporates works without a token
+  // (capped at 500 requests/month on the researcher's own connection); a
+  // free token from opencorporates.com raises that. Companies House requires
+  // its own free key (developer.company-information.service.gov.uk) and is
+  // skipped entirely without one — there's no useful anonymous allowance.
+  openCorporatesToken: '',
+  companiesHouseKey: '',
+  // A companion query per boolean, restricted to site:{{domain}} — the same
+  // question, asked directly of the company's own website, instead of
+  // relying on its pages happening to rank organically against press
+  // coverage and aggregators. Roughly doubles query count and run time.
+  siteSearch: true,
+  // A companion query per boolean using a wider phrase list, run alongside
+  // (not instead of) the classic one, so a researcher can compare which
+  // actually finds more. Off by default — this is deliberate A/B tooling,
+  // not a strict improvement like the other toggles.
+  expandedKeywords: false,
+
+  highlightSerp: true,       // paint terms on the SERP itself
+  closeTabWhenDone: true,
+  windowMode: 'background',  // 'background' | 'current'
+
+  enrichEndpoint: '',        // e.g. https://<project>.up.railway.app/enrich
+  autoEnrich: false
+};
+
+const KEYS = { library: 'sx_library', settings: 'sx_settings', runs: 'sx_runs', entity: 'sx_entity' };
+
+async function get(key, fallback) {
+  const out = await chrome.storage.local.get(key);
+  return out[key] === undefined ? fallback : out[key];
+}
+const set = (key, value) => chrome.storage.local.set({ [key]: value });
+
+export async function getLibrary() {
+  const stored = await get(KEYS.library, null);
+  if (!stored || !Array.isArray(stored) || !stored.length) return structuredClone(DEFAULT_LIBRARY);
+
+  // Merge in any templates added to the shipped defaults since this user last
+  // saved, so an upgrade doesn't silently drop new booleans.
+  const known = new Set(stored.map((t) => t.id));
+  const added = DEFAULT_LIBRARY.filter((t) => !known.has(t.id)).map(structuredClone);
+  return stored.concat(added);
+}
+export const saveLibrary = (lib) => set(KEYS.library, lib);
+export const resetLibrary = () => chrome.storage.local.remove(KEYS.library);
+
+export async function getSettings() {
+  return { ...DEFAULT_SETTINGS, ...(await get(KEYS.settings, {})) };
+}
+export async function saveSettings(patch) {
+  const next = { ...(await getSettings()), ...patch };
+  await set(KEYS.settings, next);
+  return next;
+}
+
+export const getEntity = () =>
+  get(KEYS.entity, { company: '', website: '', aliases: [], contextTerms: [], excludeTerms: [] });
+export const saveEntity = (entity) => set(KEYS.entity, entity);
+
+/** Run history, newest first, capped so storage doesn't grow forever. */
+export async function getRuns() { return get(KEYS.runs, []); }
+export async function saveRun(run) {
+  const runs = await getRuns();
+  const idx = runs.findIndex((r) => r.runId === run.runId);
+  if (idx >= 0) runs[idx] = run; else runs.unshift(run);
+  await set(KEYS.runs, runs.slice(0, 25));
+}
+export async function deleteRun(runId) {
+  await set(KEYS.runs, (await getRuns()).filter((r) => r.runId !== runId));
+}
+export const clearRuns = () => chrome.storage.local.remove(KEYS.runs);
