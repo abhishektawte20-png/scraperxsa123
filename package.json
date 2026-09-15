@@ -1,13 +1,14 @@
 {
-  "name": "scraperx",
-  "version": "2.2.0",
+  "name": "scraperx-rts-profile-assistant",
+  "version": "0.5.0",
   "private": true,
+  "description": "Chrome/Edge Manifest V3 extension mapping ScraperX Rovo JSON into PitchBook RTS.",
   "scripts": {
-    "start": "node index.js"
+    "test": "node --test tests/test-*.mjs",
+    "test:e2e": "node --test tests/e2e/*.mjs"
   },
-  "dependencies": {
-    "express": "^4.18.2",
-    "node-fetch": "^2.6.7",
-    "body-parser": "^1.20.2"
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "playwright": "^1.56.1"
   }
 }

@@ -1,0 +1,20 @@
+<!--
+  Sanitized reconstruction of the Business Entity > Entity > General card
+  (Website Address, Email Default Structure, Research Notes), from
+  evidenced outerHTML. Only a representative subset of the 42 Email
+  Default Structure options is included; the full catalog lives in
+  registry/businessEntity.general.js.
+-->
+<input type="text" value="" maxlength="250" class="input" id="webURL" name="businessEntity.webURL" data-disabled-if-dnb-field="">
+
+<select name="businessEntity.emailDefaultStructure.id" class="input input_select">
+  <option value="-1"></option>
+  <option value="1">First.Last@domain.com</option>
+  <option value="2">FirstInitialLastName@domain.com</option>
+  <option value="3" selected="selected">FirstName@domain.com</option>
+  <option value="4">First_Last@domain.com</option>
+</select>
+
+<div class="highlight-textarea" contenteditable="" style="min-height: 31px;"></div>
+
+<input type="button" name="saveBusinessEntityButton" value="Save changes" disabled="disabled" class="btn sectionSaveButton" data-test-id="be-page-save-changes-btn" id="saveBusinessEntityButton">

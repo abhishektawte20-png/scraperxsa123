@@ -1,0 +1,18 @@
+<!--
+  Sanitized reconstruction of the Company > SIC records card, from
+  evidenced outerHTML (code input, source dropdown, Add and Save
+  buttons). codeid values are fictional example row identifiers.
+-->
+<div id="section-sic">
+  <div class="sic-row">
+    <input type="text" name="code" value="8742" class="input numberField" codeid="438" data-disabled-if-dnb-field="">
+    <select class="input input_select" name="source" data-disabled-if-dnb-field="">
+      <option value="-1"></option>
+      <option value="1">Morningstar</option>
+      <option value="2" selected="selected">PitchBook</option>
+      <option value="3">SEC</option>
+    </select>
+  </div>
+  <input type="button" value="Add New Sic Industry Path" class="btn btn_secondary buttonView" onclick="companySic.add()" data-disabled-if-dnb-field="">
+  <input type="button" value="Save SIC" disabled="disabled" class="btn" id="saveSicIndustryPath" onclick="companySic.save()">
+</div>
