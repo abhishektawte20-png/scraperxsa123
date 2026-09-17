@@ -142,6 +142,26 @@
       .badge-failed { background: #fdecea; color: #a3291c; }
       .hidden { display: none; }
       .helptext { font-size: 11px; color: #7a869c; margin-top: 6px; }
+
+      .summary-header { margin-bottom: 14px; }
+      .summary-header h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #1b2430; }
+      .summary-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+      .stat-item { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 650; }
+      .stat-item.success { background: #e5f6ee; color: #166f4c; }
+      .stat-item.error { background: #fdecea; color: #a3291c; }
+      .stat-item.skipped { background: #eef0f4; color: #7a869c; }
+
+      .summary-item { margin-bottom: 10px; padding: 10px; border-radius: 8px; border-left: 3px solid #e2e6ed; background: #fbfcfe; }
+      .summary-item-success { border-left-color: #1a8a5f; background: #f0faf7; }
+      .summary-item-skipped { border-left-color: #9ca3af; background: #f5f5f7; opacity: .85; }
+      .summary-item-error { border-left-color: #dc2626; background: #fef2f2; }
+      .summary-item-header { display: flex; gap: 10px; align-items: flex-start; }
+      .summary-icon { font-size: 16px; font-weight: 700; flex-shrink: 0; width: 20px; text-align: center; }
+      .summary-item-text { flex: 1; min-width: 0; }
+      .summary-field { font-size: 12px; font-weight: 700; color: #1b2430; }
+      .summary-message { font-size: 12px; color: #47536b; margin-top: 2px; }
+      .summary-detail { font-size: 11px; color: #6b5100; background: #fff8e6; padding: 8px; border-radius: 6px; margin-top: 8px; }
+      .summary-warning { white-space: pre-wrap; color: #6b5100; margin-top: 12px; padding-top: 12px; border-top: 1px solid #ffd9a8; font-size: 11px; }
     `;
     shadow.appendChild(style);
 
@@ -552,6 +572,7 @@
       }
 
       let applied = 0, skipped = 0, failed = 0;
+      const allResults = {};
       const valueFor = (a) => rowsByActionId.get(a.actionId).getEditedValue();
 
       // Re-runs the real schema validator against a manually edited value
@@ -585,9 +606,15 @@
         if (error) {
           failed++;
           setRowStatus(entry.action.actionId, "failed", error);
+          recordResult(entry.action.jsonPath, { status: "error", error });
           return undefined;
         }
         return value;
+      }
+
+      function recordResult(jsonPath, result) {
+        if (!allResults[jsonPath]) allResults[jsonPath] = [];
+        allResults[jsonPath].push(result);
       }
 
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
@@ -596,10 +623,12 @@
         if (value === undefined) continue;
         try {
           const result = await globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation(value);
+          recordResult(entry.action.jsonPath, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
           failed++; setRowStatus(entry.action.actionId, "failed", error.message);
+          recordResult(entry.action.jsonPath, { status: "error", error: error.message });
         }
       }
 
@@ -633,12 +662,17 @@
               const fieldResult = groupResult.results?.[fieldKeyByJsonPath[entry.action.jsonPath]];
               const status = fieldResult?.status ?? groupResult.status;
               const reason = fieldResult?.reason ?? groupResult.reason ?? "";
+              const result = { status, reason };
+              recordResult(entry.action.jsonPath, result);
               setRowStatus(entry.action.actionId, status, reason);
               if (status === "savedValueVerified") applied++; else if (status === "skipped") skipped++; else failed++;
             }
           } catch (error) {
             failed += validEntries.length;
-            for (const entry of validEntries) setRowStatus(entry.action.actionId, "failed", error.message);
+            for (const entry of validEntries) {
+              setRowStatus(entry.action.actionId, "failed", error.message);
+              recordResult(entry.action.jsonPath, { status: "error", error: error.message });
+            }
           }
         }
       }
@@ -649,15 +683,30 @@
         if (value === undefined) continue;
         try {
           const result = await globalThis.SXRTS.workflows.companySic.applySicCode(value);
+          recordResult(entry.action.jsonPath, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
           failed++; setRowStatus(entry.action.actionId, "failed", error.message);
+          recordResult(entry.action.jsonPath, { status: "error", error: error.message });
         }
       }
 
+      const summary = globalThis.SXRTS.resultsSummary.buildSummary(allResults);
       const warningText = identityResult.reasons.length ? `\nIdentity warnings:\n${identityResult.reasons.join("\n")}` : "";
-      setStatus(publishStatus, `Published ${applied}, skipped ${skipped}, failed ${failed}.${warningText}`, failed ? "error" : "success");
+
+      const summaryDiv = document.createElement("div");
+      summaryDiv.innerHTML = summary.html;
+      publishStatus.textContent = "";
+      publishStatus.appendChild(summaryDiv);
+      publishStatus.className = `status ${failed ? "error" : "success"}`;
+      if (warningText) {
+        const warningDiv = document.createElement("div");
+        warningDiv.className = "summary-warning";
+        warningDiv.textContent = warningText;
+        publishStatus.appendChild(warningDiv);
+      }
+
       publishButton.disabled = false;
       clearCacheButton.disabled = false;
       persistToCache();

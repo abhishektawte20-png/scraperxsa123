@@ -27,6 +27,7 @@ import "../core/executionPlan.js";
 import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
+import "../core/resultsSummary.js";
 import "../content/panel.js";
 
 function setupDom() {

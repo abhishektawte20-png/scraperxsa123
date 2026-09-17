@@ -10,6 +10,7 @@ const ASSISTANT_FILES = [
   "core/adapters/nativeSelect.js",
   "core/adapters/contentEditable.js",
   "core/navigation.js",
+  "core/resultsSummary.js",
   "registry/businessEntity.nameVariations.js",
   "registry/businessEntity.general.js",
   "registry/company.sic.js",
