@@ -9,6 +9,7 @@ const ASSISTANT_FILES = [
   "core/adapters/textField.js",
   "core/adapters/nativeSelect.js",
   "core/adapters/contentEditable.js",
+  "core/navigation.js",
   "registry/businessEntity.nameVariations.js",
   "registry/businessEntity.general.js",
   "registry/company.sic.js",

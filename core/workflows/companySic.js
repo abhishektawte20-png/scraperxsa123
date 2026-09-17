@@ -83,6 +83,7 @@
   // candidate: { code, classificationSource, action }
   async function applySicCode(candidate) {
     const entry = getEntry();
+    await globalThis.SXRTS.navigation.navigateToCompany();
     if (candidate.action === "skip") return { status: "skipped", reason: "action=skip" };
 
     const existing = readExistingRecords(entry);

@@ -19,6 +19,7 @@ import "../core/identityLock.js";
 import "../core/duplicates.js";
 import "../core/adapters/textField.js";
 import "../core/adapters/nativeSelect.js";
+import "../core/navigation.js";
 import "../registry/company.sic.js";
 import "../registry/index.js";
 import "../core/workflows/companySic.js";
