@@ -162,6 +162,22 @@
       .summary-message { font-size: 12px; color: #47536b; margin-top: 2px; }
       .summary-detail { font-size: 11px; color: #6b5100; background: #fff8e6; padding: 8px; border-radius: 6px; margin-top: 8px; }
       .summary-warning { white-space: pre-wrap; color: #6b5100; margin-top: 12px; padding-top: 12px; border-top: 1px solid #ffd9a8; font-size: 11px; }
+
+      .html-capture-modal { display: none; position: fixed; z-index: 2147483648; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, .5); }
+      .html-capture-modal.open { display: flex; align-items: center; justify-content: center; }
+      .html-capture-content { background: #fff; border-radius: 14px; width: 90vw; max-width: 900px; max-height: 90vh; overflow: auto; padding: 24px; box-shadow: 0 20px 48px rgba(15, 30, 60, .22); }
+      .html-capture-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #e2e6ed; padding-bottom: 12px; }
+      .html-capture-header h2 { margin: 0; font-size: 16px; color: #1b2430; }
+      .html-capture-close { background: none; border: 0; font-size: 24px; color: #7a869c; cursor: pointer; padding: 0; width: 24px; height: 24px; }
+      .html-capture-close:hover { color: #1b2430; }
+      .html-capture-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e2e6ed; }
+      .html-capture-section:last-child { border-bottom: none; }
+      .html-capture-field-name { font-weight: 700; font-size: 12px; color: #124a80; text-transform: uppercase; margin-bottom: 8px; letter-spacing: .3px; }
+      .html-capture-code { background: #f5f5f7; border: 1px solid #e2e6ed; border-radius: 6px; padding: 10px; overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: #1b2430; max-height: 200px; }
+      .html-capture-value { color: #166f4c; font-weight: 600; }
+      .html-capture-buttons { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+      .html-capture-copy-btn { background: #124a80; color: #fff; border: 1px solid #124a80; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+      .html-capture-copy-btn:hover { background: #0d3a66; }
     `;
     shadow.appendChild(style);
 
@@ -264,8 +280,9 @@
     previewCard.appendChild(actionList);
     const selectAllButton = element("button", { className: "btn secondary", text: "Select all pending", type: "button" });
     const publishButton = element("button", { className: "btn primary-cta", text: "Publish selected to RTS", type: "button" });
+    const captureHtmlButton = element("button", { className: "btn secondary", text: "Capture field HTML", type: "button", title: "View the actual HTML of form fields to verify they are populated" });
     const clearCacheButton = element("button", { className: "btn danger", text: "Clear cache for this profile", type: "button" });
-    previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, clearCacheButton]));
+    previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, captureHtmlButton, clearCacheButton]));
     const publishStatus = element("div", { className: "status" });
     previewCard.appendChild(publishStatus);
     body.appendChild(previewCard);
@@ -713,6 +730,100 @@
     });
 
     closeButton.addEventListener("click", () => document.getElementById("sxrts-assistant-root")?.remove());
+
+    // HTML Capture Modal
+    const htmlCaptureModal = element("div", { className: "html-capture-modal", id: "sxrts-html-capture-modal" });
+    const modalCloseButton = element("button", { className: "html-capture-close", text: "×", type: "button", title: "Close" });
+    const captureContent = element("div", { className: "html-capture-content" });
+    captureContent.appendChild(element("div", { className: "html-capture-header" }, [
+      element("h2", { text: "Captured Field HTML" }),
+      modalCloseButton
+    ]));
+    const captureBody = element("div", { id: "sxrts-capture-body" });
+    captureContent.appendChild(captureBody);
+    htmlCaptureModal.appendChild(captureContent);
+    shadow.appendChild(htmlCaptureModal);
+
+    modalCloseButton.addEventListener("click", () => {
+      htmlCaptureModal.classList.remove("open");
+    });
+
+    htmlCaptureModal.addEventListener("click", (e) => {
+      if (e.target === htmlCaptureModal) {
+        htmlCaptureModal.classList.remove("open");
+      }
+    });
+
+    function captureFieldsHtml() {
+      const fieldSelectors = [
+        { name: "Name Variations", selector: ".businessEntityName" },
+        { name: "Website Address", selector: "#webURL" },
+        { name: "Email Default Structure", selector: 'select[name="businessEntity.emailDefaultStructure.id"]' },
+        { name: "Research Notes", selector: ".highlight-textarea" },
+        { name: "SIC Codes", selector: 'input.numberField[name="code"]' },
+        { name: "SIC Sources", selector: 'select[name="source"]' }
+      ];
+
+      const captureBody = shadow.getElementById("sxrts-capture-body");
+      captureBody.replaceChildren();
+
+      for (const { name, selector } of fieldSelectors) {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length === 0) continue;
+
+        const section = element("div", { className: "html-capture-section" });
+        section.appendChild(element("div", { className: "html-capture-field-name", text: name }));
+
+        for (let i = 0; i < elements.length; i++) {
+          const el = elements[i];
+          const codeBlock = element("div", { className: "html-capture-code" });
+
+          let displayValue = "";
+          if (el.tagName === "INPUT") {
+            displayValue = `value="${el.value}" (type: ${el.type})`;
+          } else if (el.tagName === "SELECT") {
+            displayValue = `value="${el.value}" (selected: ${el.selectedOptions[0]?.textContent || "none"})`;
+          } else if (el.tagName === "TEXTAREA") {
+            displayValue = `text: "${el.value.substring(0, 100)}${el.value.length > 100 ? "..." : ""}"`;
+          } else {
+            displayValue = `text: "${el.textContent.substring(0, 100)}${el.textContent.length > 100 ? "..." : ""}"`;
+          }
+
+          const html = document.createElement("div");
+          html.innerHTML = `<strong>${el.tagName.toLowerCase()}</strong> ${displayValue}<br><code>${escapeHtml(el.outerHTML.substring(0, 300))}${el.outerHTML.length > 300 ? "..." : ""}</code>`;
+          codeBlock.appendChild(html);
+          section.appendChild(codeBlock);
+
+          if (i < elements.length - 1) {
+            section.appendChild(element("div", { className: "html-capture-code", style: { marginTop: "8px" } }));
+          }
+        }
+
+        const copyBtn = element("button", { className: "html-capture-copy-btn", text: `Copy all ${name} HTML`, type: "button" });
+        copyBtn.addEventListener("click", () => {
+          const htmlSnippets = Array.from(document.querySelectorAll(selector)).map((el) => el.outerHTML).join("\n\n");
+          navigator.clipboard.writeText(htmlSnippets).then(() => {
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => { copyBtn.textContent = `Copy all ${name} HTML`; }, 2000);
+          }).catch(() => {
+            copyBtn.textContent = "Copy failed";
+          });
+        });
+        section.appendChild(element("div", { className: "html-capture-buttons" }, [copyBtn]));
+
+        captureBody.appendChild(section);
+      }
+
+      htmlCaptureModal.classList.add("open");
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    captureHtmlButton.addEventListener("click", captureFieldsHtml);
 
     panel.appendChild(body);
     shadow.appendChild(panel);
