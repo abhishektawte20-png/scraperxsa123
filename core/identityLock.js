@@ -90,15 +90,56 @@
   }
 
   function readFormalName() {
-    return document.querySelector('input[name="formalNameVariations"]')?.value?.trim() || null;
+    // Try Business Entity tab selector first
+    let value = document.querySelector('input[name="formalNameVariations"]')?.value?.trim();
+    if (value) return value;
+
+    // Fallback: try Company tab Name field
+    value = document.querySelector('input[name="company.name"]')?.value?.trim();
+    if (value) return value;
+
+    // Try Formal Name field on Company tab
+    value = document.querySelector('input[placeholder*="Formal Name"]')?.value?.trim();
+    return value || null;
   }
 
   function readDomainField() {
-    return document.querySelector("#domainValue")?.value?.trim() || null;
+    // Try Business Entity tab selector first
+    let value = document.querySelector("#domainValue")?.value?.trim();
+    if (value) return value;
+
+    // Fallback: try to find domain field elsewhere
+    const candidates = document.querySelectorAll('input[type="text"], input:not([type])');
+    for (const el of candidates) {
+      if (el.name?.toLowerCase().includes('domain') || el.placeholder?.toLowerCase().includes('domain')) {
+        return el.value?.trim() || null;
+      }
+    }
+    return null;
   }
 
   function readWebsiteUrl() {
-    return document.querySelector("#webURL")?.value?.trim() || null;
+    // Try Business Entity tab selector first
+    let value = document.querySelector("#webURL")?.value?.trim();
+    if (value) return value;
+
+    // Fallback: try Company tab website field
+    value = document.querySelector('input[name="company.websiteUrl"]')?.value?.trim();
+    if (value) return value;
+
+    // Try any field with "website" or "url" in name/placeholder
+    const candidates = document.querySelectorAll('input[type="text"], input:not([type])');
+    for (const el of candidates) {
+      const name = el.name?.toLowerCase() || '';
+      const placeholder = el.placeholder?.toLowerCase() || '';
+      if ((name.includes('website') || name.includes('url')) && !name.includes('update')) {
+        return el.value?.trim() || null;
+      }
+      if ((placeholder.includes('website') || placeholder.includes('official')) && el.value?.trim()) {
+        return el.value?.trim();
+      }
+    }
+    return null;
   }
 
   // Defends against a value copied through a tool that markdown-linkified
