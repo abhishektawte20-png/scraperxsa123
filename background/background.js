@@ -75,7 +75,10 @@ async function runRovoAgent(prompt, credentials) {
   console.log("[ScraperX Background] Payload:", JSON.stringify(payload, null, 2));
 
   try {
-    console.log("[ScraperX Background] Starting fetch request...");
+    console.log("[ScraperX Background] Starting fetch request with 30s timeout...");
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const response = await fetch("https://xp.atlassian.com/v1/rostr", {
       method: "POST",
@@ -84,9 +87,11 @@ async function runRovoAgent(prompt, credentials) {
         "Content-Type": "application/json",
         "Accept": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
     console.log("[ScraperX Background] Response received. Status:", response.status, response.statusText);
 
     if (!response.ok) {
@@ -100,6 +105,9 @@ async function runRovoAgent(prompt, credentials) {
     return data;
   } catch (error) {
     console.error("[ScraperX Background] Exception caught:", error.name, error.message);
+    if (error.name === "AbortError") {
+      throw new Error("Rovo API request timed out after 30 seconds");
+    }
     console.error("[ScraperX Background] Full error:", error);
     throw error;
   }
