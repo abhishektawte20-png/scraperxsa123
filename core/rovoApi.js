@@ -42,16 +42,33 @@
 
     // Use background script to avoid CORS issues
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { action: "runRovoAgent", prompt, credentials },
-        (response) => {
-          if (response?.success) {
-            resolve({ success: true, data: response.data });
-          } else {
-            resolve({ success: false, error: response?.error || "Unknown error" });
+      console.log("[ScraperX] Sending message to background script");
+
+      try {
+        chrome.runtime.sendMessage(
+          { action: "runRovoAgent", prompt, credentials },
+          (response) => {
+            console.log("[ScraperX] Received response from background:", response);
+
+            if (chrome.runtime.lastError) {
+              console.error("[ScraperX] Chrome runtime error:", chrome.runtime.lastError);
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+              return;
+            }
+
+            if (response?.success) {
+              console.log("[ScraperX] Agent execution successful");
+              resolve({ success: true, data: response.data });
+            } else {
+              console.error("[ScraperX] Agent execution failed:", response?.error);
+              resolve({ success: false, error: response?.error || "Unknown error from background script" });
+            }
           }
-        }
-      );
+        );
+      } catch (error) {
+        console.error("[ScraperX] Error sending message:", error);
+        resolve({ success: false, error: error.message });
+      }
     });
   }
 

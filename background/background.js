@@ -41,11 +41,22 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // Handle Rovo API calls from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log("[ScraperX Background] Received message:", request.action);
+
   if (request.action === "runRovoAgent") {
+    console.log("[ScraperX Background] Processing runRovoAgent request");
     runRovoAgent(request.prompt, request.credentials)
-      .then(result => sendResponse({ success: true, data: result }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .then(result => {
+        console.log("[ScraperX Background] Agent execution successful");
+        sendResponse({ success: true, data: result });
+      })
+      .catch(error => {
+        console.error("[ScraperX Background] Agent execution error:", error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true; // Keep channel open for async response
+  } else {
+    console.log("[ScraperX Background] Unhandled message action:", request.action);
   }
 });
 
@@ -59,20 +70,31 @@ async function runRovoAgent(prompt, credentials) {
     agentId: agentId
   };
 
-  const response = await fetch("https://xp.atlassian.com/v1/rostr", {
-    method: "POST",
-    headers: {
-      "Authorization": authHeader,
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+  console.log("[ScraperX Background] Calling Rovo API with agentId:", agentId);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Rovo API error (${response.status}): ${errorText}`);
+  try {
+    const response = await fetch("https://xp.atlassian.com/v1/rostr", {
+      method: "POST",
+      headers: {
+        "Authorization": authHeader,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    console.log("[ScraperX Background] Rovo API response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Rovo API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log("[ScraperX Background] Rovo API returned data");
+    return data;
+  } catch (error) {
+    console.error("[ScraperX Background] Fetch error:", error.message);
+    throw error;
   }
-
-  return response.json();
 }
