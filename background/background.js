@@ -11,6 +11,7 @@ const ASSISTANT_FILES = [
   "core/adapters/contentEditable.js",
   "core/navigation.js",
   "core/resultsSummary.js",
+  "core/rovoApi.js",
   "registry/businessEntity.nameVariations.js",
   "registry/businessEntity.general.js",
   "registry/company.sic.js",
