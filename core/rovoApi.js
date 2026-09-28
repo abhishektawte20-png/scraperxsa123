@@ -8,8 +8,6 @@
 (() => {
   const STORAGE_KEY = "sxrts_rovo_credentials";
 
-  const ROVO_API_ENDPOINT = "https://xp.atlassian.com/v1/rostr";
-
   async function getStoredCredentials() {
     return new Promise((resolve) => {
       chrome.storage.local.get([STORAGE_KEY], (result) => {
@@ -35,49 +33,6 @@
     });
   }
 
-  function createBasicAuthHeader(email, token) {
-    const credentials = `${email}:${token}`;
-    const base64 = btoa(credentials);
-    return `Basic ${base64}`;
-  }
-
-  async function executeAgent(prompt, email, token, cloudId, agentId) {
-    const authHeader = createBasicAuthHeader(email, token);
-
-    const payload = {
-      prompt: prompt,
-      cloudId: cloudId,
-      agentId: agentId
-    };
-
-    try {
-      console.log(`[ScraperX] Calling Rovo API: ${ROVO_API_ENDPOINT}`);
-
-      const response = await fetch(ROVO_API_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Authorization": authHeader,
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[ScraperX] API error: ${response.status} ${errorText}`);
-        throw new Error(`Rovo API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log(`[ScraperX] API success: received response`);
-      return { success: true, data };
-    } catch (error) {
-      console.error(`[ScraperX] Fetch error: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-  }
-
   async function runAgent(prompt) {
     const credentials = await getStoredCredentials();
 
@@ -85,13 +40,19 @@
       throw new Error("Rovo credentials not configured. Please set up your Atlassian API credentials first.");
     }
 
-    return executeAgent(
-      prompt,
-      credentials.email,
-      credentials.token,
-      credentials.cloudId,
-      credentials.agentId
-    );
+    // Use background script to avoid CORS issues
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: "runRovoAgent", prompt, credentials },
+        (response) => {
+          if (response?.success) {
+            resolve({ success: true, data: response.data });
+          } else {
+            resolve({ success: false, error: response?.error || "Unknown error" });
+          }
+        }
+      );
+    });
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
@@ -99,7 +60,6 @@
     getStoredCredentials,
     setStoredCredentials,
     clearStoredCredentials,
-    runAgent,
-    executeAgent
+    runAgent
   };
 })();
