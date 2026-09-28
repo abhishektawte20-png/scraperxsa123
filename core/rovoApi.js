@@ -8,13 +8,7 @@
 (() => {
   const STORAGE_KEY = "sxrts_rovo_credentials";
 
-  // Multiple possible Rovo API endpoints to try
-  const ROVO_API_ENDPOINTS = [
-    "https://api.atlassian.com/rovo/agents",
-    "https://rovo-gateway.atlassian.com/api/v1/agents",
-    "https://rovo.atlassian.com/api/v1/agents",
-    "https://rovo-api.atlassian.com/v1/agents"
-  ];
+  const ROVO_API_ENDPOINT = "https://xp.atlassian.com/v1/rostr";
 
   async function getStoredCredentials() {
     return new Promise((resolve) => {
@@ -49,49 +43,39 @@
 
   async function executeAgent(prompt, email, token, cloudId, agentId) {
     const authHeader = createBasicAuthHeader(email, token);
-    const errors = [];
 
     const payload = {
       prompt: prompt,
-      cloudId: cloudId
+      cloudId: cloudId,
+      agentId: agentId
     };
 
-    // Try each endpoint in sequence
-    for (const baseUrl of ROVO_API_ENDPOINTS) {
-      const url = `${baseUrl}/${agentId}/execute`;
-      console.log(`[ScraperX] Attempting Rovo API: ${url}`);
+    try {
+      console.log(`[ScraperX] Calling Rovo API: ${ROVO_API_ENDPOINT}`);
 
-      try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Authorization": authHeader,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
+      const response = await fetch(ROVO_API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
 
-        if (response.ok) {
-          const data = await response.json();
-          return { success: true, data };
-        } else {
-          const errorText = await response.text();
-          errors.push(`${url}: ${response.status} ${errorText.substring(0, 200)}`);
-          console.log(`[ScraperX] Endpoint failed: ${response.status}`);
-        }
-      } catch (error) {
-        errors.push(`${url}: ${error.message}`);
-        console.log(`[ScraperX] Fetch error: ${error.message}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ScraperX] API error: ${response.status} ${errorText}`);
+        throw new Error(`Rovo API error (${response.status}): ${errorText}`);
       }
-    }
 
-    // If all endpoints failed
-    const errorDetails = errors.join(" | ");
-    return {
-      success: false,
-      error: `Failed to reach Rovo API. Tried endpoints: ${ROVO_API_ENDPOINTS.join(", ")}. Details: ${errorDetails}`
-    };
+      const data = await response.json();
+      console.log(`[ScraperX] API success: received response`);
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[ScraperX] Fetch error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
   }
 
   async function runAgent(prompt) {
