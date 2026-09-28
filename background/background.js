@@ -70,9 +70,13 @@ async function runRovoAgent(prompt, credentials) {
     agentId: agentId
   };
 
-  console.log("[ScraperX Background] Calling Rovo API with agentId:", agentId);
+  console.log("[ScraperX Background] Calling Rovo API...");
+  console.log("[ScraperX Background] Endpoint: https://xp.atlassian.com/v1/rostr");
+  console.log("[ScraperX Background] Payload:", JSON.stringify(payload, null, 2));
 
   try {
+    console.log("[ScraperX Background] Starting fetch request...");
+
     const response = await fetch("https://xp.atlassian.com/v1/rostr", {
       method: "POST",
       headers: {
@@ -83,18 +87,20 @@ async function runRovoAgent(prompt, credentials) {
       body: JSON.stringify(payload)
     });
 
-    console.log("[ScraperX Background] Rovo API response status:", response.status);
+    console.log("[ScraperX Background] Response received. Status:", response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error("[ScraperX Background] HTTP Error Response:", errorText);
       throw new Error(`Rovo API error (${response.status}): ${errorText}`);
     }
 
     const data = await response.json();
-    console.log("[ScraperX Background] Rovo API returned data");
+    console.log("[ScraperX Background] Successfully parsed JSON response");
     return data;
   } catch (error) {
-    console.error("[ScraperX Background] Fetch error:", error.message);
+    console.error("[ScraperX Background] Exception caught:", error.name, error.message);
+    console.error("[ScraperX Background] Full error:", error);
     throw error;
   }
 }
