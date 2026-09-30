@@ -1,14 +1,18 @@
 "use strict";
 
 /*
- * Rovo API integration for direct agent execution.
- * Stores authentication credentials in chrome.storage.local and makes API calls
- * to execute the Rovo agent and retrieve JSON responses.
+ * Rovo API integration with OAuth 2.1 authentication.
+ * Handles token exchange, refresh, and agent execution.
  */
 (() => {
-  const STORAGE_KEY = "sxrts_rovo_credentials";
+  const STORAGE_KEY = "sxrts_rovo_oauth";
+  const CLIENT_ID = "SbT8O2u9oueHTM7evt4tz2OzL12Ez5KM";
+  const REDIRECT_URI = "https://agfcapcigglbadjnlkgdpomciakkmnai.chromiumapp.org/oauth";
+  const AUTH_URL = "https://auth.atlassian.com/authorize";
+  const TOKEN_URL = "https://api.atlassian.com/oauth/token";
+  const SCOPES = "read:me offline_access";
 
-  async function getStoredCredentials() {
+  async function getStoredTokens() {
     return new Promise((resolve) => {
       chrome.storage.local.get([STORAGE_KEY], (result) => {
         resolve(result[STORAGE_KEY] || null);
@@ -16,16 +20,15 @@
     });
   }
 
-  async function setStoredCredentials(email, token, cloudId, agentId) {
-    const credentials = { email, token, cloudId, agentId, timestamp: Date.now() };
+  async function setStoredTokens(tokens) {
     return new Promise((resolve) => {
-      chrome.storage.local.set({ [STORAGE_KEY]: credentials }, () => {
-        resolve(credentials);
+      chrome.storage.local.set({ [STORAGE_KEY]: tokens }, () => {
+        resolve(tokens);
       });
     });
   }
 
-  async function clearStoredCredentials() {
+  async function clearStoredTokens() {
     return new Promise((resolve) => {
       chrome.storage.local.remove([STORAGE_KEY], () => {
         resolve();
@@ -33,50 +36,93 @@
     });
   }
 
-  async function runAgent(prompt) {
-    const credentials = await getStoredCredentials();
-
-    if (!credentials) {
-      throw new Error("Rovo credentials not configured. Please set up your Atlassian API credentials first.");
+  async function getValidAccessToken() {
+    const tokens = await getStoredTokens();
+    if (!tokens) {
+      throw new Error("Not authenticated. Please log in with Atlassian first.");
     }
 
-    // Use background script to avoid CORS issues
+    // Check if token is expired
+    if (tokens.expiresAt && Date.now() > tokens.expiresAt) {
+      console.log("[ScraperX] Access token expired, refreshing...");
+      return await refreshAccessToken(tokens.refreshToken);
+    }
+
+    return tokens.accessToken;
+  }
+
+  async function refreshAccessToken(refreshToken) {
     return new Promise((resolve) => {
-      console.log("[ScraperX] Sending message to background script");
-
-      try {
-        chrome.runtime.sendMessage(
-          { action: "runRovoAgent", prompt, credentials },
-          (response) => {
-            console.log("[ScraperX] Received response from background:", response);
-
-            if (chrome.runtime.lastError) {
-              console.error("[ScraperX] Chrome runtime error:", chrome.runtime.lastError);
-              resolve({ success: false, error: chrome.runtime.lastError.message });
-              return;
-            }
-
-            if (response?.success) {
-              console.log("[ScraperX] Agent execution successful");
-              resolve({ success: true, data: response.data });
-            } else {
-              console.error("[ScraperX] Agent execution failed:", response?.error);
-              resolve({ success: false, error: response?.error || "Unknown error from background script" });
-            }
+      chrome.runtime.sendMessage(
+        { action: "refreshOAuthToken", refreshToken },
+        (response) => {
+          if (response?.success) {
+            resolve(response.accessToken);
+          } else {
+            throw new Error("Failed to refresh token: " + response?.error);
           }
-        );
-      } catch (error) {
-        console.error("[ScraperX] Error sending message:", error);
-        resolve({ success: false, error: error.message });
-      }
+        }
+      );
     });
+  }
+
+  async function runAgent(prompt, agentId, cloudId) {
+    const accessToken = await getValidAccessToken();
+
+    return new Promise((resolve) => {
+      console.log("[ScraperX] Sending Rovo agent execution request");
+
+      chrome.runtime.sendMessage(
+        {
+          action: "runRovoAgent",
+          prompt,
+          agentId,
+          cloudId,
+          accessToken
+        },
+        (response) => {
+          console.log("[ScraperX] Received response:", response);
+
+          if (chrome.runtime.lastError) {
+            console.error("[ScraperX] Chrome runtime error:", chrome.runtime.lastError);
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+
+          if (response?.success) {
+            console.log("[ScraperX] Agent execution successful");
+            resolve({ success: true, data: response.data });
+          } else {
+            console.error("[ScraperX] Agent execution failed:", response?.error);
+            resolve({ success: false, error: response?.error || "Unknown error" });
+          }
+        }
+      );
+    });
+  }
+
+  function getAuthorizationUrl() {
+    const state = Math.random().toString(36).substring(7);
+    sessionStorage.setItem("oauth_state", state);
+
+    const params = new URLSearchParams({
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      response_type: "code",
+      scope: SCOPES,
+      state: state
+    });
+
+    return `${AUTH_URL}?${params.toString()}`;
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.rovoApi = {
-    getStoredCredentials,
-    setStoredCredentials,
-    clearStoredCredentials,
-    runAgent
+    getStoredTokens,
+    setStoredTokens,
+    clearStoredTokens,
+    getValidAccessToken,
+    runAgent,
+    getAuthorizationUrl
   };
 })();
