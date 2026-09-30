@@ -361,6 +361,19 @@
         return;
       }
 
+      let cloudId, agentId;
+      try {
+        cloudId = localStorage.getItem("sxrts_rovo_cloudId");
+        agentId = localStorage.getItem("sxrts_rovo_agentId");
+      } catch {
+        // Silently fail if localStorage is not available (e.g., in tests)
+      }
+
+      if (!cloudId || !agentId) {
+        setStatus(validateStatus, "Please configure Cloud ID and Agent ID in settings.", "error");
+        return;
+      }
+
       regeneratePrompt();
       const prompt = promptArea.value;
 
@@ -368,7 +381,7 @@
       setStatus(validateStatus, "Running Rovo agent...", "");
 
       try {
-        const result = await globalThis.SXRTS.rovoApi.runAgent(prompt);
+        const result = await globalThis.SXRTS.rovoApi.runAgent(prompt, agentId, cloudId);
 
         if (!result.success) {
           setStatus(validateStatus, `Agent error: ${result.error}`, "error");
@@ -835,18 +848,18 @@
       settingsModalClose
     ]));
 
-    const emailInput = element("input", { className: "settings-input", placeholder: "Atlassian Email", type: "email", id: "sxrts-rovo-email" });
-    const tokenInput = element("input", { className: "settings-input", placeholder: "API Token", type: "password", id: "sxrts-rovo-token" });
     const cloudIdInput = element("input", { className: "settings-input", placeholder: "Cloud ID", type: "text", id: "sxrts-rovo-cloud-id" });
     const agentIdInput = element("input", { className: "settings-input", placeholder: "Agent ID", type: "text", id: "sxrts-rovo-agent-id" });
+    const authStatusDiv = element("div", { className: "settings-input", style: "padding: 10px; background: #f0f0f0; border-radius: 4px; text-align: center; font-weight: 600;" });
 
-    settingsContentDiv.appendChild(element("div", { className: "settings-form" }, [emailInput, tokenInput, cloudIdInput, agentIdInput]));
+    settingsContentDiv.appendChild(element("div", { className: "settings-form" }, [authStatusDiv, cloudIdInput, agentIdInput]));
 
-    const saveCrBtn = element("button", { className: "btn primary-cta", text: "Save Credentials", type: "button" });
-    const clearCrBtn = element("button", { className: "btn danger", text: "Clear Credentials", type: "button" });
+    const loginBtn = element("button", { className: "btn primary-cta", text: "Login with Atlassian", type: "button" });
+    const saveCfgBtn = element("button", { className: "btn", text: "Save Config", type: "button" });
+    const logoutBtn = element("button", { className: "btn danger", text: "Logout", type: "button", style: "display: none;" });
     const settingsStatusDiv = element("div", { className: "settings-status hidden", id: "sxrts-settings-status" });
 
-    settingsContentDiv.appendChild(element("div", { className: "settings-buttons" }, [saveCrBtn, clearCrBtn]));
+    settingsContentDiv.appendChild(element("div", { className: "settings-buttons" }, [loginBtn, logoutBtn, saveCfgBtn]));
     settingsContentDiv.appendChild(settingsStatusDiv);
     settingsModal.appendChild(settingsContentDiv);
     shadow.appendChild(settingsModal);
@@ -861,74 +874,136 @@
       }
     });
 
-    async function loadStoredCredentials() {
+    async function updateAuthStatus() {
       try {
         if (!globalThis.SXRTS?.rovoApi) return;
-        const creds = await globalThis.SXRTS.rovoApi.getStoredCredentials();
-        if (creds) {
-          emailInput.value = creds.email || "";
-          tokenInput.value = creds.token || "";
-          cloudIdInput.value = creds.cloudId || "";
-          agentIdInput.value = creds.agentId || "";
+        const tokens = await globalThis.SXRTS.rovoApi.getStoredTokens();
+        if (tokens) {
+          authStatusDiv.textContent = "✓ Authenticated";
+          authStatusDiv.style.background = "#e5f6ee";
+          authStatusDiv.style.color = "#166f4c";
+          loginBtn.style.display = "none";
+          logoutBtn.style.display = "block";
+        } else {
+          authStatusDiv.textContent = "Not authenticated";
+          authStatusDiv.style.background = "#fdecea";
+          authStatusDiv.style.color = "#a3291c";
+          loginBtn.style.display = "block";
+          logoutBtn.style.display = "none";
         }
       } catch {
         // Silently fail if Rovo API not available (e.g., in tests)
       }
     }
 
-    // Load credentials asynchronously
-    setTimeout(() => loadStoredCredentials(), 0);
-
-    saveCrBtn.addEventListener("click", async () => {
-      if (!globalThis.SXRTS?.rovoApi) {
-        setStatus(settingsStatusDiv, "Rovo API not available", "error");
-        settingsStatusDiv.classList.remove("hidden");
-        return;
-      }
-
-      const email = emailInput.value.trim();
-      const token = tokenInput.value.trim();
-      const cloudId = cloudIdInput.value.trim();
-      const agentId = agentIdInput.value.trim();
-
-      if (!email || !token || !cloudId || !agentId) {
-        setStatus(settingsStatusDiv, "All fields are required", "error");
-        settingsStatusDiv.classList.remove("hidden");
-        return;
-      }
-
+    async function loadRovoConfig() {
       try {
-        await globalThis.SXRTS.rovoApi.setStoredCredentials(email, token, cloudId, agentId);
-        setStatus(settingsStatusDiv, "Credentials saved successfully ✓", "success");
-        settingsStatusDiv.classList.remove("hidden");
-        setTimeout(() => {
-          settingsModal.classList.remove("open");
-          settingsStatusDiv.classList.add("hidden");
-        }, 1500);
+        cloudIdInput.value = localStorage.getItem("sxrts_rovo_cloudId") || "";
+        agentIdInput.value = localStorage.getItem("sxrts_rovo_agentId") || "";
+      } catch {
+        // Silently fail if localStorage is not available (e.g., in tests)
+      }
+      await updateAuthStatus();
+    }
+
+    // Load config asynchronously
+    setTimeout(() => loadRovoConfig(), 0);
+
+    loginBtn.addEventListener("click", () => {
+      try {
+        const authUrl = globalThis.SXRTS.rovoApi.getAuthorizationUrl();
+        const authWindow = window.open(authUrl, "atlassian_auth", "width=600,height=700");
+
+        const handleAuthMessage = async (event) => {
+          if (event.source !== authWindow) return;
+
+          if (event.data?.type === "oauth_code") {
+            window.removeEventListener("message", handleAuthMessage);
+            authWindow.close();
+
+            try {
+              const tokens = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                  { action: "exchangeOAuthCode", code: event.data.code },
+                  (response) => {
+                    if (response?.success) {
+                      resolve(response.tokens);
+                    } else {
+                      reject(new Error(response?.error || "OAuth exchange failed"));
+                    }
+                  }
+                );
+              });
+
+              await globalThis.SXRTS.rovoApi.setStoredTokens(tokens);
+              await updateAuthStatus();
+              setStatus(settingsStatusDiv, "Successfully authenticated ✓", "success");
+              settingsStatusDiv.classList.remove("hidden");
+              setTimeout(() => {
+                settingsStatusDiv.classList.add("hidden");
+              }, 2000);
+            } catch (error) {
+              setStatus(settingsStatusDiv, `Auth error: ${error.message}`, "error");
+              settingsStatusDiv.classList.remove("hidden");
+            }
+          } else if (event.data?.type === "oauth_error") {
+            window.removeEventListener("message", handleAuthMessage);
+            authWindow.close();
+            setStatus(settingsStatusDiv, `Auth failed: ${event.data.error}`, "error");
+            settingsStatusDiv.classList.remove("hidden");
+          }
+        };
+
+        window.addEventListener("message", handleAuthMessage);
       } catch (error) {
         setStatus(settingsStatusDiv, `Error: ${error.message}`, "error");
         settingsStatusDiv.classList.remove("hidden");
       }
     });
 
-    clearCrBtn.addEventListener("click", async () => {
-      if (!globalThis.SXRTS?.rovoApi) return;
-      if (confirm("Clear stored Rovo credentials?")) {
-        await globalThis.SXRTS.rovoApi.clearStoredCredentials();
-        emailInput.value = "";
-        tokenInput.value = "";
-        cloudIdInput.value = "";
-        agentIdInput.value = "";
-        setStatus(settingsStatusDiv, "Credentials cleared", "success");
+    saveCfgBtn.addEventListener("click", async () => {
+      const cloudId = cloudIdInput.value.trim();
+      const agentId = agentIdInput.value.trim();
+
+      if (!cloudId || !agentId) {
+        setStatus(settingsStatusDiv, "Cloud ID and Agent ID are required", "error");
         settingsStatusDiv.classList.remove("hidden");
-        setTimeout(() => {
-          settingsModal.classList.remove("open");
-          settingsStatusDiv.classList.add("hidden");
-        }, 1500);
+        return;
+      }
+
+      try {
+        localStorage.setItem("sxrts_rovo_cloudId", cloudId);
+        localStorage.setItem("sxrts_rovo_agentId", agentId);
+      } catch {
+        // Silently fail if localStorage is not available (e.g., in tests)
+      }
+
+      setStatus(settingsStatusDiv, "Configuration saved ✓", "success");
+      settingsStatusDiv.classList.remove("hidden");
+      setTimeout(() => {
+        settingsModal.classList.remove("open");
+        settingsStatusDiv.classList.add("hidden");
+      }, 1500);
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      if (confirm("Logout from Atlassian?")) {
+        try {
+          if (globalThis.SXRTS?.rovoApi) {
+            await globalThis.SXRTS.rovoApi.clearStoredTokens();
+          }
+          await updateAuthStatus();
+          setStatus(settingsStatusDiv, "Logged out", "success");
+          settingsStatusDiv.classList.remove("hidden");
+        } catch (error) {
+          setStatus(settingsStatusDiv, `Error: ${error.message}`, "error");
+          settingsStatusDiv.classList.remove("hidden");
+        }
       }
     });
 
     settingsButton.addEventListener("click", () => {
+      loadRovoConfig();
       settingsModal.classList.add("open");
     });
 

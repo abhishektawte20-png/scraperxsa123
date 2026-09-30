@@ -28,5 +28,11 @@
   },
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src 'none'; img-src 'self'; style-src 'self'"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["oauth.html"],
+      "matches": ["https://auth.atlassian.com/*"]
+    }
+  ]
 }
