@@ -198,3 +198,46 @@ test("the correction prompt asks for the same text format, restating only the vi
 test("schema.validate rejects a broken text report with its issue list and format", () => {
   assert.throws(() => schema.validate(swap("* Total Rounds Found: 0", "* Total Rounds Found: 2")), (error) => error.format === "text" && error.errors[0].includes("[TIMELINE_COUNT_MISMATCH]"));
 });
+
+// ---- legitimate variations of the same report are read the same way ----
+
+test("variants of the same report read identically: keywords per line, bare/inline/bare-domain sources, one-paragraph or labelled descriptions, Employee Count heading styles", () => {
+  const clean = rt.analyze(TEXT_SAMPLE).document;
+  const kw = "streetwear apparel, oversized t-shirts, cargo pants, unisex fashion, graphic tees, Indian streetwear, premium hoodies, bold clothing, streetwear culture, online clothing store.";
+  const variants = {
+    "keywords one per line": TEXT_SAMPLE.replace(kw, kw.replace(/\.$/, "").split(", ").map((k) => `* ${k}`).join("\n")),
+    "keywords numbered": TEXT_SAMPLE.replace(kw, kw.replace(/\.$/, "").split(", ").map((k, i) => `${i + 1}. ${k}`).join("\n")),
+    "CONFIRMATION 2 without https://": TEXT_SAMPLE.replace("`https://www.psypher.in`", "`www.psypher.in`"),
+    "inline source": TEXT_SAMPLE.replace("* Formal Name: Psypher\n   * Source: https://www.psypher.in/", "* Formal Name: Psypher | Source: https://www.psypher.in/"),
+    "inline source in parentheses": TEXT_SAMPLE.replace("* Formal Name: Psypher\n   * Source: https://www.psypher.in/", "* Formal Name: Psypher (Source: https://www.psypher.in/)"),
+    "'Source URL' label": TEXT_SAMPLE.replace(/Source: https:\/\/www\.psypher\.in\/\n/g, "Source URL: https://www.psypher.in/\n"),
+    "sources as bare domains": TEXT_SAMPLE.replace(/Source: https:\/\/www\.psypher\.in\/\n/g, "Source: www.psypher.in\n"),
+    "descriptions in one paragraph": TEXT_SAMPLE.replace("individual consumers.\nThe company offers", "individual consumers. The company offers"),
+    "labelled descriptions": TEXT_SAMPLE.replace("Designer of streetwear", "Business Description: Designer of streetwear").replace("The company offers oversized", "Full Description: The company offers oversized"),
+    "Employee Count markdown heading": TEXT_SAMPLE.replace("EMPLOYEE COUNT:", "## Employee Count"),
+    "Employee Count as its own SECTION": TEXT_SAMPLE.replace("EMPLOYEE COUNT:", "SECTION 10: Employee Count")
+  };
+  for (const [name, raw] of Object.entries(variants)) {
+    const result = rt.analyze(raw);
+    assert.deepEqual(result.issues.filter((i) => i.severity === "error"), [], `${name}: unexpected errors`);
+    assert.deepEqual(result.document.company.keywords.map((k) => k.value), clean.company.keywords.map((k) => k.value), `${name}: keywords differ`);
+    assert.equal(result.document.profileIdentity.domain, "psypher.in", name);
+  }
+});
+
+test("a source that is genuinely absent is still an error, and the correction prompt says how to fix it", () => {
+  const raw = swap("* Facebook: [Psypher Interactive | Bangalore](https://www.facebook.com/psyphergames)\n   * Source: https://coolie-no-1-run-for-love.apk.gold/", "* Facebook: [Psypher Interactive | Bangalore](https://www.facebook.com/psyphergames)");
+  const result = rt.analyze(raw);
+  assert.ok(result.issues.some((i) => i.code === "MISSING_SOURCE" && /facebook/.test(i.path)));
+  const prompt = rc.buildCorrectionPrompt(result.issues, "psypher.in", "text");
+  assert.match(prompt, /How to fix: Give this field its own line directly under it: "Source: <full https:\/\/ URL>"/);
+  assert.doesNotMatch(prompt, /JSON/);
+});
+
+test("a genuinely absent Employee Count section and a single run-on keyword line are still rejected", () => {
+  const noEmp = TEXT_SAMPLE.replace(/EMPLOYEE COUNT:[\s\S]*?(?=SIC CODES)/, "");
+  assert.ok(errors(noEmp).some((e) => e.code === "SECTION_MISSING" && /EMPLOYEE COUNT/.test(e.path)));
+  const kw = "streetwear apparel, oversized t-shirts, cargo pants, unisex fashion, graphic tees, Indian streetwear, premium hoodies, bold clothing, streetwear culture, online clothing store.";
+  const runOn = swap(kw, "streetwear apparel oversized t-shirts cargo pants unisex fashion graphic tees");
+  assert.ok(codes(runOn).includes("KEYWORD_COUNT"));
+});

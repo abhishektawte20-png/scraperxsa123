@@ -70,17 +70,31 @@
   }
 
   function labelKey(label) {
-    return (label || "").toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+    const key = (label || "").toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+    return /^sources?( url| link| urls)?( 1)?$/.test(key) ? "source" : key;
   }
 
-  function urlOf(text) {
-    const match = typeof text === "string" ? text.match(/https?:\/\/[^\s)>\]|\\]+/i) : null;
-    return match ? match[0].replace(/[.,;:]+$/, "") : null;
+  const TRAIL = /[.,;:]+$/;
+  // A full URL, or (with {bare:true}) a bare host/path such as
+  // "www.psypher.in/about", which is read as https://<that>.
+  function urlOf(text, { bare = false } = {}) {
+    if (typeof text !== "string") return null;
+    const full = text.match(/https?:\/\/[^\s)>\]|\\]+/i);
+    if (full) return full[0].replace(TRAIL, "");
+    if (!bare) return null;
+    const host = text.match(/(?:^|[\s(|—–])((?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/[^\s)>\]|\\]*)?)/i);
+    return host ? `https://${host[1].replace(TRAIL, "")}` : null;
+  }
+
+  // "Value | Source: https://..." / "Value (Source: ...)" on one line.
+  function splitInlineSource(value) {
+    const match = typeof value === "string" ? value.match(/^(.*?)\s*[|(—–;-]?\s*\bsources?(?:\s+url)?\s*[:=]\s*(.+?)\)?\s*$/i) : null;
+    return match && match[1] ? { value: match[1].replace(/[|(—–;\s-]+$/, "").trim(), source: match[2].trim() } : { value, source: null };
   }
 
   function parseSource(text) {
     if (!text) return { url: null, text: "" };
-    const url = urlOf(text);
+    const url = urlOf(text, { bare: true });
     return { url, text: text.trim() };
   }
 
@@ -108,6 +122,26 @@
 
   // ---------- sectioning ----------
 
+  // Headings are routed by their title, so a section keeps working even if the
+  // agent numbers it differently (e.g. "SECTION 10: Employee Count").
+  function routeByTitle(title) {
+    const t = title.toLowerCase();
+    if (/entity details/.test(t)) return "entity";
+    if (/rounds|funding/.test(t)) return "funding";
+    if (/website links/.test(t)) return "links";
+    if (/name variation/.test(t)) return "names";
+    if (/site address|start date|email default/.test(t)) return "site";
+    if (/social media|smis?\b/.test(t)) return "smi";
+    if (/management/.test(t)) return "management";
+    if (/industry code|vertical/.test(t)) return "industry";
+    if (/employee count|headcount/.test(t)) return "employees";
+    if (/\bnaics\b/.test(t)) return "naics";
+    if (/\bsic\b/.test(t)) return "sic";
+    if (/description/.test(t)) return "description";
+    if (/^keywords?\b/.test(t)) return "keywords";
+    return null;
+  }
+
   function splitSections(lines, unrecognized) {
     const sections = {};
     let current = "preamble";
@@ -117,15 +151,16 @@
       if (!line.text) continue;
       const heading = line.text.match(/^SECTION\s+(\d+[A-Z]?)\s*[:\-—]\s*(.*)$/i);
       if (heading) {
-        const key = SECTION_KEYS[heading[1].toUpperCase()];
+        const key = routeByTitle(heading[2]) || SECTION_KEYS[heading[1].toUpperCase()];
         if (key) current = key;
         else { current = "other"; unrecognized.push(`SECTION ${heading[1]}: ${heading[2]}`.slice(0, 80)); }
         if (key === "industry" && heading[1].toUpperCase() === "8B") push(current, { ...line, text: "Verticals Assigned:" });
         continue;
       }
-      const pseudo = line.text.match(/^(EMPLOYEE COUNT|SIC CODES|NAICS CODES|KEYWORDS)\s*:?\s*(.*)$/i);
-      if (pseudo && pseudo[1].toUpperCase() in PSEUDO_HEADINGS) {
-        current = PSEUDO_HEADINGS[pseudo[1].toUpperCase()];
+      const pseudo = line.text.match(/^(EMPLOYEE COUNT|SIC CODES?|NAICS CODES?|KEYWORDS?)\s*(?:\([^)]*\))?\s*(?::\s*(.*))?$/i);
+      if (pseudo) {
+        const name = pseudo[1].toUpperCase().replace(/CODE$/, "CODES").replace(/^KEYWORD$/, "KEYWORDS");
+        current = PSEUDO_HEADINGS[name];
         if (pseudo[2]) push(current, { ...line, text: pseudo[2], indent: 0 });
         continue;
       }
@@ -171,10 +206,11 @@
       if (warnMissing) C().issue(issues, "warning", "FIELD_MISSING", path, "was not found in the output.");
       return NOT_FOUND();
     }
-    const value = entry.value;
+    const inline = splitInlineSource(entry.value);
+    const value = inline.value;
     checkNearMiss(path, value, issues);
     if (!value || C().isFallback(value)) return NOT_FOUND();
-    const src = parseSource(subOf(entry, "source")?.value);
+    const src = parseSource(subOf(entry, "source")?.value || inline.source);
     const note = [subOf(entry, "note")?.value, src.url ? src.text.replace(src.url, "").replace(/^[\s(]+|[\s)]+$/g, "") : src.text].filter(Boolean).join(" ");
     if (requireSource && !src.url) {
       C().issue(issues, "error", "MISSING_SOURCE", `${path}.source`, "a value needs its own source URL (every extracted field is sourced at field level).");
@@ -234,7 +270,7 @@
     const confirmation = (n) => entity.find((e) => new RegExp(`^confirmation ${n}$`).test(e.key));
     const domainText = confirmation(1)?.value || "";
     const domainMatch = domainText.match(/([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i);
-    const accessedUrl = urlOf(confirmation(2)?.value || "");
+    const accessedUrl = urlOf(confirmation(2)?.value || "", { bare: true });
     const targetDomain = domainMatch ? domainMatch[1].toLowerCase() : "";
     if (!confirmation(1) || !confirmation(2) || !confirmation(3)) {
       C().issue(issues, "error", "DOMAIN_CONFIRMATION_MISSING", "SECTION 1", "CONFIRMATION 1, 2 and 3 (the domain lock) must all be present.");
@@ -255,10 +291,11 @@
     const names = entries.names || [];
     const other = [];
     for (const entry of findAll(names, "other name variation").concat(findAll(names, "other name variations"))) {
-      if (!entry.value || C().isFallback(entry.value)) continue;
-      const src = parseSource(subOf(entry, "source")?.value);
+      const inline = splitInlineSource(entry.value);
+      if (!inline.value || C().isFallback(inline.value)) continue;
+      const src = parseSource(subOf(entry, "source")?.value || inline.source);
       if (!src.url) C().issue(issues, "error", "MISSING_SOURCE", "name_variations.other_name_variations.source", "a name needs its own source URL.");
-      other.push({ name: entry.value, script: /[^\u0000-ɏ]/.test(entry.value) ? "Non-Latin script" : NOT_FOUND().value, source_url: src.url });
+      other.push({ name: inline.value, script: /[^\u0000-ɏ]/.test(inline.value) ? "Non-Latin script" : NOT_FOUND().value, source_url: src.url });
     }
     const nameSrc = {
       formal_name: sourced(find(names, "formal name"), "name_variations.formal_name", issues, notes),
@@ -288,7 +325,7 @@
     const edsEntry = find(site, "email default structure") || find(site, "eds");
     let eds = NOT_FOUND();
     if (edsEntry && edsEntry.value && !C().isFallback(edsEntry.value)) {
-      const src = parseSource(subOf(edsEntry, "source")?.value);
+      const src = parseSource(subOf(edsEntry, "source")?.value || splitInlineSource(edsEntry.value).source);
       if (!src.url) C().issue(issues, "error", "MISSING_SOURCE", "email_default_structure.source", "the Email Default Structure needs its own source URL.");
       const pattern = edsEntry.value.split(/\s+\(/)[0].trim();
       const basis = (edsEntry.value.match(/based on\s+([^\s)]+@[^\s)]+)/i) || [])[1] || "";
@@ -309,10 +346,11 @@
     for (const entry of entries.smi || []) {
       const mapped = SMI_LABELS[entry.key];
       if (!entry.label) continue;
-      const value = entry.value;
+      const inline = splitInlineSource(entry.value);
+      const value = inline.value;
       checkNearMiss(`social_media_identifiers.${entry.key}`, value, issues);
-      const url = urlOf(value);
-      const src = parseSource(subOf(entry, "source")?.value);
+      const url = urlOf(value, { bare: true });
+      const src = parseSource(subOf(entry, "source")?.value || inline.source);
       const note = subOf(entry, "note")?.value || null;
       if (value && !C().isFallback(value) && !src.url) C().issue(issues, "error", "MISSING_SOURCE", `social_media_identifiers.${entry.key}.source`, "an SMI needs its own source URL.");
       if (src.url) notes.push({ path: `social_media_identifiers.${entry.key}`, url: src.url, text: `${note || ""} ${src.text}` });
@@ -387,7 +425,12 @@
     }
 
     // ----- Section 9: description, employees, SIC, NAICS, keywords -----
-    const descLines = (entries.description || []).map((e) => e.value).filter(Boolean);
+    let descLines = (entries.description || []).map((e) => e.value.replace(/^(?:business description|brief description|full description|bd|fd)\s*[:\-–—]\s*/i, "")).filter(Boolean);
+    // Both sentences in one paragraph: the Full Description always starts "The company".
+    if (descLines.length === 1) {
+      const parts = descLines[0].split(/(?<=[.!?])\s+(?=The company\b)/);
+      if (parts.length === 2) descLines = parts;
+    }
     const [bd, fd] = descLines;
     if (descLines.length < 2 && !descLines.every((l) => C().isFallback(l))) {
       C().issue(issues, "error", "DESCRIPTION_RULE", "SECTION 9", "must contain the two description sentences (Business Description, then Full Description).");
@@ -416,8 +459,8 @@
     const sicSrc = codeList("sic", "SIC");
     const naicsSrc = codeList("naics", "NAICS");
 
-    const keywords = (entries.keywords || []).map((e) => e.value).join(" ")
-      .split(/[,;]/).map((k) => k.replace(/^[\s*\-•]+/, "").replace(/[.\s]+$/, "").trim()).filter(Boolean);
+    const keywords = (entries.keywords || []).flatMap((e) => e.value.split(/[,;]/))
+      .map((k) => k.replace(/^[\s*\-•\d.)]+/, "").replace(/[.\s]+$/, "").trim()).filter(Boolean);
 
     // ----- assemble the shared Section-13-shaped source -----
     const formal = C().real(nameSrc.formal_name.value);

@@ -615,8 +615,32 @@
     };
   }
 
+  // How to fix each kind of finding, in the agent's own terms. These restate
+  // the existing rules; they never add to or change the methodology.
+  const FIX_HINTS = {
+    SECTION_MISSING: "Include this section under its exact heading. If nothing was found, still include it using the prescribed fallback phrase.",
+    DOMAIN_CONFIRMATION_MISSING: "Write CONFIRMATION 1, 2 and 3 exactly as specified; CONFIRMATION 2 must contain the full URL you accessed, starting with https://.",
+    DOMAIN_MISMATCH: "Only the exact provided domain, including its TLD, may be accessed and used.",
+    MISSING_SOURCE: "Give this field its own line directly under it: \"Source: <full https:// URL>\". If no valid source exists, return the prescribed fallback phrase instead of a value.",
+    KEYWORD_COUNT: "Return at least 10 keywords.",
+    KEYWORD_FORMAT: "Each keyword must be 2-3 words naming a product, service or market. Put the keywords on one line separated by commas.",
+    DESCRIPTION_RULE: "Follow the Business Description / Full Description structure: exactly two sentences, each on its own line, the second beginning \"The company\".",
+    FALLBACK_NOT_EXACT: "Use the prescribed fallback phrase character for character; never N/A, unknown or a paraphrase.",
+    PROHIBITED_SOURCE: "Remove this source and use only valid sources; data aggregators and internal systems are never allowed.",
+    PROHIBITED_CODE: "Use only an approved, non-prohibited industry code.",
+    CODE_FORMAT: "SIC codes are 4 digits and NAICS codes 6 digits, with the exact manual title.",
+    TIMELINE_COUNT_MISMATCH: "Total Rounds Found must equal the number of rounds listed in the timeline.",
+    CONSTRAINT: "Follow the stated output constraint exactly.",
+    MARKDOWN_LINK: "Return plain text and plain URLs only.",
+    NULL_NOT_ALLOWED: "Use the prescribed fallback phrase instead of null here.",
+    EMPTY_STRING: "Use the prescribed fallback phrase instead of an empty value.",
+    MISSING_KEY: "Include every key of the output format, even when its value is a fallback phrase.",
+    URL_INVALID: "Provide a full, valid https:// URL."
+  };
+
   // A message for the researcher to send back to Rovo. It restates the
-  // violations only; it never restates or alters the methodology itself.
+  // violations (with how to fix each) only; it never restates or alters the
+  // methodology itself.
   function buildCorrectionPrompt(issues, domain, format = "json") {
     const errors = issues.filter((i) => i.severity === "error").slice(0, 40);
     const shape = format === "text" ? "the corrected output in the same section format, with the same headings, labels and fallback phrases as always" : "only the corrected JSON object, with the same schema, keys and fallback phrases as always";
@@ -624,7 +648,7 @@
       `Your previous output for ${domain || "this domain"} broke the output rules and methodology. Start a fresh session reset, redo the extraction, and return ${shape}.`,
       "",
       "Fix exactly these problems:",
-      ...errors.map((item, index) => `${index + 1}. ${formatIssue(item)}`)
+      ...errors.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`)
     ].join("\n");
   }
 
