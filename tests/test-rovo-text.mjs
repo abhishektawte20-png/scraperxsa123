@@ -241,3 +241,22 @@ test("a genuinely absent Employee Count section and a single run-on keyword line
   const runOn = swap(kw, "streetwear apparel oversized t-shirts cargo pants unisex fashion graphic tees");
   assert.ok(codes(runOn).includes("KEYWORD_COUNT"));
 });
+
+test("invisible line separators (U+2028 etc.) and other bullet/separator characters read like normal line breaks", () => {
+  const clean = rt.analyze(TEXT_SAMPLE).document;
+  const kw = "streetwear apparel, oversized t-shirts, cargo pants, unisex fashion, graphic tees, Indian streetwear, premium hoodies, bold clothing, streetwear culture, online clothing store.";
+  const list = kw.replace(/\.$/, "").split(", ");
+  for (const [name, replacement] of Object.entries({
+    "U+2028 between keywords": list.join("\u2028"),
+    "NEL between keywords": list.join("\u0085"),
+    "◦ bullets": list.map((k) => `◦ ${k}`).join("\n"),
+    "pipe separated": list.join(" | "),
+    "dot separated": list.join(" • ")
+  })) {
+    const result = rt.analyze(TEXT_SAMPLE.replace(kw, replacement));
+    assert.deepEqual(result.issues.filter((i) => i.severity === "error"), [], name);
+    assert.deepEqual(result.document.company.keywords.map((k) => k.value), clean.company.keywords.map((k) => k.value), name);
+  }
+  const flattened = TEXT_SAMPLE.split("\n").join("\u2028");
+  assert.deepEqual(rt.analyze(flattened).document, clean);
+});

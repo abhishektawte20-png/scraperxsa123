@@ -59,7 +59,7 @@
 
   function parseLine(raw) {
     const line = raw.replace(/\t/g, "    ").replace(/[​-‏⁠﻿]/g, "").replace(/\s+$/, "");
-    const match = line.match(/^(\s*)(?:#+\s*)?([*\-•]\s+|\d+[.)]\s+)?(.*)$/);
+    const match = line.match(/^(\s*)(?:#+\s*)?([*\-•‣◦▪▫·–]\s+|\d+[.)]\s+)?(.*)$/);
     return { indent: match[1].length, marker: match[2] ? (/\d/.test(match[2]) ? "num" : "bullet") : null, text: stripMarkdown(match[3]), raw: line };
   }
 
@@ -101,7 +101,8 @@
   // ---------- noise removal ----------
 
   function extractBlock(raw) {
-    const cleaned = raw.replace(/\r\n?/g, "\n");
+    // Web pages sometimes put U+2028/U+2029/NEL/vertical-tab/form-feed where a line break was.
+    const cleaned = raw.replace(/\r\n?|[\u2028\u2029\u0085\u000b\u000c]/g, "\n");
     const lines = cleaned.split("\n");
     const headingRe = /^\s*(?:#+\s*)?(?:\*\*)?\s*SECTION\s+1\s*[:\-—]/i;
     let start = -1;
@@ -459,8 +460,8 @@
     const sicSrc = codeList("sic", "SIC");
     const naicsSrc = codeList("naics", "NAICS");
 
-    const keywords = (entries.keywords || []).flatMap((e) => e.value.split(/[,;]/))
-      .map((k) => k.replace(/^[\s*\-•\d.)]+/, "").replace(/[.\s]+$/, "").trim()).filter(Boolean);
+    const keywords = (entries.keywords || []).flatMap((e) => e.value.split(/[,;|•·]/))
+      .map((k) => k.replace(/^[\s*\-•‣◦▪▫·–\d.)]+/, "").replace(/[.\s]+$/, "").trim()).filter(Boolean);
 
     // ----- assemble the shared Section-13-shaped source -----
     const formal = C().real(nameSrc.formal_name.value);
