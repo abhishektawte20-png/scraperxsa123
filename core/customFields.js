@@ -1,0 +1,246 @@
+"use strict";
+
+/*
+ * Taught ("custom") field definitions: RTS fields the researcher mapped
+ * from inside the extension instead of waiting for a new build. Stored in
+ * chrome.storage.local, validated here, and surfaced everywhere a built-in
+ * field is: the Rovo prompt, JSON validation, the preview, and publishing.
+ *
+ * A definition is a list of `fields` (one field named "value" for a
+ * "single" definition; N named sub-fields for a "record" definition that is
+ * added with an Add button), an optional addButton, and a saveButton.
+ *
+ * In the Rovo JSON a definition lives under the top-level "custom" object:
+ *   single: custom.<key> = { value, action, source }
+ *   record: custom.<key> = [ { <fieldKey>..., action, source } ]
+ */
+(() => {
+  const STORAGE_KEY = "sxrts_custom_fields";
+  const KEY_PATTERN = /^[a-z][A-Za-z0-9]{1,39}$/;
+  const TEXT_PATTERN = /^[^<>&"'`\\]{1,120}$/;
+  const ACTIONS = ["addIfMissing", "updateIfBlank", "replaceAfterConfirmation", "skip"];
+  const KINDS = ["single", "record"];
+  const FIELD_KINDS = ["text", "select"];
+
+  let cached = [];
+
+  function normalize(value) {
+    return value === null || value === undefined ? "" : String(value).trim().replace(/\s+/g, " ").toLowerCase();
+  }
+
+  function isPlainObject(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function validateSelectors(owner, selectors, errors) {
+    if (!Array.isArray(selectors) || !selectors.length || selectors.some((s) => typeof s !== "string" || !s.trim())) {
+      errors.push(`${owner}: at least one CSS selector is required.`);
+    }
+  }
+
+  function validateDefinition(def) {
+    const errors = [];
+    if (!isPlainObject(def)) return ["The field definition must be an object."];
+    if (!KEY_PATTERN.test(def.key || "")) errors.push("The JSON key must start with a lowercase letter and use only letters and digits (e.g. foundedYear).");
+    if (!TEXT_PATTERN.test(def.label || "")) errors.push('The field name is required and must not contain < > & quotes or backslashes.');
+    if (def.description && !TEXT_PATTERN.test(def.description)) errors.push('The description must not contain < > & quotes or backslashes (max 120 characters).');
+    if (!KINDS.includes(def.kind)) errors.push('Kind must be "single" or "record".');
+    if (!Array.isArray(def.fields) || !def.fields.length) {
+      errors.push("At least one field must be picked on the page.");
+    } else {
+      if (def.kind === "single" && (def.fields.length !== 1 || def.fields[0].key !== "value")) {
+        errors.push('A single field must have exactly one field named "value".');
+      }
+      const seen = new Set();
+      for (const field of def.fields) {
+        if (!KEY_PATTERN.test(field?.key || "") || ["action", "source", "confidence"].includes(field.key)) {
+          errors.push(`Sub-field key "${field?.key ?? ""}" is invalid or reserved.`);
+          continue;
+        }
+        if (seen.has(field.key)) errors.push(`Sub-field key "${field.key}" is used twice.`);
+        seen.add(field.key);
+        if (!FIELD_KINDS.includes(field.kind)) errors.push(`Sub-field "${field.key}" must be a text box or a native dropdown.`);
+        validateSelectors(`Sub-field "${field.key}"`, field.selectors, errors);
+        if (field.kind === "select" && (!Array.isArray(field.options) || !field.options.length)) {
+          errors.push(`Dropdown "${field.key}" has no options.`);
+        }
+      }
+    }
+    if (def.kind === "record") {
+      validateSelectors("The Add button", def.addButton?.selectors, errors);
+    }
+    validateSelectors("The Save button", def.saveButton?.selectors, errors);
+    return errors;
+  }
+
+  async function load() {
+    try {
+      const stored = await chrome.storage.local.get(STORAGE_KEY);
+      cached = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((d) => validateDefinition(d).length === 0) : [];
+    } catch {
+      cached = [];
+    }
+    return cached;
+  }
+
+  function getCached() {
+    return cached;
+  }
+
+  function getDefinition(key) {
+    return cached.find((def) => def.key === key) || null;
+  }
+
+  async function persist(next) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: next });
+    cached = next;
+  }
+
+  async function saveDefinition(def) {
+    const errors = validateDefinition(def);
+    if (errors.length) throw new Error(errors.join(" "));
+    const reserved = ["nameVariations", "emailDefaultStructure", "websiteAddresses"];
+    if (reserved.includes(def.key)) throw new Error(`"${def.key}" is already a built-in field name.`);
+    const record = { ...def, updatedAt: new Date().toISOString() };
+    await persist([...cached.filter((existing) => existing.key !== def.key), record]);
+    return record;
+  }
+
+  async function removeDefinition(key) {
+    await persist(cached.filter((def) => def.key !== key));
+  }
+
+  function jsonPathFor(def) {
+    return `custom.${def.key}`;
+  }
+
+  function defForJsonPath(jsonPath) {
+    return typeof jsonPath === "string" && jsonPath.startsWith("custom.") ? getDefinition(jsonPath.slice("custom.".length)) : null;
+  }
+
+  function findOption(field, value) {
+    const target = normalize(value);
+    return (field.options || []).find((option) => normalize(option.label) === target || normalize(option.value) === target) || null;
+  }
+
+  // Returns an error string, or null when the record is acceptable. Used both
+  // for the initial paste and for re-validating a manual edit in the preview.
+  function validateRecord(def, record) {
+    if (!isPlainObject(record)) return `custom.${def.key}: each entry must be an object.`;
+    if (!ACTIONS.includes(record.action)) return `custom.${def.key}.action must be one of: ${ACTIONS.join(", ")}.`;
+    if (record.source !== undefined && record.source !== null && !/^https:\/\/\S+$/.test(String(record.source))) {
+      return `custom.${def.key}.source must be a full https:// URL or null.`;
+    }
+    for (const field of def.fields) {
+      const value = record[field.key];
+      if (value === undefined || value === null || value === "") continue;
+      if (typeof value !== "string" && typeof value !== "number") return `custom.${def.key}.${field.key} must be text or null.`;
+      if (field.kind === "select" && !findOption(field, value)) {
+        return `custom.${def.key}.${field.key}: "${value}" is not a supported value. Supported: ${field.options.map((o) => o.label).join(", ")}.`;
+      }
+    }
+    return null;
+  }
+
+  function normalizeRecord(def, record) {
+    const out = { ...record };
+    for (const field of def.fields) {
+      const value = record[field.key];
+      if (value === undefined || value === null || value === "") {
+        out[field.key] = null;
+      } else if (field.kind === "select") {
+        out[field.key] = findOption(field, value).label;
+      } else {
+        out[field.key] = String(value).trim();
+      }
+    }
+    return out;
+  }
+
+  function hasAnyValue(def, record) {
+    return def.fields.some((field) => record[field.key] !== null && record[field.key] !== undefined && record[field.key] !== "");
+  }
+
+  // Validates the pasted top-level "custom" object against the taught
+  // definitions. Unknown keys are warnings (ignored), not errors, matching
+  // how the schema treats unrecognised built-in keys.
+  function validatePayload(custom, defs = cached) {
+    const errors = [];
+    const warnings = [];
+    const value = {};
+    if (custom === undefined || custom === null) return { errors, warnings, value };
+    if (!isPlainObject(custom)) return { errors: ['"custom" must be an object.'], warnings, value };
+
+    for (const [key, raw] of Object.entries(custom)) {
+      const def = defs.find((d) => d.key === key);
+      if (!def) {
+        warnings.push(`custom.${key} is not a taught field on this browser and was ignored.`);
+        continue;
+      }
+      if (raw === null) continue;
+      if (def.kind === "single") {
+        if (!isPlainObject(raw)) { errors.push(`custom.${key} must be an object with value/action/source.`); continue; }
+        const error = validateRecord(def, raw);
+        if (error) { errors.push(error); continue; }
+        value[key] = normalizeRecord(def, raw);
+      } else {
+        if (!Array.isArray(raw)) { errors.push(`custom.${key} must be an array of records.`); continue; }
+        const records = [];
+        raw.forEach((entry, index) => {
+          const error = validateRecord(def, entry);
+          if (error) errors.push(`[${index}] ${error}`);
+          else records.push(normalizeRecord(def, entry));
+        });
+        value[key] = records;
+      }
+    }
+    return { errors, warnings, value };
+  }
+
+  // For the preview editor: the dropdown options of a custom record's field.
+  function optionsFor(jsonPath, fieldKey) {
+    const def = defForJsonPath(jsonPath);
+    const field = def?.fields.find((f) => f.key === fieldKey);
+    if (!field || field.kind !== "select") return null;
+    return { values: field.options.map((o) => o.label), allowBlank: true };
+  }
+
+  function exampleFor(field) {
+    return field.kind === "select" ? "exact value from the list below, or null" : "string|null";
+  }
+
+  // Pieces the prompt builder splices in: the JSON shape of "custom", the
+  // per-field description lines, and the supported-values catalogs.
+  function promptParts(defs = cached) {
+    if (!defs.length) return null;
+    const shape = {};
+    const notes = [];
+    const catalogs = [];
+
+    for (const def of defs) {
+      const common = { action: "addIfMissing|updateIfBlank|replaceAfterConfirmation|skip", source: "https://...|null" };
+      if (def.kind === "single") {
+        shape[def.key] = { value: exampleFor(def.fields[0]), ...common };
+      } else {
+        const record = {};
+        for (const field of def.fields) record[field.key] = exampleFor(field);
+        shape[def.key] = [{ ...record, ...common }];
+      }
+      const hints = def.fields.map((f) => (f.description ? `${f.key}: ${f.description}` : null)).filter(Boolean);
+      notes.push(`- custom.${def.key} (${def.label})${def.description ? `: ${def.description}` : ""}${def.kind === "record" ? hints.length ? ` — fields: ${hints.join("; ")}` : "" : ""}`);
+      for (const field of def.fields) {
+        if (field.kind !== "select") continue;
+        const path = def.kind === "single" ? `custom.${def.key}.value` : `custom.${def.key}[].${field.key}`;
+        catalogs.push(`Supported values (${path}):\n- ${field.options.map((o) => o.label).join("\n- ")}`);
+      }
+    }
+    return { shape, notes, catalogs };
+  }
+
+  globalThis.SXRTS = globalThis.SXRTS || {};
+  globalThis.SXRTS.customFields = {
+    ACTIONS, KEY_PATTERN, load, getCached, getDefinition, saveDefinition, removeDefinition,
+    validateDefinition, validateRecord, validatePayload, normalizeRecord, hasAnyValue,
+    jsonPathFor, defForJsonPath, optionsFor, promptParts, findOption
+  };
+})();

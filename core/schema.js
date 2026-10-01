@@ -471,7 +471,7 @@
     const errors = [];
     const warnings = [];
 
-    const knownTopLevel = new Set(["schemaVersion", "meta", "profileIdentity", "businessEntity", "company"]);
+    const knownTopLevel = new Set(["schemaVersion", "meta", "profileIdentity", "businessEntity", "company", "custom"]);
     // "anc" is a content-provenance tag (accepted_used/rejected_not_used)
     // the Rovo agent's own configuration appends on every response — real,
     // expected, and already known to be harmless (unknown top-level keys
@@ -499,6 +499,9 @@
       profileIdentity,
       businessEntity: businessEntity ?? {},
       company: company ?? {},
+      // Taught fields are validated against their stored definitions by
+      // SXRTS.customFields (the schema itself stays storage-free and pure).
+      custom: isPlainObject(parsed.custom) ? parsed.custom : undefined,
       warnings
     };
   }

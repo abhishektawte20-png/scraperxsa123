@@ -82,6 +82,38 @@
       });
     }
 
+    // Taught fields: validated.custom is already checked against the stored
+    // definitions (see SXRTS.customFields.validatePayload).
+    for (const def of globalThis.SXRTS.customFields?.getCached() ?? []) {
+      const value = validated.custom?.[def.key];
+      if (value === undefined || value === null) continue;
+      const records = def.kind === "record" ? value : [value];
+      records.forEach((record, index) => {
+        if (!record || record.action === "skip") return;
+        if (def.kind === "single" && (record.value === null || record.value === undefined)) return;
+        if (def.kind === "record" && !globalThis.SXRTS.customFields.hasAnyValue(def, record)) return;
+        counter += 1;
+        actions.push({
+          actionId: `A${counter}`,
+          profileIdentity: validated.profileIdentity,
+          area: "Taught field",
+          section: def.label,
+          jsonPath: `custom.${def.key}`,
+          recordIndex: def.kind === "record" ? index : null,
+          operation: record.action,
+          currentValue: null,
+          proposedValue: record,
+          source: record.source ?? null,
+          duplicateStatus: "unknown",
+          conflictStatus: "unknown",
+          saveScope: def.label,
+          executionStatus: "pending",
+          skipReason: null,
+          verificationResult: null
+        });
+      });
+    }
+
     return actions;
   }
 

@@ -210,10 +210,12 @@
     setStep(0);
 
     const body = element("div", { className: "body" });
-    body.appendChild(element("p", { className: "notice", text: "5 fields are live end to end: Name Variations, Website Address, Email Default Structure, Research Notes, and SIC codes. Everything else previews only — see docs/evidence-checklist.md." }));
+    body.appendChild(element("p", { className: "notice", text: "5 fields are live end to end: Name Variations, Website Address, Email Default Structure, Research Notes, and SIC codes. Everything else previews only — see docs/evidence-checklist.md. Fields you teach with \"Teach new field\" are filled too." }));
 
     const cacheNotice = element("div", { className: "cache-notice hidden" });
     body.appendChild(cacheNotice);
+    const restoreNotice = element("div", { className: "cache-notice hidden" });
+    body.appendChild(restoreNotice);
 
     // ---------- Card 1: identity + prompt ----------
     const identityCard = element("div", { className: "card" });
@@ -253,10 +255,17 @@
     companyNameInput.addEventListener("input", regeneratePrompt);
     domainInput.addEventListener("input", regeneratePrompt);
 
+    // Taught fields feed the prompt, so it is rebuilt once they load and
+    // whenever one is added or removed.
+    globalThis.SXRTS.customFields?.load().then(regeneratePrompt);
+    const teach = globalThis.SXRTS.teach?.mount(shadow, { onChange: regeneratePrompt });
+    const teachButton = element("button", { className: "btn secondary", text: "Teach new field", type: "button", title: "Map a new RTS field by clicking it on the page; it is added to the prompt and filled from the pasted JSON." });
+    teachButton.addEventListener("click", () => teach?.open());
+
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button" });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button" });
     const copyAgentSetupButton = element("button", { className: "btn secondary", text: "Copy agent setup instructions", type: "button", title: "One-time setup: paste this into the ScraperX Rovo agent's own configuration, not into a chat message." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, copyAgentSetupButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, copyAgentSetupButton, teachButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "If Rovo keeps replying with a prose report instead of JSON, the agent's own configuration needs the \"agent setup instructions\" pasted in once (see docs/rovo-agent-instructions.md) — a per-run prompt alone can't override it." }));
     body.appendChild(identityCard);
 
@@ -319,6 +328,39 @@
     }
     refreshCacheNotice();
 
+    // The last validated JSON is remembered per profile (keyed by the open
+    // RTS profile's identity when it can be read) so it can be restored
+    // without pasting it again.
+    function lastJsonIdentity() {
+      try {
+        return globalThis.SXRTS.identityLock.readRtsIdentityFromPage();
+      } catch {
+        return lastValidated?.profileIdentity ?? null;
+      }
+    }
+
+    async function offerRestoreLastJson() {
+      try {
+        const saved = await globalThis.SXRTS.cache.getLastJson(lastJsonIdentity());
+        if (!saved?.text) return;
+        const restoreButton = element("button", { className: "btn secondary", text: "Restore last pasted JSON", type: "button" });
+        restoreButton.addEventListener("click", () => {
+          textarea.value = saved.text;
+          restoreNotice.classList.add("hidden");
+          setStatus(validateStatus, "Restored. Click Validate JSON to rebuild the preview.", "success");
+        });
+        restoreNotice.replaceChildren(
+          element("span", { text: `Last pasted JSON for this profile saved ${formatTimestamp(saved.savedAt)}.` }),
+          element("span", { className: "spacer" }),
+          restoreButton
+        );
+        restoreNotice.classList.remove("hidden");
+      } catch {
+        // No readable profile identity yet, or storage unavailable: nothing to restore.
+      }
+    }
+    offerRestoreLastJson();
+
     copyPromptButton.addEventListener("click", async () => {
       regeneratePrompt();
       try {
@@ -358,6 +400,9 @@
       }
       if (key === "confidence") {
         return { values: Array.from(globalThis.SXRTS.schema.CONFIDENCE_LEVELS), allowBlank: true };
+      }
+      if (jsonPath.startsWith("custom.")) {
+        return globalThis.SXRTS.customFields?.optionsFor(jsonPath, key) ?? null;
       }
       if (jsonPath === "businessEntity.nameVariations" && key === "type") {
         const options = globalThis.SXRTS.registry.getField(jsonPath)?.form?.typeDropdown?.options?.map((o) => o.label);
@@ -507,6 +552,13 @@
     validateButton.addEventListener("click", () => {
       try {
         lastValidated = globalThis.SXRTS.schema.validate(textarea.value);
+        const customResult = globalThis.SXRTS.customFields?.validatePayload(lastValidated.custom);
+        if (customResult) {
+          if (customResult.errors.length) throw new globalThis.SXRTS.schema.SchemaValidationError(customResult.errors);
+          lastValidated.custom = customResult.value;
+          lastValidated.warnings.push(...customResult.warnings);
+        }
+        globalThis.SXRTS.cache.setLastJson(lastJsonIdentity(), textarea.value).catch(() => {});
         const warningText = lastValidated.warnings.length ? `\nWarnings:\n- ${lastValidated.warnings.join("\n- ")}` : "";
         setStatus(validateStatus, `Valid (schema ${lastValidated.schemaVersion}). Building preview...${warningText}`, "success");
         setStep(2);
@@ -600,6 +652,8 @@
       // caught here with the same error text the initial paste would have
       // gotten, instead of reaching a live DOM write.
       function revalidateEditedValue(action, editedValue) {
+        const customDef = globalThis.SXRTS.customFields?.defForJsonPath(action.jsonPath);
+        if (customDef) return globalThis.SXRTS.customFields.validateRecord(customDef, editedValue);
         const [topKey, subKey] = action.jsonPath.split(".");
         const wrapped = {
           schemaVersion: "1.0",
@@ -700,6 +754,27 @@
         if (value === undefined) continue;
         try {
           const result = await globalThis.SXRTS.workflows.companySic.applySicCode(value);
+          recordResult(entry.action.jsonPath, result);
+          if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
+          else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
+        } catch (error) {
+          failed++; setRowStatus(entry.action.actionId, "failed", error.message);
+          recordResult(entry.action.jsonPath, { status: "error", error: error.message });
+        }
+      }
+
+      const customEntries = selected.filter((entry) => entry.action.jsonPath.startsWith("custom."));
+      for (const entry of customEntries) {
+        const value = validatedValueFor(entry);
+        if (value === undefined) continue;
+        const def = globalThis.SXRTS.customFields?.defForJsonPath(entry.action.jsonPath);
+        if (!def) {
+          failed++; setRowStatus(entry.action.actionId, "failed", "This taught field no longer exists.");
+          recordResult(entry.action.jsonPath, { status: "error", error: "This taught field no longer exists." });
+          continue;
+        }
+        try {
+          const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, value));
           recordResult(entry.action.jsonPath, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }

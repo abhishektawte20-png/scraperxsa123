@@ -8,6 +8,7 @@
  */
 (() => {
   const STORAGE_PREFIX = "sxrts_profile:";
+  const LAST_JSON_PREFIX = "sxrts_lastjson:";
 
   function profileKeyFor(identity) {
     const key = identity.pbId || identity.entityId || (globalThis.SXRTS?.identityLock?.normalizeDomain(identity.domain));
@@ -40,6 +41,30 @@
     await chrome.storage.local.remove(key);
   }
 
+  // The last pasted (validated) Rovo JSON text for a profile, so it can be
+  // restored later without pasting again. Stored separately from the plan
+  // cache so clearing or rewriting one never touches the other.
+  function lastJsonKeyFor(identity) {
+    return profileKeyFor(identity).replace(STORAGE_PREFIX, LAST_JSON_PREFIX);
+  }
+
+  async function getLastJson(identity) {
+    const key = lastJsonKeyFor(identity);
+    const stored = await chrome.storage.local.get(key);
+    return stored[key] || null;
+  }
+
+  async function setLastJson(identity, text) {
+    const key = lastJsonKeyFor(identity);
+    const payload = { text, savedAt: new Date().toISOString() };
+    await chrome.storage.local.set({ [key]: payload });
+    return payload;
+  }
+
+  async function clearLastJson(identity) {
+    await chrome.storage.local.remove(lastJsonKeyFor(identity));
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.cache = { profileKeyFor, computeInputHash, getProfileCache, setProfileCache, clearProfileCache };
+  globalThis.SXRTS.cache = { profileKeyFor, computeInputHash, getProfileCache, setProfileCache, clearProfileCache, getLastJson, setLastJson, clearLastJson };
 })();

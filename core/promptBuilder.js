@@ -95,6 +95,19 @@
       }
     };
 
+    // Fields the researcher taught from inside the extension: spliced into
+    // the same shape/rules/catalogs, so a new field needs no code change.
+    const custom = globalThis.SXRTS.customFields?.promptParts();
+    if (custom) requiredShape.custom = custom.shape;
+    const customRules = custom
+      ? [
+          "",
+          "The optional top-level \"custom\" object holds extra researcher-defined fields. Include only the keys listed below, using exactly the shape shown under \"custom\" in the required JSON shape (an object with value/action/source for a single field, or an array of records for a repeatable one). Never invent a custom key, and omit a key when nothing applies:",
+          ...custom.notes,
+          ...custom.catalogs.flatMap((block) => ["", block])
+        ]
+      : [];
+
     return [
       "Return exactly one valid JSON object and NOTHING else: no Markdown, no commentary, no section headers, no bullet points, no code fences. The entire response body must be parseable directly as JSON — if you find yourself writing a heading like \"SECTION 1\" or a bullet list, stop and convert it into the JSON shape below instead.",
       "Do not wrap any URL, domain, or value in markdown link syntax like \"[text](url)\" anywhere in the response — return plain, unformatted text and URLs only.",
@@ -128,7 +141,8 @@
       "",
       `Supported Site Status values (company.sites[].status):\n- ${siteStatusOptions.join("\n- ")}`,
       "",
-      `Supported Country values (company.sites[].country):\n- ${countryOptions.join("\n- ")}`
+      `Supported Country values (company.sites[].country):\n- ${countryOptions.join("\n- ")}`,
+      ...customRules
     ].join("\n");
   }
 
