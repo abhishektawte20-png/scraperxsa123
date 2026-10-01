@@ -178,25 +178,6 @@
       .html-capture-buttons { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
       .html-capture-copy-btn { background: #124a80; color: #fff; border: 1px solid #124a80; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
       .html-capture-copy-btn:hover { background: #0d3a66; }
-
-      .settings-modal { display: none; position: fixed; z-index: 2147483648; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, .5); }
-      .settings-modal.open { display: flex; align-items: center; justify-content: center; }
-      .settings-content { background: #fff; border-radius: 14px; width: 90vw; max-width: 500px; padding: 24px; box-shadow: 0 20px 48px rgba(15, 30, 60, .22); }
-      .settings-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-      .settings-header h2 { margin: 0; font-size: 16px; color: #1b2430; }
-      .settings-close { background: none; border: 0; font-size: 24px; color: #7a869c; cursor: pointer; }
-      .settings-form { display: flex; flex-direction: column; gap: 12px; }
-      .settings-input { padding: 8px; border: 1px solid #ccd3de; border-radius: 6px; font-size: 13px; font-family: inherit; }
-      .settings-input:focus { outline: 2px solid #124a80; outline-offset: 1px; }
-      .settings-buttons { display: flex; gap: 8px; margin-top: 16px; }
-      .settings-status { margin-top: 12px; padding: 8px; border-radius: 6px; font-size: 12px; }
-      .settings-status.success { background: #e5f6ee; color: #166f4c; }
-      .settings-status.error { background: #fdecea; color: #a3291c; }
-
-      .run-agent-btn { background: #0d3a66; color: #fff; }
-      .run-agent-btn:hover:not(:disabled) { background: #051f40; }
-      .settings-btn { background: none; border: none; color: #7a869c; cursor: pointer; padding: 4px 8px; font-size: 16px; }
-      .settings-btn:hover { color: #124a80; }
     `;
     shadow.appendChild(style);
 
@@ -274,12 +255,8 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button" });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button" });
-    const runAgentButton = element("button", { className: "btn run-agent-btn", text: "Run Agent", type: "button", title: "Execute Rovo agent directly with the generated prompt" });
-    const settingsButton = element("button", { className: "settings-btn", text: "⚙️", type: "button", title: "Configure Rovo credentials" });
     const copyAgentSetupButton = element("button", { className: "btn secondary", text: "Copy agent setup instructions", type: "button", title: "One-time setup: paste this into the ScraperX Rovo agent's own configuration, not into a chat message." });
-
-    const buttonGroup = element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, runAgentButton, settingsButton, copyAgentSetupButton]);
-    identityCard.appendChild(buttonGroup);
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, copyAgentSetupButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "If Rovo keeps replying with a prose report instead of JSON, the agent's own configuration needs the \"agent setup instructions\" pasted in once (see docs/rovo-agent-instructions.md) — a per-run prompt alone can't override it." }));
     body.appendChild(identityCard);
 
@@ -354,67 +331,6 @@
       }
       setStep(1);
     });
-
-    runAgentButton.addEventListener("click", async () => {
-      if (!globalThis.SXRTS?.rovoApi) {
-        setStatus(validateStatus, "Rovo API not available. Please check the extension configuration.", "error");
-        return;
-      }
-
-      let cloudId, agentId;
-      try {
-        cloudId = localStorage.getItem("sxrts_rovo_cloudId");
-        agentId = localStorage.getItem("sxrts_rovo_agentId");
-      } catch {
-        // Silently fail if localStorage is not available (e.g., in tests)
-      }
-
-      if (!cloudId || !agentId) {
-        setStatus(validateStatus, "Please configure Cloud ID and Agent ID in settings.", "error");
-        return;
-      }
-
-      regeneratePrompt();
-      const prompt = promptArea.value;
-
-      runAgentButton.disabled = true;
-      setStatus(validateStatus, "Running Rovo agent...", "");
-
-      try {
-        const result = await globalThis.SXRTS.rovoApi.runAgent(prompt, agentId, cloudId);
-
-        if (!result.success) {
-          setStatus(validateStatus, `Agent error: ${result.error}`, "error");
-          runAgentButton.disabled = false;
-          return;
-        }
-
-        const responseText = typeof result.data === "string" ? result.data : JSON.stringify(result.data);
-        textarea.value = responseText;
-        setStatus(validateStatus, "Agent response retrieved ✓", "success");
-        setStep(2);
-
-        // Automatically validate
-        setTimeout(() => {
-          try {
-            lastValidated = globalThis.SXRTS.schema.validate(textarea.value);
-            const warningText = lastValidated.warnings.length ? `\nWarnings:\n- ${lastValidated.warnings.join("\n- ")}` : "";
-            setStatus(validateStatus, `Valid (schema ${lastValidated.schemaVersion}). Building preview...${warningText}`, "success");
-            setStep(2);
-            buildPlan();
-          } catch (error) {
-            lastValidated = null;
-            previewCard.classList.add("hidden");
-            setStatus(validateStatus, error instanceof globalThis.SXRTS.schema.SchemaValidationError ? error.errors.join("\n") : String(error), "error");
-          }
-        }, 500);
-      } catch (error) {
-        setStatus(validateStatus, `Error: ${error.message}`, "error");
-      } finally {
-        runAgentButton.disabled = false;
-      }
-    });
-
     openRovoButton.addEventListener("click", () => {
       window.open("https://pitchbook.atlassian.net/", "_blank", "noopener,noreferrer");
       setStep(1);
@@ -836,147 +752,6 @@
       if (e.target === htmlCaptureModal) {
         htmlCaptureModal.classList.remove("open");
       }
-    });
-
-    // Settings Modal for Rovo Credentials
-    const settingsModal = element("div", { className: "settings-modal", id: "sxrts-settings-modal" });
-    const settingsModalClose = element("button", { className: "settings-close", text: "×", type: "button" });
-    const settingsContentDiv = element("div", { className: "settings-content" });
-
-    settingsContentDiv.appendChild(element("div", { className: "settings-header" }, [
-      element("h2", { text: "Rovo Agent Configuration" }),
-      settingsModalClose
-    ]));
-
-    const cloudIdInput = element("input", { className: "settings-input", placeholder: "Cloud ID", type: "text", id: "sxrts-rovo-cloud-id" });
-    const agentIdInput = element("input", { className: "settings-input", placeholder: "Agent ID", type: "text", id: "sxrts-rovo-agent-id" });
-    const authStatusDiv = element("div", { className: "settings-input", style: "padding: 10px; background: #f0f0f0; border-radius: 4px; text-align: center; font-weight: 600;" });
-
-    settingsContentDiv.appendChild(element("div", { className: "settings-form" }, [authStatusDiv, cloudIdInput, agentIdInput]));
-
-    const loginBtn = element("button", { className: "btn primary-cta", text: "Login with Atlassian", type: "button" });
-    const saveCfgBtn = element("button", { className: "btn", text: "Save Config", type: "button" });
-    const logoutBtn = element("button", { className: "btn danger", text: "Logout", type: "button", style: "display: none;" });
-    const settingsStatusDiv = element("div", { className: "settings-status hidden", id: "sxrts-settings-status" });
-
-    settingsContentDiv.appendChild(element("div", { className: "settings-buttons" }, [loginBtn, logoutBtn, saveCfgBtn]));
-    settingsContentDiv.appendChild(settingsStatusDiv);
-    settingsModal.appendChild(settingsContentDiv);
-    shadow.appendChild(settingsModal);
-
-    settingsModalClose.addEventListener("click", () => {
-      settingsModal.classList.remove("open");
-    });
-
-    settingsModal.addEventListener("click", (e) => {
-      if (e.target === settingsModal) {
-        settingsModal.classList.remove("open");
-      }
-    });
-
-    async function updateAuthStatus() {
-      try {
-        if (!globalThis.SXRTS?.rovoApi) return;
-        const tokens = await globalThis.SXRTS.rovoApi.getStoredTokens();
-        if (tokens) {
-          authStatusDiv.textContent = "✓ Authenticated";
-          authStatusDiv.style.background = "#e5f6ee";
-          authStatusDiv.style.color = "#166f4c";
-          loginBtn.style.display = "none";
-          logoutBtn.style.display = "block";
-        } else {
-          authStatusDiv.textContent = "Not authenticated";
-          authStatusDiv.style.background = "#fdecea";
-          authStatusDiv.style.color = "#a3291c";
-          loginBtn.style.display = "block";
-          logoutBtn.style.display = "none";
-        }
-      } catch {
-        // Silently fail if Rovo API not available (e.g., in tests)
-      }
-    }
-
-    async function loadRovoConfig() {
-      try {
-        cloudIdInput.value = localStorage.getItem("sxrts_rovo_cloudId") || "";
-        agentIdInput.value = localStorage.getItem("sxrts_rovo_agentId") || "";
-      } catch {
-        // Silently fail if localStorage is not available (e.g., in tests)
-      }
-      await updateAuthStatus();
-    }
-
-    // Load config asynchronously
-    setTimeout(() => loadRovoConfig(), 0);
-
-    loginBtn.addEventListener("click", () => {
-      try {
-        const authUrl = globalThis.SXRTS.rovoApi.getAuthorizationUrl();
-        window.open(authUrl, "atlassian_auth", "width=600,height=700");
-        setStatus(settingsStatusDiv, "Complete the login in the popup window...", "");
-        settingsStatusDiv.classList.remove("hidden");
-      } catch (error) {
-        setStatus(settingsStatusDiv, `Error: ${error.message}`, "error");
-        settingsStatusDiv.classList.remove("hidden");
-      }
-    });
-
-    if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local" && changes.sxrts_rovo_oauth) {
-          updateAuthStatus();
-          if (changes.sxrts_rovo_oauth.newValue) {
-            setStatus(settingsStatusDiv, "Successfully authenticated ✓", "success");
-            settingsStatusDiv.classList.remove("hidden");
-          }
-        }
-      });
-    }
-
-    saveCfgBtn.addEventListener("click", async () => {
-      const cloudId = cloudIdInput.value.trim();
-      const agentId = agentIdInput.value.trim();
-
-      if (!cloudId || !agentId) {
-        setStatus(settingsStatusDiv, "Cloud ID and Agent ID are required", "error");
-        settingsStatusDiv.classList.remove("hidden");
-        return;
-      }
-
-      try {
-        localStorage.setItem("sxrts_rovo_cloudId", cloudId);
-        localStorage.setItem("sxrts_rovo_agentId", agentId);
-      } catch {
-        // Silently fail if localStorage is not available (e.g., in tests)
-      }
-
-      setStatus(settingsStatusDiv, "Configuration saved ✓", "success");
-      settingsStatusDiv.classList.remove("hidden");
-      setTimeout(() => {
-        settingsModal.classList.remove("open");
-        settingsStatusDiv.classList.add("hidden");
-      }, 1500);
-    });
-
-    logoutBtn.addEventListener("click", async () => {
-      if (confirm("Logout from Atlassian?")) {
-        try {
-          if (globalThis.SXRTS?.rovoApi) {
-            await globalThis.SXRTS.rovoApi.clearStoredTokens();
-          }
-          await updateAuthStatus();
-          setStatus(settingsStatusDiv, "Logged out", "success");
-          settingsStatusDiv.classList.remove("hidden");
-        } catch (error) {
-          setStatus(settingsStatusDiv, `Error: ${error.message}`, "error");
-          settingsStatusDiv.classList.remove("hidden");
-        }
-      }
-    });
-
-    settingsButton.addEventListener("click", () => {
-      loadRovoConfig();
-      settingsModal.classList.add("open");
     });
 
     function captureFieldsHtml() {
