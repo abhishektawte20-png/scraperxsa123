@@ -260,3 +260,20 @@ test("invisible line separators (U+2028 etc.) and other bullet/separator charact
   const flattened = TEXT_SAMPLE.split("\n").join("\u2028");
   assert.deepEqual(rt.analyze(flattened).document, clean);
 });
+
+test("errors say what was actually read: a Source line that is not a URL, or no Source line at all", () => {
+  const described = swap("* Formal Name: Psypher\n   * Source: https://www.psypher.in/", "* Formal Name: Psypher\n   * Source: Official website footer");
+  const msg = rt.analyze(described).issues.find((i) => i.code === "MISSING_SOURCE" && /formal_name/.test(i.path)).message;
+  assert.match(msg, /Source line reads "Official website footer", which is not a URL/);
+  const none = swap("* Formal Name: Psypher\n   * Source: https://www.psypher.in/", "* Formal Name: Psypher");
+  assert.match(rt.analyze(none).issues.find((i) => /formal_name/.test(i.path)).message, /no "Source:" line was found/);
+  const confirm = swap("`https://www.psypher.in`", "`the homepage`");
+  assert.match(rt.analyze(confirm).issues.find((i) => i.code === "DOMAIN_CONFIRMATION_MISSING").message, /from: "The exact URL accessed for extraction is the homepage\."/);
+});
+
+test("other labels for a source ('URL:', 'Source page:', 'Reference:', 'Found on:') are read as the Source", () => {
+  for (const label of ["URL", "Source page", "Reference", "Found on", "Source link"]) {
+    const raw = TEXT_SAMPLE.replace("* Formal Name: Psypher\n   * Source: https://www.psypher.in/", `* Formal Name: Psypher\n   * ${label}: https://www.psypher.in/`);
+    assert.deepEqual(rt.analyze(raw).issues.filter((i) => i.severity === "error"), [], label);
+  }
+});

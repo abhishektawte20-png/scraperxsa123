@@ -71,7 +71,7 @@
 
   function labelKey(label) {
     const key = (label || "").toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
-    return /^sources?( url| link| urls)?( 1)?$/.test(key) ? "source" : key;
+    return /^(sources?( url| link| urls| page)?( 1)?|urls?|links?|reference|found on|source of)$/.test(key) ? "source" : key;
   }
 
   const TRAIL = /[.,;:]+$/;
@@ -190,6 +190,15 @@
 
   // ---------- field helpers ----------
 
+  const clip = (text) => (text.length > 80 ? `${text.slice(0, 80)}…` : text);
+
+  // Why a source is missing, in terms of what the report actually contained.
+  function sourceProblem(read, what) {
+    return read
+      ? `the Source line reads "${clip(read)}", which is not a URL; ${what} needs a full https:// URL.`
+      : `no "Source:" line was found for it; ${what} needs its own "Source: <full https:// URL>" line.`;
+  }
+
   const FB = () => C().FALLBACKS[0];
   const NOT_FOUND = () => ({ value: FB(), source_url: null });
 
@@ -214,7 +223,7 @@
     const src = parseSource(subOf(entry, "source")?.value || inline.source);
     const note = [subOf(entry, "note")?.value, src.url ? src.text.replace(src.url, "").replace(/^[\s(]+|[\s)]+$/g, "") : src.text].filter(Boolean).join(" ");
     if (requireSource && !src.url) {
-      C().issue(issues, "error", "MISSING_SOURCE", `${path}.source`, "a value needs its own source URL (every extracted field is sourced at field level).");
+      C().issue(issues, "error", "MISSING_SOURCE", `${path}.source`, sourceProblem(subOf(entry, "source")?.value || inline.source, "every extracted value"));
     }
     if (src.url) notes.push({ path, url: src.url, text: `${note} ${value}` });
     return { value, source_url: src.url };
@@ -277,7 +286,7 @@
       C().issue(issues, "error", "DOMAIN_CONFIRMATION_MISSING", "SECTION 1", "CONFIRMATION 1, 2 and 3 (the domain lock) must all be present.");
     }
     if (confirmation(1) && !targetDomain) C().issue(issues, "error", "DOMAIN_CONFIRMATION_MISSING", "CONFIRMATION 1", "the exact domain provided could not be read.");
-    if (confirmation(2) && !accessedUrl) C().issue(issues, "error", "DOMAIN_CONFIRMATION_MISSING", "CONFIRMATION 2", "the exact URL accessed could not be read.");
+    if (confirmation(2) && !accessedUrl) C().issue(issues, "error", "DOMAIN_CONFIRMATION_MISSING", "CONFIRMATION 2", `the exact URL accessed could not be read from: "${clip(confirmation(2).value || "(empty)")}". It must be a full https:// URL.`);
 
     const funding = entries.funding || [];
     const fundingInfo = (key) => find(funding, key)?.value || find(entity, key)?.value || "";
@@ -295,7 +304,7 @@
       const inline = splitInlineSource(entry.value);
       if (!inline.value || C().isFallback(inline.value)) continue;
       const src = parseSource(subOf(entry, "source")?.value || inline.source);
-      if (!src.url) C().issue(issues, "error", "MISSING_SOURCE", "name_variations.other_name_variations.source", "a name needs its own source URL.");
+      if (!src.url) C().issue(issues, "error", "MISSING_SOURCE", "name_variations.other_name_variations.source", sourceProblem(subOf(entry, "source")?.value || inline.source, `"${clip(inline.value)}"`));
       other.push({ name: inline.value, script: /[^\u0000-ɏ]/.test(inline.value) ? "Non-Latin script" : NOT_FOUND().value, source_url: src.url });
     }
     const nameSrc = {
@@ -327,7 +336,7 @@
     let eds = NOT_FOUND();
     if (edsEntry && edsEntry.value && !C().isFallback(edsEntry.value)) {
       const src = parseSource(subOf(edsEntry, "source")?.value || splitInlineSource(edsEntry.value).source);
-      if (!src.url) C().issue(issues, "error", "MISSING_SOURCE", "email_default_structure.source", "the Email Default Structure needs its own source URL.");
+      if (!src.url) C().issue(issues, "error", "MISSING_SOURCE", "email_default_structure.source", sourceProblem(subOf(edsEntry, "source")?.value || splitInlineSource(edsEntry.value).source, "the Email Default Structure"));
       const pattern = edsEntry.value.split(/\s+\(/)[0].trim();
       const basis = (edsEntry.value.match(/based on\s+([^\s)]+@[^\s)]+)/i) || [])[1] || "";
       const generic = basis && GENERIC_MAILBOXES.includes(basis.split("@")[0].toLowerCase().replace(/[^a-z]/g, ""));
@@ -353,7 +362,7 @@
       const url = urlOf(value, { bare: true });
       const src = parseSource(subOf(entry, "source")?.value || inline.source);
       const note = subOf(entry, "note")?.value || null;
-      if (value && !C().isFallback(value) && !src.url) C().issue(issues, "error", "MISSING_SOURCE", `social_media_identifiers.${entry.key}.source`, "an SMI needs its own source URL.");
+      if (value && !C().isFallback(value) && !src.url) C().issue(issues, "error", "MISSING_SOURCE", `social_media_identifiers.${entry.key}.source`, sourceProblem(subOf(entry, "source")?.value || inline.source, "an SMI"));
       if (src.url) notes.push({ path: `social_media_identifiers.${entry.key}`, url: src.url, text: `${note || ""} ${src.text}` });
       const real = value && !C().isFallback(value);
       if (mapped) smi[mapped] = real ? { value: url || value, source_url: src.url, note } : { value: FB(), source_url: null, note: null };
@@ -381,7 +390,7 @@
     const management = people.filter((p) => p.full_name && !C().isFallback(p.full_name));
     for (const p of management) {
       p.is_founder = p.titles.some((t) => /founder/i.test(t));
-      if (!p.source_url) C().issue(issues, "error", "MISSING_SOURCE", `management.${p.full_name}.source`, "a management entry needs a source URL on the official website.");
+      if (!p.source_url) C().issue(issues, "error", "MISSING_SOURCE", `management.${p.full_name}.source`, sourceProblem(p.srcText, "a management entry (on the official website)"));
       if (p.source_url) notes.push({ path: `management.${p.full_name}`, url: p.source_url, text: p.srcText });
     }
 
