@@ -29,7 +29,7 @@ const ASSISTANT_FILES = [
 const OAUTH_CONFIG = {
   CLIENT_ID: "SbT8O2u9oueHTM7evt4tz2OzL12Ez5KM",
   CLIENT_SECRET: "ATOAcrnfJYvJWjvfIkR7xboPN2zjuIK_37nYiFeo3_cVbn1zqc8h-VlPCRfQgj9yZRdp974CF5B5",
-  REDIRECT_URI: "https://agfcapcigglbadjnlkgdpomciakkmnai.chromiumapp.org/oauth",
+  REDIRECT_URI: "chrome-extension://kfofjegmajndgnkoenccggdgdmajpopg/oauth.html",
   TOKEN_URL: "https://api.atlassian.com/oauth/token",
   ROVO_API: "https://xp.atlassian.com/v1/rgstr"
 };
