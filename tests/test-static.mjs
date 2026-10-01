@@ -50,11 +50,11 @@ test("manifest requests only activeTab, scripting, and storage", () => {
   assert.equal(manifest.manifest_version, 3);
 });
 
-test("CSP blocks remote script and network connections", () => {
+test("CSP blocks remote script and limits network connections to Atlassian", () => {
   const manifest = JSON.parse(readFileSync(path.join(root, "manifest.json"), "utf8"));
   const csp = manifest.content_security_policy.extension_pages;
   assert.match(csp, /script-src 'self'/);
-  assert.match(csp, /connect-src 'none'/);
+  assert.match(csp, /connect-src https:\/\/api\.atlassian\.com https:\/\/xp\.atlassian\.com;/);
   assert.match(csp, /object-src 'none'/);
 });
 

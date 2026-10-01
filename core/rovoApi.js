@@ -7,7 +7,7 @@
 (() => {
   const STORAGE_KEY = "sxrts_rovo_oauth";
   const CLIENT_ID = "SbT8O2u9oueHTM7evt4tz2OzL12Ez5KM";
-  const REDIRECT_URI = "chrome-extension://kfofjegmajndgnkoenccggdgdmajpopg/oauth.html";
+  const REDIRECT_URI = "chrome-extension://aeidoodeghdchhmlbobdlphmmmolakkk/oauth.html";
   const AUTH_URL = "https://auth.atlassian.com/authorize";
   const TOKEN_URL = "https://api.atlassian.com/oauth/token";
   const SCOPES = "read:me offline_access";
@@ -106,11 +106,13 @@
     chrome.storage.local.set({ sxrts_oauth_state: state });
 
     const params = new URLSearchParams({
+      audience: "api.atlassian.com",
       client_id: CLIENT_ID,
       redirect_uri: REDIRECT_URI,
       response_type: "code",
       scope: SCOPES,
-      state: state
+      state: state,
+      prompt: "consent"
     });
 
     return `${AUTH_URL}?${params.toString()}`;
