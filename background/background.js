@@ -14,6 +14,7 @@ const ASSISTANT_FILES = [
   "core/navigation.js",
   "core/resultsSummary.js",
   "core/customFields.js",
+  "core/outputRules.js",
   "core/selectorBuilder.js",
   "registry/businessEntity.nameVariations.js",
   "registry/businessEntity.general.js",
@@ -27,6 +28,7 @@ const ASSISTANT_FILES = [
   "core/workflows/companySic.js",
   "core/workflows/customField.js",
   "content/teach.js",
+  "content/rules.js",
   "content/panel.js",
   "content/bootstrap.js"
 ];

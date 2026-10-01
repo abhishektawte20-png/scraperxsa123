@@ -498,6 +498,15 @@
       parsed = analysis.document;
     }
 
+    // Saved output rules (e.g. "Facebook: keep only the handle") change values
+    // before they are validated, previewed or written.
+    const rulesApplied = globalThis.SXRTS.outputRules?.apply(parsed) ?? [];
+    const byRule = {};
+    for (const item of rulesApplied) (byRule[item.rule] ||= []).push(item);
+    for (const [rule, items] of Object.entries(byRule)) {
+      warnings.push(`[OUTPUT_RULE] "${rule}" changed ${items.length} value(s), e.g. "${items[0].before}" → "${items[0].after}".`);
+    }
+
     const knownTopLevel = new Set(["schemaVersion", "meta", "profileIdentity", "businessEntity", "company", "custom"]);
     // "anc" is a content-provenance tag (accepted_used/rejected_not_used)
     // the Rovo agent's own configuration appends on every response — real,
@@ -530,6 +539,7 @@
       // SXRTS.customFields (the schema itself stays storage-free and pure).
       custom: isPlainObject(parsed.custom) ? parsed.custom : undefined,
       rovo,
+      rulesApplied,
       warnings
     };
   }

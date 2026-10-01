@@ -262,9 +262,22 @@
     const teachButton = element("button", { className: "btn secondary", text: "Teach new field", type: "button", title: "Map a new RTS field by clicking it on the page; it is added to the prompt and filled from the pasted JSON." });
     teachButton.addEventListener("click", () => teach?.open());
 
+    // Saved output rules (e.g. "Facebook: keep only the handle") are applied
+    // when the output is validated; changing a rule re-validates what is pasted.
+    globalThis.SXRTS.outputRules?.load();
+    const rulesUi = globalThis.SXRTS.rulesUi?.mount(shadow, {
+      onChange: () => { if (lastValidated && textarea.value.trim()) validateButton.click(); },
+      getSample: (target) => {
+        const applied = lastValidated?.rulesApplied?.find((r) => r.target === target);
+        return applied?.before ?? globalThis.SXRTS.outputRules.refsFor(lastValidated, target)[0]?.get() ?? null;
+      }
+    });
+    const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", title: "Saved changes applied to the agent's output before it reaches RTS (for example: keep only the Facebook handle)." });
+    rulesButton.addEventListener("click", () => rulesUi?.open());
+
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button" });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button" });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt is only the target domain. The methodology and the JSON output format live in the Rovo agent's own configuration; nothing here overrides them." }));
     body.appendChild(identityCard);
 
@@ -495,7 +508,10 @@
         statusBadge
       ]);
 
-      const card = element("div", { className: `action-card${isRunnable ? "" : " action-card-skipped"}` }, [head, editor.element, reasonEl]);
+      const prefix = action.recordIndex !== null ? `${action.jsonPath}[${action.recordIndex}]` : action.jsonPath;
+      const ruleNotes = (lastValidated?.rulesApplied ?? []).filter((r) => r.path.startsWith(prefix))
+        .map((r) => element("div", { className: "action-reason", text: `Output rule "${r.rule}" changed this value: ${r.before} → ${r.after}` }));
+      const card = element("div", { className: `action-card${isRunnable ? "" : " action-card-skipped"}` }, [head, editor.element, ...ruleNotes, reasonEl]);
 
       rowsByActionId.set(action.actionId, {
         card, action, checkbox, statusBadge, reasonEl, editor,
