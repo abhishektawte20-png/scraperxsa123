@@ -120,9 +120,10 @@ test("teach a field by clicking it on the page, then it flows through prompt, va
   assert.match(card.textContent, /custom\.foundedYear/);
   assert.match(card.textContent, /Found on this page/);
 
-  // The prompt picked it up immediately.
-  const prompt = shadow.querySelector("#sxrts-prompt").value;
-  assert.match(prompt, /custom\.foundedYear \(Founded year\): Year the company was founded/);
+  // The per-run prompt stays domain-only (the Rovo agent owns its methodology),
+  // while the legacy prompt builder still reflects the taught field.
+  assert.doesNotMatch(shadow.querySelector("#sxrts-prompt").value, /custom/);
+  assert.match(globalThis.SXRTS.promptBuilder.buildPrompt({ domain: "acme.com" }), /custom\.foundedYear \(Founded year\): Year the company was founded/);
 
   // Paste JSON containing the taught field and validate.
   const response = shadow.querySelector("#sxrts-response");

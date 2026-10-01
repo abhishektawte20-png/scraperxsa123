@@ -170,6 +170,14 @@
     ].join("\n");
   }
 
+  // The per-run message for the Rovo agent whose own configuration holds
+  // the (frozen) methodology and output contract: the target domain, exactly
+  // as entered, and nothing else. buildPrompt/buildAgentInstructions above
+  // remain only for the legacy v1.0 contract and are not used by the panel.
+  function buildRunPrompt({ domain } = {}) {
+    return String(domain ?? "").trim();
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.promptBuilder = { buildPrompt, buildAgentInstructions };
+  globalThis.SXRTS.promptBuilder = { buildPrompt, buildAgentInstructions, buildRunPrompt };
 })();

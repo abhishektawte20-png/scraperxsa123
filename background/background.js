@@ -1,6 +1,7 @@
 "use strict";
 
 const ASSISTANT_FILES = [
+  "core/rovoContract.js",
   "core/schema.js",
   "core/identityLock.js",
   "core/duplicates.js",

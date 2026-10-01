@@ -230,11 +230,13 @@ test("clear cache button does not throw when no cache exists yet", async () => {
   assert.doesNotThrow(() => clearButton.click());
 });
 
-test("copy agent setup instructions button exists and does not throw without a clipboard API", () => {
+test("the per-run prompt is only the domain, and no button can replace the Rovo agent's own methodology", () => {
   const { shadow } = setupDom();
-  const button = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Copy agent setup instructions");
-  assert.ok(button);
-  assert.doesNotThrow(() => button.click());
+  assert.equal(Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Copy agent setup instructions"), undefined);
+  const domain = shadow.querySelector("#sxrts-domain");
+  domain.value = "dmcspain.com";
+  domain.dispatchEvent(new window.Event("input", { bubbles: true }));
+  assert.equal(shadow.querySelector("#sxrts-prompt").value, "dmcspain.com");
 });
 
 test("action and Name Type render as constrained dropdowns, not free-text inputs", () => {

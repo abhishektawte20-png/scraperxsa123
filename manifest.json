@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ScraperX RTS Profile Assistant",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Maps validated Rovo agent JSON into PitchBook RTS Business Entity and Company fields, with profile identity locking, preview/conflict review, and profile-scoped caching. No RTS field is automated until its selectors are evidenced and added to the registry.",
   "permissions": [
     "activeTab",

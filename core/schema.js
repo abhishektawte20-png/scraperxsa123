@@ -467,9 +467,27 @@
   }
 
   function validate(raw) {
-    const parsed = parseRawJson(raw);
+    let parsed = parseRawJson(raw);
     const errors = [];
     const warnings = [];
+
+    // The agent's own (frozen) output contract is read as-is: it is checked
+    // against its written rules, then translated to the internal shape below.
+    // Any hard-rule violation rejects the paste with an exact list.
+    let rovo = null;
+    const contract = globalThis.SXRTS.rovoContract;
+    if (contract?.isContract(parsed)) {
+      const analysis = contract.analyze(parsed);
+      const blocking = analysis.issues.filter((item) => item.severity === "error");
+      if (blocking.length || !analysis.document) {
+        const failure = new SchemaValidationError(blocking.map(contract.formatIssue));
+        failure.issues = analysis.issues;
+        throw failure;
+      }
+      rovo = { rows: analysis.rows, issues: analysis.issues, notForProfit: analysis.notForProfit };
+      warnings.push(...analysis.issues.map(contract.formatIssue));
+      parsed = analysis.document;
+    }
 
     const knownTopLevel = new Set(["schemaVersion", "meta", "profileIdentity", "businessEntity", "company", "custom"]);
     // "anc" is a content-provenance tag (accepted_used/rejected_not_used)
@@ -502,6 +520,7 @@
       // Taught fields are validated against their stored definitions by
       // SXRTS.customFields (the schema itself stays storage-free and pure).
       custom: isPlainObject(parsed.custom) ? parsed.custom : undefined,
+      rovo,
       warnings
     };
   }

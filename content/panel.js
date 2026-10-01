@@ -245,11 +245,11 @@
     promptArea.readOnly = true;
     identityCard.appendChild(element("div", { className: "field" }, [promptLabel, promptArea]));
 
+    // The per-run message is just the target domain: the Rovo agent's own
+    // configuration owns the methodology and the output contract, and
+    // nothing sent from here may override either.
     function regeneratePrompt() {
-      promptArea.value = globalThis.SXRTS.promptBuilder.buildPrompt({
-        companyName: companyNameInput.value.trim(),
-        domain: domainInput.value.trim()
-      });
+      promptArea.value = globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain: domainInput.value });
     }
     regeneratePrompt();
     companyNameInput.addEventListener("input", regeneratePrompt);
@@ -264,9 +264,8 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button" });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button" });
-    const copyAgentSetupButton = element("button", { className: "btn secondary", text: "Copy agent setup instructions", type: "button", title: "One-time setup: paste this into the ScraperX Rovo agent's own configuration, not into a chat message." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, copyAgentSetupButton, teachButton]));
-    identityCard.appendChild(element("p", { className: "helptext", text: "If Rovo keeps replying with a prose report instead of JSON, the agent's own configuration needs the \"agent setup instructions\" pasted in once (see docs/rovo-agent-instructions.md) — a per-run prompt alone can't override it." }));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton]));
+    identityCard.appendChild(element("p", { className: "helptext", text: "The prompt is only the target domain. The methodology and the JSON output format live in the Rovo agent's own configuration; nothing here overrides them." }));
     body.appendChild(identityCard);
 
     // ---------- Card 2: paste + validate ----------
@@ -276,7 +275,8 @@
     const textarea = element("textarea", { id: "sxrts-response", placeholder: "Paste one JSON object here. Nothing is read from your clipboard automatically." });
     jsonCard.appendChild(element("div", { className: "field" }, [responseLabel, textarea]));
     const validateButton = element("button", { className: "btn", text: "Validate JSON", type: "button" });
-    jsonCard.appendChild(element("div", { className: "buttons" }, [validateButton]));
+    const copyFixButton = element("button", { className: "btn secondary hidden", text: "Copy correction prompt", type: "button", title: "A message for Rovo that lists exactly which output rules were broken." });
+    jsonCard.appendChild(element("div", { className: "buttons" }, [validateButton, copyFixButton]));
     const validateStatus = element("div", { className: "status" });
     jsonCard.appendChild(validateStatus);
     body.appendChild(jsonCard);
@@ -285,6 +285,8 @@
     const previewCard = element("div", { className: "card hidden" });
     previewCard.appendChild(element("h2", { text: "4 · Preview, edit if needed, then publish" }));
     previewCard.appendChild(element("p", { className: "helptext", text: "Uncheck anything you don't want applied. Edit a field directly if only a small correction is needed — it's re-validated when you publish." }));
+    const rovoRows = element("details", { className: "hidden" });
+    previewCard.appendChild(rovoRows);
     const actionList = element("div", { className: "action-list" });
     previewCard.appendChild(actionList);
     const selectAllButton = element("button", { className: "btn secondary", text: "Select all pending", type: "button" });
@@ -376,16 +378,6 @@
     openRovoButton.addEventListener("click", () => {
       window.open("https://pitchbook.atlassian.net/", "_blank", "noopener,noreferrer");
       setStep(1);
-    });
-
-    copyAgentSetupButton.addEventListener("click", async () => {
-      const instructions = globalThis.SXRTS.promptBuilder.buildAgentInstructions();
-      try {
-        await navigator.clipboard.writeText(instructions);
-        setStatus(validateStatus, "Agent setup instructions copied. Paste them into the ScraperX agent's own configuration in Rovo (one-time setup) — not into a chat message.", "success");
-      } catch {
-        setStatus(validateStatus, "Copy was blocked by the browser. Open docs/rovo-agent-instructions.md instead.", "error");
-      }
     });
 
     // Fields with a fixed, known set of legal values are rendered as a
@@ -490,7 +482,8 @@
       const editor = buildValueEditor(action.proposedValue, action.jsonPath);
       if (!isRunnable) editor.setDisabled(true);
 
-      const statusBadge = element("span", { className: `badge badge-${isRunnable ? "pending" : "skipped"}`, text: action.executionStatus });
+      const waitingForEvidence = !isRunnable && /registry entry|evidence for this field/i.test(action.skipReason || "");
+      const statusBadge = element("span", { className: `badge badge-${isRunnable ? "pending" : "skipped"}`, text: waitingForEvidence ? "waiting for RTS evidence" : action.executionStatus });
       const reasonEl = element("div", { className: "action-reason", text: action.skipReason || "" });
 
       const head = element("div", { className: "action-card-head" }, [
@@ -541,15 +534,42 @@
       actionList.replaceChildren();
       for (const action of lastActions) actionList.appendChild(renderActionRow(action));
       previewCard.classList.remove("hidden");
+      renderRovoRows(lastValidated.rovo?.rows);
       const skippedCount = lastActions.filter((a) => a.executionStatus === "skipped").length;
       const runnable = lastActions.length - skippedCount;
-      setStatus(publishStatus, `${lastActions.length} proposed change(s): ${runnable} ready to publish, ${skippedCount} skipped (not yet supported for automation).`, "");
+      setStatus(publishStatus, `${lastActions.length} proposed change(s): ${runnable} ready to publish, ${skippedCount} waiting for RTS evidence or skipped (not yet supported for automation).`, "");
       publishButton.disabled = runnable === 0;
       setStep(3);
       persistToCache();
     }
 
+    let lastIssues = [];
+    copyFixButton.addEventListener("click", async () => {
+      const text = globalThis.SXRTS.rovoContract.buildCorrectionPrompt(lastIssues, domainInput.value.trim());
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus(validateStatus, "Correction prompt copied. Send it to Rovo, then paste the corrected JSON here.", "success");
+      } catch {
+        textarea.value = text;
+        setStatus(validateStatus, "Copy was blocked by the browser; the correction prompt was placed in the box above — select and copy it.", "error");
+      }
+    });
+
+    // Rovo research that is not turned into an RTS action is still shown,
+    // with an explicit automation status, rather than silently dropped.
+    function renderRovoRows(rows) {
+      rovoRows.replaceChildren();
+      if (!rows?.length) { rovoRows.classList.add("hidden"); return; }
+      rovoRows.appendChild(element("summary", { text: `Rovo research not applied automatically (${rows.length})` }));
+      for (const row of rows) {
+        rovoRows.appendChild(element("div", { className: "helptext", text: `${row.section}: ${row.value || "—"}  ·  RTS automation: ${row.status.replaceAll("_", " ").toLowerCase()}${row.status === "NO_VALUE" ? "" : ` — ${row.detail}`}` }));
+      }
+      rovoRows.classList.remove("hidden");
+    }
+
     validateButton.addEventListener("click", () => {
+      lastIssues = [];
+      copyFixButton.classList.add("hidden");
       try {
         lastValidated = globalThis.SXRTS.schema.validate(textarea.value);
         const customResult = globalThis.SXRTS.customFields?.validatePayload(lastValidated.custom);
@@ -566,6 +586,11 @@
       } catch (error) {
         lastValidated = null;
         previewCard.classList.add("hidden");
+        // A halt is Rovo's own decision, not a violation to "correct".
+        if (error.issues?.some((item) => item.severity === "error" && item.code !== "HALTED")) {
+          lastIssues = error.issues;
+          copyFixButton.classList.remove("hidden");
+        }
         setStatus(validateStatus, error instanceof globalThis.SXRTS.schema.SchemaValidationError ? error.errors.join("\n") : String(error), "error");
       }
     });

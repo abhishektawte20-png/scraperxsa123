@@ -76,13 +76,33 @@
     return match;
   }
 
-  async function waitForNewRow(entry, beforeCount) {
+  function snapshotRows(entry) {
+    return {
+      inputs: new Set(document.querySelectorAll(entry.form.nameInput.candidates[0])),
+      selects: new Set(document.querySelectorAll(entry.form.typeDropdown.candidates[0]))
+    };
+  }
+
+  // The new row is the control pair that appeared after the click, not
+  // "whatever sits at position N": RTS may insert a new row anywhere, and
+  // writing into an existing row would silently overwrite real data.
+  // If the page re-rendered its existing rows (so more than one control
+  // looks new), fall back to the last position, but only if that row is
+  // completely blank and unsaved; otherwise stop rather than guess.
+  async function waitForNewRow(entry, before) {
     const deadline = Date.now() + 2000;
     while (Date.now() < deadline) {
-      const names = document.querySelectorAll(entry.form.nameInput.candidates[0]);
-      const types = document.querySelectorAll(entry.form.typeDropdown.candidates[0]);
-      if (names.length > beforeCount && names.length === types.length) {
-        return { nameInput: names[beforeCount], typeSelect: types[beforeCount] };
+      const names = Array.from(document.querySelectorAll(entry.form.nameInput.candidates[0]));
+      const types = Array.from(document.querySelectorAll(entry.form.typeDropdown.candidates[0]));
+      if (names.length > before.inputs.size && names.length === types.length) {
+        const freshNames = names.filter((n) => !before.inputs.has(n));
+        const freshTypes = types.filter((t) => !before.selects.has(t));
+        if (freshNames.length === 1 && freshTypes.length === 1) {
+          return { nameInput: freshNames[0], typeSelect: freshTypes[0] };
+        }
+        const last = names[names.length - 1];
+        const blank = last.value === "" && !last.classList.contains(entry.verification.addedClass) && !last.dataset.defaultvalue;
+        return blank ? { nameInput: last, typeSelect: types[types.length - 1] } : { ambiguous: true };
       }
       await wait(25);
     }
@@ -123,11 +143,14 @@
 
     const addButton = queryFirst(entry.addButton.candidates);
     if (!addButton) throw new Error("Add New Name Variation button was not found.");
-    const beforeCount = document.querySelectorAll(entry.form.nameInput.candidates[0]).length;
+    const before = snapshotRows(entry);
     addButton.click();
 
-    const newRow = await waitForNewRow(entry, beforeCount);
+    const newRow = await waitForNewRow(entry, before);
     if (!newRow) throw new Error("A new name variation row did not appear after clicking Add New Name Variation.");
+    if (newRow.ambiguous) {
+      throw new Error("Could not tell which row is the new name variation (the existing rows changed and the last row is not blank), so nothing was typed. No changes were made.");
+    }
 
     await globalThis.SXRTS.adapters.textField.applyText(newRow.nameInput, candidate.name);
     if (!globalThis.SXRTS.adapters.textField.verifyText(newRow.nameInput, candidate.name)) {
