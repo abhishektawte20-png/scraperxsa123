@@ -912,54 +912,26 @@
     loginBtn.addEventListener("click", () => {
       try {
         const authUrl = globalThis.SXRTS.rovoApi.getAuthorizationUrl();
-        const authWindow = window.open(authUrl, "atlassian_auth", "width=600,height=700");
-
-        const handleAuthMessage = async (event) => {
-          if (event.source !== authWindow) return;
-
-          if (event.data?.type === "oauth_code") {
-            window.removeEventListener("message", handleAuthMessage);
-            authWindow.close();
-
-            try {
-              const tokens = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage(
-                  { action: "exchangeOAuthCode", code: event.data.code },
-                  (response) => {
-                    if (response?.success) {
-                      resolve(response.tokens);
-                    } else {
-                      reject(new Error(response?.error || "OAuth exchange failed"));
-                    }
-                  }
-                );
-              });
-
-              await globalThis.SXRTS.rovoApi.setStoredTokens(tokens);
-              await updateAuthStatus();
-              setStatus(settingsStatusDiv, "Successfully authenticated ✓", "success");
-              settingsStatusDiv.classList.remove("hidden");
-              setTimeout(() => {
-                settingsStatusDiv.classList.add("hidden");
-              }, 2000);
-            } catch (error) {
-              setStatus(settingsStatusDiv, `Auth error: ${error.message}`, "error");
-              settingsStatusDiv.classList.remove("hidden");
-            }
-          } else if (event.data?.type === "oauth_error") {
-            window.removeEventListener("message", handleAuthMessage);
-            authWindow.close();
-            setStatus(settingsStatusDiv, `Auth failed: ${event.data.error}`, "error");
-            settingsStatusDiv.classList.remove("hidden");
-          }
-        };
-
-        window.addEventListener("message", handleAuthMessage);
+        window.open(authUrl, "atlassian_auth", "width=600,height=700");
+        setStatus(settingsStatusDiv, "Complete the login in the popup window...", "");
+        settingsStatusDiv.classList.remove("hidden");
       } catch (error) {
         setStatus(settingsStatusDiv, `Error: ${error.message}`, "error");
         settingsStatusDiv.classList.remove("hidden");
       }
     });
+
+    if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local" && changes.sxrts_rovo_oauth) {
+          updateAuthStatus();
+          if (changes.sxrts_rovo_oauth.newValue) {
+            setStatus(settingsStatusDiv, "Successfully authenticated ✓", "success");
+            settingsStatusDiv.classList.remove("hidden");
+          }
+        }
+      });
+    }
 
     saveCfgBtn.addEventListener("click", async () => {
       const cloudId = cloudIdInput.value.trim();

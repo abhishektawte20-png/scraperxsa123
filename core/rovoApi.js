@@ -103,7 +103,7 @@
 
   function getAuthorizationUrl() {
     const state = Math.random().toString(36).substring(7);
-    sessionStorage.setItem("oauth_state", state);
+    chrome.storage.local.set({ sxrts_oauth_state: state });
 
     const params = new URLSearchParams({
       client_id: CLIENT_ID,

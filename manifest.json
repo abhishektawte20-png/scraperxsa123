@@ -31,8 +31,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["oauth.html"],
-      "matches": ["https://auth.atlassian.com/*"]
+      "resources": ["oauth.html", "oauth.js"],
+      "matches": ["https://*.atlassian.com/*"]
     }
   ]
 }

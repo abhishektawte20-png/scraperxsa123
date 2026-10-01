@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>Atlassian OAuth</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
@@ -11,25 +12,9 @@
 </head>
 <body>
   <div class="container">
-    <h1>Completing authentication...</h1>
-    <p>Please wait while we complete your Atlassian login.</p>
+    <h1 id="title">Completing authentication...</h1>
+    <p id="detail">Please wait while we complete your Atlassian login.</p>
   </div>
-  <script>
-    // Extract the authorization code from URL
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const error = params.get('error');
-
-    if (error) {
-      window.opener.postMessage({ type: 'oauth_error', error }, '*');
-      window.close();
-    } else if (code) {
-      // Send the code to the opener window
-      window.opener.postMessage({ type: 'oauth_code', code }, '*');
-      window.close();
-    } else {
-      document.querySelector('p').textContent = 'Error: No authorization code received.';
-    }
-  </script>
+  <script src="oauth.js"></script>
 </body>
 </html>

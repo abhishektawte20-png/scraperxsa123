@@ -53,9 +53,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === "exchangeOAuthCode") {
     exchangeAuthorizationCode(request.code)
-      .then(tokens => {
+      .then(async tokens => {
+        await chrome.storage.local.set({ "sxrts_rovo_oauth": tokens });
         console.log("[ScraperX Background] OAuth exchange successful");
-        sendResponse({ success: true, tokens });
+        sendResponse({ success: true });
       })
       .catch(error => {
         console.error("[ScraperX Background] OAuth exchange failed:", error);
