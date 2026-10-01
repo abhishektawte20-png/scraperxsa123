@@ -467,24 +467,33 @@
   }
 
   function validate(raw) {
-    let parsed = parseRawJson(raw);
     const errors = [];
     const warnings = [];
 
-    // The agent's own (frozen) output contract is read as-is: it is checked
-    // against its written rules, then translated to the internal shape below.
-    // Any hard-rule violation rejects the paste with an exact list.
+    // The agent's own (frozen) output is read as-is, as its SECTION-format
+    // text report or its strict JSON, checked against its written rules, then
+    // translated to the internal shape below. Any hard-rule violation rejects
+    // the paste with an exact list.
     let rovo = null;
+    let parsed;
+    let analysis = null;
     const contract = globalThis.SXRTS.rovoContract;
-    if (contract?.isContract(parsed)) {
-      const analysis = contract.analyze(parsed);
+    const textReader = globalThis.SXRTS.rovoText;
+    if (textReader?.isText(raw)) {
+      analysis = textReader.analyze(raw);
+    } else {
+      parsed = parseRawJson(raw);
+      if (contract?.isContract(parsed)) analysis = contract.analyze(parsed);
+    }
+    if (analysis) {
       const blocking = analysis.issues.filter((item) => item.severity === "error");
       if (blocking.length || !analysis.document) {
         const failure = new SchemaValidationError(blocking.map(contract.formatIssue));
         failure.issues = analysis.issues;
+        failure.format = analysis.format;
         throw failure;
       }
-      rovo = { rows: analysis.rows, issues: analysis.issues, notForProfit: analysis.notForProfit };
+      rovo = { rows: analysis.rows, issues: analysis.issues, notForProfit: analysis.notForProfit, format: analysis.format };
       warnings.push(...analysis.issues.map(contract.formatIssue));
       parsed = analysis.document;
     }

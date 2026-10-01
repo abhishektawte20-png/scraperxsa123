@@ -2,6 +2,7 @@
 
 const ASSISTANT_FILES = [
   "core/rovoContract.js",
+  "core/rovoText.js",
   "core/schema.js",
   "core/identityLock.js",
   "core/duplicates.js",

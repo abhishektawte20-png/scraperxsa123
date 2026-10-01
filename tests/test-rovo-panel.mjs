@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
 import "../core/rovoContract.js";
+import "../core/rovoText.js";
 import "../core/schema.js";
 import "../core/identityLock.js";
 import "../core/duplicates.js";
@@ -26,6 +27,7 @@ import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../content/panel.js";
 import { validOutput } from "./helpers/rovo-sample.mjs";
+import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
 
 function setup() {
   const dom = new JSDOM("<!doctype html><body></body>", { runScripts: "outside-only" });
@@ -116,4 +118,33 @@ test("a not-for-profit flag and unknown keys are surfaced as warnings, never dro
   assert.match(status, /\[NOT_FOR_PROFIT\].*Incorrect workflow/);
   assert.match(status, /\[UNKNOWN_FIELD\] surprise_key/);
   assert.ok(shadow.querySelectorAll(".action-card").length > 0, "full output is still previewed");
+});
+
+test("the text report: noise around it is ignored, the preview is built, and held-back fields are explained", () => {
+  const { shadow } = setup();
+  paste(shadow, `Please extract psypher.in\nSECTION 1: Entity Details (instructions)\n\nSure, here you go:\n\n${TEXT_SAMPLE}\n\nAnything else?`);
+  button(shadow, "Validate JSON").click();
+  const status = shadow.querySelector(".status").textContent;
+  assert.match(status, /Valid/);
+  assert.match(status, /\[NOISE_REMOVED\]/);
+  assert.match(status, /\[HEDGED_VALUE\] social_media_identifiers\.instagram/);
+  const cards = Array.from(shadow.querySelectorAll(".action-card"));
+  const byPath = (p) => cards.filter((c) => c.querySelector(".action-card-field").textContent.startsWith(p));
+  assert.equal(byPath("businessEntity.websiteAddresses")[0].querySelector(".badge").textContent, "pending");
+  assert.equal(byPath("company.sicCodes").length, 3);
+  assert.match(shadow.querySelector("details").textContent, /Email Default Structure:.*review required.*generic mailbox/);
+});
+
+test("a text report that breaks the rules is rejected, and the correction prompt asks for the same text format", async () => {
+  const { shadow, copied } = setup();
+  paste(shadow, TEXT_SAMPLE.replace("* Total Rounds Found: 0", "* Total Rounds Found: 2").replace("`https://www.psypher.in`", "`https://www.psypher.io`"));
+  button(shadow, "Validate JSON").click();
+  const status = shadow.querySelector(".status").textContent;
+  assert.match(status, /\[TIMELINE_COUNT_MISMATCH\]/);
+  assert.match(status, /\[DOMAIN_MISMATCH\]/);
+  assert.equal(shadow.querySelectorAll(".action-card").length, 0);
+  button(shadow, "Copy correction prompt").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(copied[0], /same section format/);
+  assert.doesNotMatch(copied[0], /JSON object/);
 });

@@ -156,7 +156,7 @@
   }
 
   function formatIssue(item) {
-    return `[${item.code}] ${item.path || "(root)"}: ${item.message}`;
+    return item.path ? `[${item.code}] ${item.path}: ${item.message}` : `[${item.code}] ${item.message}`;
   }
 
   function parentHasFallback(parent) {
@@ -546,7 +546,7 @@
     const verticals = (src.verticals?.assigned || []).map((v) => v.vertical_name).filter(real);
     row("Verticals", verticals.join(", "), verticals.length ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
     const emp = src.employee_count?.current;
-    row("Employee count", emp ? `${show(emp.count)} (${show(emp.date)})` : "", real(String(emp?.count ?? "")) ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
+    row("Employee count", emp ? (real(emp.date) ? `${show(emp.count)} (${show(emp.date)})` : show(emp.count)) : "", real(String(emp?.count ?? "")) ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
     return rows;
   }
 
@@ -554,6 +554,35 @@
 
   function isContract(parsed) {
     return isPlainObject(parsed) && "extraction_status" in parsed && !("schemaVersion" in parsed);
+  }
+
+  // The content/source/code rules that do not depend on the JSON layout, so
+  // the text reader is held to exactly the same methodology checks.
+  function analyzeParsed(src, { extraIssues = [], extraRows = [], format = "text" } = {}) {
+    const issues = [...extraIssues];
+    checkSourcePolicy(src, issues);
+    checkDomain(src, issues);
+    checkCodes(src.sic_codes, "SIC", /^\d{4}$/, src, issues);
+    checkCodes(src.naics_codes, "NAICS", /^\d{6}$/, src, issues);
+    checkKeywords(src, issues);
+    checkIndustry(src, issues);
+    checkManagement(src, issues);
+    checkDescription(src, issues);
+    checkNames(src, issues);
+    const seen = new Set();
+    const unique = issues.filter((i) => {
+      const key = `${i.severity}|${i.code}|${i.path}|${i.message}`;
+      return seen.has(key) ? false : (seen.add(key), true);
+    });
+    const hasErrors = unique.some((i) => i.severity === "error");
+    return {
+      issues: unique,
+      document: hasErrors ? null : toInternalDocument(src),
+      rows: hasErrors ? [] : [...describeUnmapped(src), ...extraRows],
+      halted: false,
+      notForProfit: false,
+      format
+    };
   }
 
   function analyze(src) {
@@ -581,16 +610,18 @@
       document: hasErrors ? null : toInternalDocument(src),
       rows: hasErrors ? [] : describeUnmapped(src),
       halted: false,
-      notForProfit: src.not_for_profit_flag?.is_not_for_profit === true
+      notForProfit: src.not_for_profit_flag?.is_not_for_profit === true,
+      format: "json"
     };
   }
 
   // A message for the researcher to send back to Rovo. It restates the
   // violations only; it never restates or alters the methodology itself.
-  function buildCorrectionPrompt(issues, domain) {
+  function buildCorrectionPrompt(issues, domain, format = "json") {
     const errors = issues.filter((i) => i.severity === "error").slice(0, 40);
+    const shape = format === "text" ? "the corrected output in the same section format, with the same headings, labels and fallback phrases as always" : "only the corrected JSON object, with the same schema, keys and fallback phrases as always";
     return [
-      `Your previous output for ${domain || "this domain"} broke the output contract and methodology. Start a fresh session reset, redo the extraction, and return only the corrected JSON object, with the same schema, keys and fallback phrases as always.`,
+      `Your previous output for ${domain || "this domain"} broke the output rules and methodology. Start a fresh session reset, redo the extraction, and return ${shape}.`,
       "",
       "Fix exactly these problems:",
       ...errors.map((item, index) => `${index + 1}. ${formatIssue(item)}`)
@@ -598,5 +629,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.rovoContract = { isContract, analyze, formatIssue, buildCorrectionPrompt, FALLBACKS, TEMPLATE, normalizeDomain };
+  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
 })();

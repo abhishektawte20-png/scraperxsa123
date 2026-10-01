@@ -271,8 +271,8 @@
     // ---------- Card 2: paste + validate ----------
     const jsonCard = element("div", { className: "card" });
     jsonCard.appendChild(element("h2", { text: "2-3 · Research in Rovo, then paste the result" }));
-    const responseLabel = element("label", { text: "Paste ScraperX Rovo JSON response" });
-    const textarea = element("textarea", { id: "sxrts-response", placeholder: "Paste one JSON object here. Nothing is read from your clipboard automatically." });
+    const responseLabel = element("label", { text: "Paste the ScraperX agent output (text report or JSON)" });
+    const textarea = element("textarea", { id: "sxrts-response", placeholder: "Paste the agent output here: the whole report is fine, extra text before or after it is ignored. Nothing is read from your clipboard automatically." });
     jsonCard.appendChild(element("div", { className: "field" }, [responseLabel, textarea]));
     const validateButton = element("button", { className: "btn", text: "Validate JSON", type: "button" });
     const copyFixButton = element("button", { className: "btn secondary hidden", text: "Copy correction prompt", type: "button", title: "A message for Rovo that lists exactly which output rules were broken." });
@@ -544,8 +544,9 @@
     }
 
     let lastIssues = [];
+    let lastFormat = "json";
     copyFixButton.addEventListener("click", async () => {
-      const text = globalThis.SXRTS.rovoContract.buildCorrectionPrompt(lastIssues, domainInput.value.trim());
+      const text = globalThis.SXRTS.rovoContract.buildCorrectionPrompt(lastIssues, domainInput.value.trim(), lastFormat);
       try {
         await navigator.clipboard.writeText(text);
         setStatus(validateStatus, "Correction prompt copied. Send it to Rovo, then paste the corrected JSON here.", "success");
@@ -589,6 +590,7 @@
         // A halt is Rovo's own decision, not a violation to "correct".
         if (error.issues?.some((item) => item.severity === "error" && item.code !== "HALTED")) {
           lastIssues = error.issues;
+          lastFormat = error.format || "json";
           copyFixButton.classList.remove("hidden");
         }
         setStatus(validateStatus, error instanceof globalThis.SXRTS.schema.SchemaValidationError ? error.errors.join("\n") : String(error), "error");
