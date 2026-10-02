@@ -170,12 +170,30 @@
     ].join("\n");
   }
 
-  // The per-run message for the Rovo agent. The agent's own instructions hold
-  // the methodology AND the output format (see
-  // docs/rovo-agent-json-output-block.txt), so the message is only the domain:
-  // anything else sent here could contradict them.
-  function buildRunPrompt({ domain } = {}) {
-    return String(domain ?? "").trim() || "[enter the company domain]";
+  function todayText(now = new Date()) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${String(now.getDate()).padStart(2, "0")} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  }
+
+  // The complete per-run message for the Rovo agent: the domain first (that is
+  // what starts the agent), then the full output specification with this run's
+  // domain and date filled in. The specification text comes from
+  // docs/rovo-agent-json-output-block.txt (core/agentSpec.js is generated from
+  // it), so what is pasted into the agent and what is sent here are identical.
+  function buildRunPrompt({ domain, now } = {}) {
+    const spec = globalThis.SXRTS.agentSpec;
+    const target = String(domain ?? "").trim() || "[enter the company domain]";
+    const date = todayText(now);
+    return [
+      target,
+      "",
+      "THIS RUN",
+      `Target domain: ${target}`,
+      `Today's date: ${date}`,
+      "Run the full ScraperX extraction for this domain exactly as your instructions require, then write your answer ONLY in the output format below.",
+      "",
+      spec.TEXT.split(spec.DOMAIN_TOKEN).join(target).split(spec.DATE_TOKEN).join(date)
+    ].join("\n");
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};

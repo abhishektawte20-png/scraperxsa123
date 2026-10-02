@@ -152,3 +152,92 @@ test("the extension still rejects the mistakes the block warns about", () => {
   const codes = rc.analyze(bad).issues.filter((i) => i.severity === "error").map((i) => i.code);
   for (const code of ["FALLBACK_NOT_EXACT", "URL_INVALID", "TIMELINE_COUNT_MISMATCH"]) assert.ok(codes.includes(code), code);
 });
+
+// ---------------------------------------------------------------------------
+// The complete per-run prompt ("Copy prompt") and the real dmcspain.com output
+// that exposed the gaps: the agent dropped the five header keys, sourced the
+// address/phone/email from another organisation's site, and used prospeo.io.
+// ---------------------------------------------------------------------------
+
+import "../core/agentSpec.js";
+import "../core/promptBuilder.js";
+import { render } from "../scripts/build-agent-spec.mjs";
+
+const dmc = readFileSync(path.join(here, "helpers/dmcspain-output.json"), "utf8");
+const codes = (analysis, severity) => analysis.issues.filter((i) => i.severity === severity).map((i) => i.code);
+
+test("core/agentSpec.js is generated from the docs block (what is pasted into the agent == what Copy prompt sends)", () => {
+  assert.equal(readFileSync(path.join(here, "../core/agentSpec.js"), "utf8"), render());
+});
+
+test("Copy prompt: domain first, today's date, the literal required start, and no unfilled placeholders", () => {
+  const prompt = globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain: "dmcspain.com", now: new Date(2026, 9, 2) });
+  assert.equal(prompt.split("\n")[0], "dmcspain.com");
+  assert.match(prompt, /Target domain: dmcspain\.com\nToday's date: 02 Oct 2026/);
+  assert.match(prompt, /BEGIN YOUR RESPONSE WITH EXACTLY THIS TEXT/);
+  assert.match(prompt, /"extraction_status": "success",\n  "halt_reason": null,\n  "target_domain": "dmcspain\.com",\n  "extraction_date": "02 Oct 2026",/);
+  assert.doesNotMatch(prompt, /<the domain you were given>|<today's date as DD Mon YYYY>/);
+  assert.match(prompt, /<the full https:\/\/ URL you accessed>/, "only the value the agent must supply remains a placeholder");
+  assert.match(prompt, /exactly 22/i);
+  assert.match(prompt, /RULE 7 — SOURCE DOMAIN/);
+});
+
+test("Copy prompt covers every mistake seen in the real output", () => {
+  const prompt = globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain: "dmcspain.com" });
+  assert.match(prompt, /Keys 1 to 5 are the header/);                                        // dropped header
+  assert.match(prompt, /another organisation's page/);                                          // esas.org
+  assert.match(prompt, /prospeo\.io/);                                                           // prospeo.io
+  assert.match(prompt, /ONLY when the count and its source_url are on the official website/);   // employee date label
+  assert.match(prompt, /only pages of the official website that you actually opened/);          // pages_traversed
+  assert.match(prompt, /"transition_phrase" is the connecting phrase that actually appears/);   // transition
+  assert.match(prompt, /"02 Oct 2026 \(website, assumed current\)"|"\d{2} \w{3} \d{4} \(website, assumed current\)"/);   // real date, not a placeholder
+  assert.match(prompt, /never an aggregator or directory/);                                      // corroborating source
+});
+
+test("the dmcspain.com output is still recognised as the agent's output, with exact 'missing key' errors (not schemaVersion/profileIdentity)", () => {
+  assert.equal(rc.isContract(JSON.parse(dmc)), true);
+  let error;
+  try { globalThis.SXRTS.schema.validate(dmc); } catch (e) { error = e; }
+  const text = error.errors.join("\n");
+  assert.doesNotMatch(text, /schemaVersion|profileIdentity/);
+  for (const key of ["extraction_status", "halt_reason", "target_domain", "extraction_date", "domain_confirmation"]) assert.match(text, new RegExp(`\\[MISSING_KEY\\] ${key}`));
+});
+
+test("with the researcher's domain, the dropped header is filled in, and the REAL problems are what remain", () => {
+  let error;
+  try { globalThis.SXRTS.schema.validate(dmc, { domain: "dmcspain.com" }); } catch (e) { error = e; }
+  assert.deepEqual(error.issues.filter((i) => i.severity === "error").map((i) => i.code), ["PROHIBITED_SOURCE"]);
+  assert.match(error.errors[0], /employee_count\.current\.source_url: uses prospeo\.io/);
+  const warnings = error.issues.filter((i) => i.severity === "warning").map((i) => i.code);
+  for (const code of ["HEADER_MISSING", "EXTERNAL_SOURCE", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "DESCRIPTION_RULE"]) assert.ok(warnings.includes(code), code);
+  const external = error.issues.find((i) => i.code === "EXTERNAL_SOURCE" && /esas\.org/.test(i.path));
+  assert.match(external.message, /8 field\(s\) are sourced from www\.esas\.org, not the official website \(dmcspain\.com\)/);
+});
+
+test("once the prohibited source is removed, the output validates, with the cross-domain sources flagged for review", () => {
+  const fixed = JSON.parse(dmc);
+  fixed.employee_count.current = { count: NF, date: NF, source_url: null };
+  const validated = globalThis.SXRTS.schema.validate(JSON.stringify(fixed), { domain: "dmcspain.com" });
+  assert.equal(validated.profileIdentity.domain, "dmcspain.com");
+  assert.ok(validated.warnings.some((w) => /\[HEADER_MISSING\]/.test(w)));
+  assert.ok(validated.warnings.some((w) => /\[EXTERNAL_SOURCE\] www\.esas\.org/.test(w)));
+});
+
+test("the domain entered in the panel is the authority: a different TLD than the agent's sources is a hard block", () => {
+  const fixed = JSON.parse(dmc);
+  fixed.employee_count.current = { count: NF, date: NF, source_url: null };
+  assert.throws(() => globalThis.SXRTS.schema.validate(JSON.stringify(fixed), { domain: "dmcspain.io" }),
+    (error) => error.errors.some((e) => /\[DOMAIN_MISMATCH\].*dmcspain\.com.*dmcspain\.io/.test(e)));
+});
+
+test("a complete output that follows the prompt gets no header warning", () => {
+  const analysis = rc.analyze(psypherJson(), { domain: "psypher.in" });
+  assert.deepEqual(codes(analysis, "error"), []);
+  assert.ok(!codes(analysis, "warning").includes("HEADER_MISSING"));
+});
+
+test("an output with only a few contract keys is still not mistaken for the old v1.0 format, and the old format still works", () => {
+  assert.equal(rc.isContract({ funding: {}, keywords: [] }), true);
+  assert.equal(rc.isContract({ schemaVersion: "1.0", profileIdentity: {}, anc: {} }), false);
+  assert.equal(rc.isContract({ keywords: [] }), false);
+});

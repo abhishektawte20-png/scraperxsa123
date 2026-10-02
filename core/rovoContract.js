@@ -381,6 +381,45 @@
     });
   }
 
+  // Sources on a different domain than the target. External sources are only
+  // allowed for fields missing from the official website, and a page that
+  // belongs to another organisation is the classic cross-contamination case,
+  // so each foreign host is reported once with the fields that rely on it.
+  function checkSourceHosts(src, issues) {
+    const target = normalizeDomain(src.target_domain);
+    if (!target) return;
+    const byHost = new Map();
+    const visit = (value, path) => {
+      if (typeof value === "string") {
+        const key = path.split(".").pop().replace(/\[\d+\]$/, "");
+        if (!["source_url", "source_1", "source_2", "corroborating_source_url"].includes(key)) return;
+        if (/^funding\./.test(path)) return;
+        const host = hostOf(value);
+        if (host && !hostMatches(host, target)) (byHost.get(host) || byHost.set(host, []).get(host)).push(path);
+      } else if (Array.isArray(value)) value.forEach((v, i) => visit(v, `${path}[${i}]`));
+      else if (isPlainObject(value)) for (const [k, v] of Object.entries(value)) visit(v, path ? `${path}.${k}` : k);
+    };
+    visit(src, "");
+    for (const [host, paths] of byHost) {
+      const shown = paths.slice(0, 4).join(", ") + (paths.length > 4 ? `, +${paths.length - 4} more` : "");
+      issue(issues, "warning", "EXTERNAL_SOURCE", host, `${paths.length} field(s) are sourced from ${host}, not the official website (${target}): ${shown}. External sources are only for fields missing from the website, and the page must belong to this company. Check it is not another organisation's page.`);
+    }
+    (src.website_links?.pages_traversed || []).forEach((url, index) => {
+      const host = typeof url === "string" ? hostOf(url) : null;
+      if (host && !hostMatches(host, target)) issue(issues, "warning", "PAGES_TRAVERSED", `website_links.pages_traversed[${index}]`, `lists ${host}, which is not a page of the official website (${target}).`);
+    });
+  }
+
+  function checkEmployeeCount(src, issues) {
+    const current = src.employee_count?.current;
+    const target = normalizeDomain(src.target_domain);
+    if (!isPlainObject(current) || typeof current.date !== "string" || typeof current.source_url !== "string") return;
+    const host = hostOf(current.source_url);
+    if (/website,\s*assumed current/i.test(current.date) && host && target && !hostMatches(host, target)) {
+      issue(issues, "warning", "EMPLOYEE_DATE", "employee_count.current.date", `says "assumed current (website)" but the source is ${host}, not the official website. An external count needs the date of that source, and is not extractable without one.`);
+    }
+  }
+
   function checkNotForProfit(src, issues) {
     const flag = src.not_for_profit_flag;
     if (!isPlainObject(flag)) return;
@@ -417,6 +456,16 @@
         issue(issues, "warning", "DESCRIPTION_RULE", "description.full_description", 'must contain a comma before an "enabling / helping / assisting" clause.');
       }
     }
+    const transition = real(d.transition_phrase);
+    const sameTransition = (bd, phrase) => {
+      const text = bd.toLowerCase();
+      const wanted = phrase.toLowerCase();
+      // "designed for" and "designed to" are the same connecting phrase.
+      return text.includes(wanted) || (/^designed (for|to)$/.test(wanted) && /designed (for|to)\b/.test(text));
+    };
+    if (bd && transition && !sameTransition(bd, transition)) {
+      issue(issues, "warning", "DESCRIPTION_RULE", "description.transition_phrase", `"${transition}" does not appear in the business description, so the connecting phrase was misreported.`);
+    }
     for (const [label, text] of [["business_description", bd], ["full_description", fd]]) {
       if (!text) continue;
       const hits = MARKETING_WORDS.filter((word) => new RegExp(`(^|[^\\w-])${word}([^\\w-]|$)`, "i").test(text));
@@ -442,11 +491,14 @@
       issue(issues, "error", "HALTED", "halt_reason", `Rovo halted the extraction: ${typeof src.halt_reason === "string" ? src.halt_reason : "(no reason given)"}`);
       return true;
     }
+    // A missing key is reported by the structural walk as MISSING_KEY, together
+    // with every other missing key, instead of aborting here.
+    if (src.extraction_status === undefined) return false;
     if (src.extraction_status !== "success") {
       issue(issues, "error", "INVALID_TYPE", "extraction_status", `must be "success" or "halted". Received: ${describe(src.extraction_status)}.`);
       return true;
     }
-    if (src.halt_reason !== null) issue(issues, "error", "CONSTRAINT", "halt_reason", 'must be null when extraction_status is "success".');
+    if (src.halt_reason !== null && src.halt_reason !== undefined) issue(issues, "error", "CONSTRAINT", "halt_reason", 'must be null when extraction_status is "success".');
     return false;
   }
 
@@ -556,8 +608,14 @@
 
   // ---------- public API ----------
 
+  // The agent's output is recognised by its own top-level keys, not by one
+  // particular key: an output that dropped "extraction_status" is still the
+  // agent's output (and gets a precise "missing key" error), not a legacy v1.0
+  // document.
+  const CONTRACT_KEYS = ["extraction_status", "halt_reason", "target_domain", "extraction_date", "domain_confirmation", "not_for_profit_flag", "entity_details", "funding", "website_links", "name_variations", "site_and_contact", "email_default_structure", "social_media_identifiers", "management", "industry_classification", "verticals", "description", "employee_count", "sic_codes", "naics_codes", "keywords"];
   function isContract(parsed) {
-    return isPlainObject(parsed) && "extraction_status" in parsed && !("schemaVersion" in parsed);
+    if (!isPlainObject(parsed) || "schemaVersion" in parsed) return false;
+    return CONTRACT_KEYS.filter((key) => key in parsed).length >= 2;
   }
 
   // The content/source/code rules that do not depend on the JSON layout, so
@@ -589,8 +647,31 @@
     };
   }
 
-  function analyze(src) {
+  const HEADER_KEYS = ["extraction_status", "halt_reason", "target_domain", "extraction_date", "domain_confirmation"];
+
+  // If the agent left out the five header keys, the researcher's own domain
+  // (entered in the panel) stands in for them, and every source is still
+  // checked against that domain. Nothing here is ever written to RTS.
+  function fillHeader(src, domain, issues) {
+    const missing = HEADER_KEYS.filter((key) => !(key in src));
+    const target = normalizeDomain(domain);
+    if (!missing.length || !target || src.extraction_status === "halted") return src;
+    const site = real(src.entity_details?.official_website?.value);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const now = new Date();
+    const filled = {
+      extraction_status: "success", halt_reason: null, target_domain: target,
+      extraction_date: `${String(now.getDate()).padStart(2, "0")} ${months[now.getMonth()]} ${now.getFullYear()}`,
+      domain_confirmation: { domain_provided: target, url_accessed: site || `https://${target}`, tld_match_confirmed: true }
+    };
+    for (const key of missing) src = { ...src, [key]: filled[key] };
+    issue(issues, "warning", "HEADER_MISSING", "", `the agent left out ${missing.join(", ")}. The domain you entered (${target}) was used instead, and every source below was checked against it.`);
+    return src;
+  }
+
+  function analyze(srcIn, options = {}) {
     const issues = [];
+    const src = fillHeader(srcIn, options.domain, issues);
     const halted = checkHalted(src, issues);
     if (halted) {
       return { issues, document: null, rows: [], halted: true, notForProfit: false };
@@ -604,6 +685,8 @@
     checkKeywords(src, issues);
     checkIndustry(src, issues);
     checkManagement(src, issues);
+    checkSourceHosts(src, issues);
+    checkEmployeeCount(src, issues);
     checkNotForProfit(src, issues);
     checkDescription(src, issues);
     checkNames(src, issues);
@@ -638,8 +721,12 @@
     MARKDOWN_LINK: "Return plain text and plain URLs only.",
     NULL_NOT_ALLOWED: "Use the prescribed fallback phrase instead of null here.",
     EMPTY_STRING: "Use the prescribed fallback phrase instead of an empty value.",
-    MISSING_KEY: "Include every key of the output format, even when its value is a fallback phrase.",
-    URL_INVALID: "Provide a full, valid https:// URL."
+    MISSING_KEY: "Include every key of the output format, even when its value is a fallback phrase. The object must begin with extraction_status, halt_reason, target_domain, extraction_date and domain_confirmation.",
+    URL_INVALID: "Provide a full, valid https:// URL.",
+    EXTERNAL_SOURCE: "Use a page on the official website. Use an external page only for a field that is not on the website, and only if it displays this company's domain.",
+    PAGES_TRAVERSED: "List only pages of the official website.",
+    EMPLOYEE_DATE: "Use the date of the external source, or the fallback phrase if it has no date.",
+    HEADER_MISSING: "Start the object with extraction_status, halt_reason, target_domain, extraction_date and domain_confirmation."
   };
 
   // A message for the researcher to send back to Rovo. It restates the
@@ -647,12 +734,17 @@
   // methodology itself.
   function buildCorrectionPrompt(issues, domain, format = "json") {
     const errors = issues.filter((i) => i.severity === "error").slice(0, 40);
+    // Warnings that point at a real methodology problem are sent back too, so one
+    // correction pass fixes everything the extension noticed.
+    const REVIEW = ["EXTERNAL_SOURCE", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "HEADER_MISSING", "DESCRIPTION_RULE", "FIELD_MISSING", "LEGAL_NAME_SUFFIX"];
+    const review = issues.filter((i) => i.severity === "warning" && REVIEW.includes(i.code)).slice(0, 20);
     const shape = format === "text" ? "the corrected output in the same section format, with the same headings, labels and fallback phrases as always" : "only the corrected JSON object, with the same schema, keys and fallback phrases as always";
     return [
       `Your previous output for ${domain || "this domain"} broke the output rules and methodology. Start a fresh session reset, redo the extraction, and return ${shape}.`,
       "",
       "Fix exactly these problems:",
-      ...errors.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`)
+      ...errors.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`),
+      ...(review.length ? ["", "Also fix these (they broke your methodology even though they did not stop the output being read):", ...review.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`)] : [])
     ].join("\n");
   }
 

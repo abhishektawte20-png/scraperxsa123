@@ -466,7 +466,7 @@
     return safe;
   }
 
-  function validate(raw) {
+  function validate(raw, options = {}) {
     const errors = [];
     const warnings = [];
 
@@ -483,7 +483,7 @@
       analysis = textReader.analyze(raw);
     } else {
       parsed = parseRawJson(raw);
-      if (contract?.isContract(parsed)) analysis = contract.analyze(parsed);
+      if (contract?.isContract(parsed)) analysis = contract.analyze(parsed, { domain: options.domain });
     }
     if (analysis) {
       const blocking = analysis.issues.filter((item) => item.severity === "error");

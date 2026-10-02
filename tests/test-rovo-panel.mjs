@@ -20,6 +20,7 @@ import "../registry/businessEntity.general.js";
 import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
+import "../core/agentSpec.js";
 import "../core/promptBuilder.js";
 import "../core/outputFields.js";
 import "../core/executionPlan.js";
@@ -155,4 +156,51 @@ test("a text report that breaks the rules is rejected, and the correction prompt
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(copied[0], /same section format/);
   assert.doesNotMatch(copied[0], /JSON object/);
+});
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import nodePath from "node:path";
+const dmcOutput = readFileSync(nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), "helpers/dmcspain-output.json"), "utf8");
+
+test("the real dmcspain.com output: with the domain in the panel only the genuine problem is shown, and the correction prompt names it", async () => {
+  const { shadow, copied } = setup();
+  shadow.querySelector("#sxrts-domain").value = "dmcspain.com";
+  paste(shadow, dmcOutput);
+  button(shadow, "Validate JSON").click();
+  const status = shadow.querySelector(".status").textContent;
+  assert.doesNotMatch(status, /schemaVersion|profileIdentity/);
+  assert.match(status, /\[PROHIBITED_SOURCE\] employee_count\.current\.source_url: uses prospeo\.io/);
+  assert.equal(shadow.querySelectorAll(".issue.err").length, 1);
+  button(shadow, "Copy correction prompt").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(copied[0], /\[PROHIBITED_SOURCE\] employee_count\.current\.source_url/);
+  assert.match(copied[0], /How to fix: Remove this source and use only valid sources/);
+});
+
+test("the real dmcspain.com output with no domain entered: exact missing-key errors, never the old-format message", () => {
+  const { shadow } = setup();
+  shadow.querySelector("#sxrts-domain").value = "";
+  paste(shadow, dmcOutput);
+  button(shadow, "Validate JSON").click();
+  const status = shadow.querySelector(".status").textContent;
+  assert.doesNotMatch(status, /schemaVersion|profileIdentity/);
+  assert.match(status, /\[MISSING_KEY\] extraction_status/);
+  assert.match(status, /\[MISSING_KEY\] domain_confirmation/);
+});
+
+test("when validation fails, the warnings are shown in the same pass, and the correction prompt asks the agent to fix them too", async () => {
+  const { shadow, copied } = setup();
+  shadow.querySelector("#sxrts-domain").value = "dmcspain.com";
+  paste(shadow, dmcOutput);
+  button(shadow, "Validate JSON").click();
+  assert.equal(shadow.querySelectorAll(".issue.err").length, 1);
+  assert.ok(shadow.querySelectorAll(".issue.warn").length >= 4, "warnings are listed under the error");
+  assert.match(shadow.querySelector(".status").textContent, /\[EXTERNAL_SOURCE\] www\.esas\.org/);
+  button(shadow, "Copy correction prompt").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(copied[0], /Also fix these/);
+  assert.match(copied[0], /\[EXTERNAL_SOURCE\] www\.esas\.org/);
+  assert.match(copied[0], /\[EMPLOYEE_DATE\] employee_count\.current\.date/);
+  assert.match(copied[0], /How to fix: Use a page on the official website/);
 });

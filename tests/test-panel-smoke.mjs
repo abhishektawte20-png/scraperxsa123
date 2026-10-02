@@ -22,6 +22,7 @@ import "../registry/businessEntity.general.js";
 import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
+import "../core/agentSpec.js";
 import "../core/promptBuilder.js";
 import "../core/outputFields.js";
 import "../core/executionPlan.js";
@@ -239,7 +240,10 @@ test("the per-run prompt is only the domain, and no button can replace the Rovo 
   domain.value = "dmcspain.com";
   domain.dispatchEvent(new window.Event("input", { bubbles: true }));
   const prompt = shadow.querySelector("#sxrts-prompt").value;
-  assert.equal(prompt, "dmcspain.com");
+  assert.equal(prompt.split("\n")[0], "dmcspain.com");
+  assert.match(prompt, /Target domain: dmcspain\.com/);
+  assert.match(prompt, /"target_domain": "dmcspain\.com"/);
+  assert.match(prompt, /THE RESPONSE HAS EXACTLY 22 TOP-LEVEL KEYS/);
 });
 
 test("action and Name Type render as constrained dropdowns, not free-text inputs", () => {

@@ -1,8 +1,21 @@
 SECTION 13: OUTPUT FORMAT — STRICT JSON
-THIS SECTION SUPERSEDES EVERY OTHER OUTPUT-FORMAT INSTRUCTION IN THIS PROMPT (section format, "no tables", the ANC code-block layout, and any instruction to display or narrate anything).
+THIS SECTION SUPERSEDES EVERY OTHER OUTPUT-FORMAT INSTRUCTION IN THIS PROMPT (section format, "no tables", the ANC code-block layout, and any instruction to display or narrate anything). Where it conflicts with an earlier formatting instruction, this section wins. It never changes what you research or how: only how the finished result is written down.
 
 HOW TO WORK
 Do the complete extraction exactly as Sections 0 to 12 require: the same sequence, the same searches, the same source checks, the same rules, the same fallbacks and the same halt conditions. Do not shorten, skip or simplify any step because the output is JSON. Only the final packaging changes: instead of writing the section report, put the same results into the single JSON object defined below. Every value the report would have contained goes into the matching key. Nothing is added, dropped, merged or reworded. The hidden items (Section 0A reset checklist, the Phase 1 completion gate questions, Section 10, Section 12) have no keys and never appear.
+
+THE RESPONSE HAS EXACTLY 22 TOP-LEVEL KEYS, IN THIS ORDER
+1 extraction_status, 2 halt_reason, 3 target_domain, 4 extraction_date, 5 domain_confirmation, 6 not_for_profit_flag, 7 entity_details, 8 funding, 9 website_links, 10 name_variations, 11 site_and_contact, 12 email_default_structure, 13 social_media_identifiers, 14 management, 15 industry_classification, 16 verticals, 17 description, 18 employee_count, 19 sic_codes, 20 naics_codes, 21 keywords, 22 anc.
+Keys 1 to 5 are the header. They are the most commonly forgotten and the most important: the response is rejected without them.
+
+(If a halt condition fires, use the halt object in RULE 12 instead of the text below.)
+BEGIN YOUR RESPONSE WITH EXACTLY THIS TEXT, THEN CONTINUE WITH KEY 6 (not_for_profit_flag) AND THE REST
+{
+  "extraction_status": "success",
+  "halt_reason": null,
+  "target_domain": "<the domain you were given>",
+  "extraction_date": "<today's date as DD Mon YYYY>",
+  "domain_confirmation": { "domain_provided": "<the domain you were given>", "url_accessed": "<the full https:// URL you accessed>", "tld_match_confirmed": true },
 
 WHERE EACH PART OF THE REPORT GOES
 - Section 1 CONFIRMATION 1, 2, 3 -> domain_confirmation (and target_domain)
@@ -21,7 +34,7 @@ WHERE EACH PART OF THE REPORT GOES
 ABSOLUTE OUTPUT RULES
 RULE 1 — ONE OBJECT ONLY: Your response must begin with { and end with }. Nothing before it, nothing after it. No greeting, no preamble, no explanation, no summary, no Markdown, no code fences, no backticks, no commentary of any kind.
 RULE 2 — NO NARRATION: Do not describe what you are about to do, what you found or what you skipped. All communication happens through the schema's fields.
-RULE 3 — SCHEMA COMPLETENESS: Every key defined in the schema must be present in every output, without exception. A key is never omitted because a value was not found.
+RULE 3 — SCHEMA COMPLETENESS: Every key defined in the schema must be present in every output, without exception, including the five header keys. A key is never omitted because a value was not found.
 RULE 4 — FALLBACK PHRASES ARE VALUES: When a field cannot be extracted, the string value must be the exact prescribed fallback phrase, character for character:
   "Not found on the official website."
   "Not found on the official website — non-English site, partial extraction only."
@@ -31,15 +44,15 @@ RULE 4 — FALLBACK PHRASES ARE VALUES: When a field cannot be extracted, the st
   "No round identified under PB methodology"
 Never substitute null, "N/A", "", "unknown", "Not found" or any paraphrase for these.
 RULE 5 — NULL USAGE IS RESTRICTED: null is permitted only for (a) a "source_url" whose paired "value" (or sibling field) is a fallback phrase, (b) "halt_reason" when extraction_status is "success", (c) "source_2" and "flag" on a funding round, (d) the fields marked nullable in the schema ("note", "corroborating_source_url", "regional_title_equivalent", "additional_information_needed"). null is never permitted anywhere else. Empty strings are never permitted anywhere.
-RULE 6 — FIELD-LEVEL SOURCING: Every extracted data point is an object {"value": ..., "source_url": ...}. Two fields found on the same page each carry that URL independently. Every source_url, source_1, source_2, corroborating_source_url and url is a full https:// URL that passes the Section 5 five-condition check, never a description such as "homepage" or "footer", never a bare domain, and never http://.
-RULE 7 — ARRAYS: An array is empty ([]) only where the schema says so. Where an array must contain at least one entry and nothing was found, emit one entry whose value fields carry the fallback phrase.
+RULE 6 — FIELD-LEVEL SOURCING: Every extracted data point is an object {"value": ..., "source_url": ...}. Two fields found on the same page each carry that URL independently. Every source_url, source_1, source_2, corroborating_source_url and url is a full https:// URL that passes the Section 5 five-condition check: never a description such as "homepage" or "footer", never a bare domain, never http://.
+RULE 7 — SOURCE DOMAIN: Every value found on the official website is sourced from a page ON THE TARGET DOMAIN. A page on any other domain may be used only for a field that is genuinely missing from the official website after full traversal, and only if that page displays this company's own domain or name and address (entity authentication). Never take a value from another organisation's page (for example another site's privacy policy, terms or contact page), and never from pitchbook.com, tracxn.com, atlassian.net, Confluence, prospeo.io, apollo.io, zoominfo.com, crunchbase.com or any other data aggregator, lead-generation or directory platform. If the only source is such a page, return the fallback phrase instead of the value.
 RULE 8 — TYPES: Booleans are true/false literals. Counts of rounds are integers. Employee counts are an integer when exact, otherwise a string keeping the qualifier exactly ("500+", "201-500", "<50"). Amounts and dates are strings exactly as sourced ("$15M", "Jun 2019", "Undisclosed").
 RULE 9 — STRING SAFETY: All strings are valid JSON. Escape double quotes as \" and backslashes as \\. No raw line breaks inside a string. No trailing commas. No comments.
 RULE 10 — PLAIN TEXT VALUES: No Markdown anywhere in any value: no [text](url) links, no bold, no bullets, no backticks.
 RULE 11 — ENGLISH ONLY: All values are in English. The only exception is name_variations.other_name_variations[].name, where a native-script name is recorded verbatim with its script named in "script".
 RULE 12 — HALT CONDITIONS: If a halt condition fires (prohibited source detected, conflicting information across sources, inaccessible domain, TLD mismatch, entity unidentifiable), do not attempt a partial extraction. Emit exactly this object and nothing else:
-{"extraction_status": "halted", "halt_reason": "<exact prescribed halt phrase from the methodology>", "target_domain": "<domain as provided>", "extraction_date": "<DD Mon YYYY>", "anc": {"accepted_used": "AIGEN_SRX_V1_Y", "rejected_not_used": "AIGEN_SRX_V1_N"}}
-RULE 13 — PRE-RELEASE CHECK: Before releasing, confirm: (1) the response starts with { and ends with }; (2) every schema key is present; (3) every source_url passes Section 5; (4) every unfound field carries an exact fallback phrase, not null or ""; (5) it would parse under a strict JSON parser on the first attempt. If any answer is No, correct the output before releasing it.
+{"extraction_status": "halted", "halt_reason": "<exact prescribed halt phrase from the methodology>", "target_domain": "<the domain you were given>", "extraction_date": "<today's date as DD Mon YYYY>", "anc": {"accepted_used": "AIGEN_SRX_V1_Y", "rejected_not_used": "AIGEN_SRX_V1_N"}}
+RULE 13 — FINAL CHECK BEFORE YOU RELEASE: (1) the response starts with { and its first key is "extraction_status"; (2) count the top-level keys: there must be exactly 22, in the order listed above; (3) every source_url passes RULE 6 and RULE 7; (4) every unfound field carries an exact fallback phrase, not null or ""; (5) it would parse under a strict JSON parser on the first attempt. If any answer is No, correct the output before releasing it.
 
 SCHEMA — emit exactly these keys, in this order:
 {
@@ -134,17 +147,20 @@ SCHEMA — emit exactly these keys, in this order:
 }
 
 KEY-SPECIFIC RULES
+"domain_confirmation.url_accessed": the full https:// URL you actually accessed, on the target domain with the exact same TLD (a different TLD is a different company).
 "entity_details.official_website.value": the official website URL (https://...).
+"website_links.pages_traversed": only pages of the official website that you actually opened. Never a page of another domain.
 "funding.timeline": its length must equal "funding.total_rounds_found" exactly, earliest round first, "sequence" numbered from 1. Output every confirmed round, never a subset. When no rounds are confirmed: "timeline": [], "total_rounds_found": 0, "total_confirmed_funding": "Not found on the official website.", "latest_round": {"type": "Not found on the official website.", "date": "Not found on the official website.", "amount": "Not found on the official website."}, "latest_investors": [], "backing_status": "Corporation / Bootstrapped", "team_routing": "All-Rounders/Private Company Team".
 "funding.out_of_scope_rounds": when none are found, emit exactly one object: "round_type": "No round identified under PB methodology", "status": "Not applicable", "date": "Not applicable", "amount": "Not applicable", "key_detail": "Not applicable", "source_url": null, "source_type": "Not applicable".
+"site_and_contact.start_date.corroborating_source_url": null unless a second valid source (government registry or the official website itself, never an aggregator or directory) confirms the date.
 "name_variations": a name that was not found is {"value": "Not found on the official website.", "source_url": null}. One name is never repeated across fields. "legal_name" always carries its legal tail, otherwise it is the fallback phrase.
 "social_media_identifiers": "value" is the full profile URL (LinkedIn as the base company page URL, no sub-paths or query strings). Each carries its own "source_url". A platform not found is {"value": "Not found on the official website.", "source_url": null, "note": null}. Use "note" (a string) only for a methodology flag such as "SMI belongs to parent/group entity — target entity SMI not found on website."; otherwise null. "other" is [] when there are none.
 "email_default_structure.value": must be EXACTLY one of the RTS options listed at the end of this section, or the fallback phrase. Never write a pattern such as {first}@domain. "sample_emails_observed" lists the real email addresses it was based on ([] if none).
 "management": [] is permitted only after the full mandatory management extraction protocol found no entry that meets all three hard conditions. "titles" holds every title exactly as written; "is_founder" follows the Founder rule; "regional_title_equivalent" is null unless the regional equivalence rule was applied.
 "industry_classification.primary_industry_code": "number" and "name" exactly as in the approved taxonomy, otherwise both are "Not defined in methodology.". "secondary_industry_codes": [] when there are none.
 "verticals.assigned": [] when no vertical passes the gate. "gate_question_passed": the gate question(s) the vertical passed.
-"description": "classification_prefix" is the first phrase (e.g. "Designer of"), "transition_phrase" the connecting phrase used (e.g. "intended for"). "business_description" is the first sentence and "full_description" the second sentence, each exactly as the Section 9 rules require, one string each.
-"employee_count.current": a dated count, or the fallback phrase in "count" and "date" with "source_url" null. "history" is [] when there is none.
+"description": "classification_prefix" is the first phrase (e.g. "Designer of"). "transition_phrase" is the connecting phrase that actually appears in "business_description" ("intended for", "designed for" / "designed to", "catering to", "based in", "headquartered in"). "business_description" is the first sentence and "full_description" the second sentence, each exactly as the Section 9 rules require, one string each.
+"employee_count.current": a dated count with its source. The date "<today's date as DD Mon YYYY> (website, assumed current)" may be used ONLY when the count and its source_url are on the official website. A count from an external source carries the date of that source, and an external count with no determinable date is not extractable. If no valid count exists, "count" and "date" are the fallback phrase and "source_url" is null. "history" is [] when there is none.
 "sic_codes" / "naics_codes": at most 3 entries ranked 1 to 3, exactly one with "best_fit": true, 4-digit SIC and 6-digit NAICS codes with the exact manual titles. If no code applies, emit one object whose "code" is "Not defined in methodology." and "title" is "No SIC code identified — company's primary activity falls outside standard classification scope." (or the NAICS equivalent).
 "keywords": at least 10 entries, each 2 to 3 words, each passing the Investor Search Test. Fewer than 10 means extraction is incomplete: keep extracting.
 "not_for_profit_flag": for a not-for-profit organisation set "is_not_for_profit": true and "note": "Incorrect workflow — not-for-profit organisation. Should not be tracked by any team unless published." and still emit the full extraction.

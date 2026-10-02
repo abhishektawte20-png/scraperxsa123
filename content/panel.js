@@ -273,7 +273,7 @@
     ]));
 
     const promptLabel = element("label", { text: "Prompt for ScraperX" });
-    promptLabel.appendChild(globalThis.SXRTS.ui?.help("Send this to your ScraperX agent. It is just the domain; the agent's own instructions define the output format.") ?? document.createTextNode(""));
+    promptLabel.appendChild(globalThis.SXRTS.ui?.help("Send this to your ScraperX agent. It starts with the domain, then gives the exact JSON output format this tool validates.") ?? document.createTextNode(""));
     const promptArea = element("textarea", { id: "sxrts-prompt" });
     promptArea.readOnly = true;
     identityCard.appendChild(element("div", { className: "field" }, [promptLabel, promptArea]));
@@ -313,10 +313,10 @@
     const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", tip: "Saved changes applied to the agent's output before it reaches RTS. Example: keep only the Facebook handle instead of the whole URL." });
     rulesButton.addEventListener("click", () => rulesUi?.open());
 
-    const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the target domain. Paste it into your ScraperX agent and run it. The agent's own instructions hold the methodology and the output format." });
+    const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
     identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton]));
-    identityCard.appendChild(element("p", { className: "helptext", text: "Send only the domain. The methodology and the JSON output format live in the agent's own instructions, so nothing here can contradict them." }));
+    identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
     // ---------- Card 2: paste + validate ----------
@@ -688,7 +688,7 @@
       lastIssues = [];
       copyFixButton.classList.add("hidden");
       try {
-        lastValidated = globalThis.SXRTS.schema.validate(textarea.value);
+        lastValidated = globalThis.SXRTS.schema.validate(textarea.value, { domain: domainInput.value });
         const customResult = globalThis.SXRTS.customFields?.validatePayload(lastValidated.custom);
         if (customResult) {
           if (customResult.errors.length) throw new globalThis.SXRTS.schema.SchemaValidationError(customResult.errors);
@@ -710,7 +710,11 @@
         }
         if (error instanceof globalThis.SXRTS.schema.SchemaValidationError) {
           const halted = error.errors.some((e) => /^\[HALTED\]/.test(e));
-          renderValidation(false, error.errors.map((text) => ({ kind: "err", text })), halted ? "The agent halted this extraction" : "The output broke the rules below");
+          // Show everything in one pass: the blocking errors first, then the
+          // warnings, so a re-run is never needed just to discover the rest.
+          const contract = globalThis.SXRTS.rovoContract;
+          const extra = (error.issues ?? []).filter((item) => item.severity !== "error").map((item) => ({ kind: item.severity === "warning" ? "warn" : "info", text: contract.formatIssue(item) }));
+          renderValidation(false, [...error.errors.map((text) => ({ kind: "err", text })), ...extra], halted ? "The agent halted this extraction" : "The output broke the rules below");
         } else {
           setStatus(validateStatus, String(error), "error");
         }
