@@ -28,6 +28,7 @@ import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
 import "../core/promptBuilder.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 
 const { schema, identityLock, duplicates, cache, stateMachine, registry, executionPlan, promptBuilder } = globalThis.SXRTS;

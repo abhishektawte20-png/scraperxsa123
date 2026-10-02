@@ -24,12 +24,14 @@ import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
 import "../core/promptBuilder.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../core/workflows/customField.js";
 import "../content/teach.js";
+import "../content/ui.js";
 import "../content/panel.js";
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,7 +92,7 @@ test("teach a field by clicking it on the page, then it flows through prompt, va
   // Open the teach modal from the panel.
   buttonByText(shadow.querySelector(".card"), "Teach new field").click();
   const card = shadow.querySelector(".teach-card");
-  assert.match(card.textContent, /No taught fields yet/);
+  assert.match(card.textContent, /Nothing mapped yet/);
 
   // New field wizard -> pick the input on the page.
   buttonByText(card, "Teach new field").click();

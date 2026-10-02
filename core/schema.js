@@ -538,6 +538,7 @@
       // Taught fields are validated against their stored definitions by
       // SXRTS.customFields (the schema itself stays storage-free and pure).
       custom: isPlainObject(parsed.custom) ? parsed.custom : undefined,
+      extras: isPlainObject(parsed.extras) ? parsed.extras : undefined,
       rovo,
       rulesApplied,
       warnings

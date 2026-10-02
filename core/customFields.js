@@ -70,6 +70,21 @@
       validateSelectors("The Add button", def.addButton?.selectors, errors);
     }
     validateSelectors("The Save button", def.saveButton?.selectors, errors);
+    if (def.binds !== undefined) errors.push(...validateBinds(def));
+    return errors;
+  }
+
+  // A "bound" definition fills an RTS field from an agent-report field (see
+  // core/outputFields.js) instead of from the optional "custom" JSON object.
+  function validateBinds(def) {
+    const field = globalThis.SXRTS.outputFields?.get(def.binds?.path);
+    if (!field) return ["The report field this mapping fills is not recognised."];
+    const errors = [];
+    if (def.kind !== (field.kind === "single" ? "single" : "record")) errors.push(`${field.label} must be mapped as a ${field.kind === "single" ? "single field" : "repeatable record"}.`);
+    const outKeys = field.keys.map((k) => k.key);
+    for (const f of def.fields || []) {
+      if (!outKeys.includes(def.binds.map?.[f.key])) errors.push(`Pick which ${field.label} value goes into "${f.key}".`);
+    }
     return errors;
   }
 
@@ -91,6 +106,21 @@
     return cached.find((def) => def.key === key) || null;
   }
 
+  const getBoundDef = (path) => cached.find((def) => def.binds?.path === path) || null;
+  const isBound = (def) => Boolean(def?.binds);
+
+  // The definition-shaped record for a bound field: each RTS sub-field takes
+  // the report value it was mapped to.
+  function toDefRecord(def, outRecord) {
+    const record = { action: outRecord?.action || "addIfMissing", source: outRecord?.source ?? null };
+    for (const field of def.fields) {
+      const outKey = def.binds.map[field.key];
+      const value = outRecord?.[outKey];
+      record[field.key] = value === undefined ? null : value;
+    }
+    return record;
+  }
+
   async function persist(next) {
     await chrome.storage.local.set({ [STORAGE_KEY]: next });
     cached = next;
@@ -102,7 +132,8 @@
     const reserved = ["nameVariations", "emailDefaultStructure", "websiteAddresses"];
     if (reserved.includes(def.key)) throw new Error(`"${def.key}" is already a built-in field name.`);
     const record = { ...def, updatedAt: new Date().toISOString() };
-    await persist([...cached.filter((existing) => existing.key !== def.key), record]);
+    // One mapping per report field: saving again replaces the earlier one.
+    await persist([...cached.filter((existing) => existing.key !== def.key && !(def.binds && existing.binds?.path === def.binds.path)), record]);
     return record;
   }
 
@@ -115,7 +146,8 @@
   }
 
   function defForJsonPath(jsonPath) {
-    return typeof jsonPath === "string" && jsonPath.startsWith("custom.") ? getDefinition(jsonPath.slice("custom.".length)) : null;
+    if (typeof jsonPath === "string" && jsonPath.startsWith("custom.")) return getDefinition(jsonPath.slice("custom.".length));
+    return getBoundDef(jsonPath);
   }
 
   function findOption(field, value) {
@@ -164,7 +196,8 @@
   // Validates the pasted top-level "custom" object against the taught
   // definitions. Unknown keys are warnings (ignored), not errors, matching
   // how the schema treats unrecognised built-in keys.
-  function validatePayload(custom, defs = cached) {
+  function validatePayload(custom, allDefs = cached) {
+    const defs = allDefs.filter((def) => !def.binds);
     const errors = [];
     const warnings = [];
     const value = {};
@@ -200,7 +233,8 @@
   // For the preview editor: the dropdown options of a custom record's field.
   function optionsFor(jsonPath, fieldKey) {
     const def = defForJsonPath(jsonPath);
-    const field = def?.fields.find((f) => f.key === fieldKey);
+    const sub = def?.binds ? Object.entries(def.binds.map).find(([, outKey]) => outKey === fieldKey)?.[0] : fieldKey;
+    const field = def?.fields.find((f) => f.key === sub);
     if (!field || field.kind !== "select") return null;
     return { values: field.options.map((o) => o.label), allowBlank: true };
   }
@@ -211,7 +245,8 @@
 
   // Pieces the prompt builder splices in: the JSON shape of "custom", the
   // per-field description lines, and the supported-values catalogs.
-  function promptParts(defs = cached) {
+  function promptParts(allDefs = cached) {
+    const defs = allDefs.filter((def) => !def.binds);
     if (!defs.length) return null;
     const shape = {};
     const notes = [];
@@ -240,7 +275,7 @@
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.customFields = {
     ACTIONS, KEY_PATTERN, load, getCached, getDefinition, saveDefinition, removeDefinition,
-    validateDefinition, validateRecord, validatePayload, normalizeRecord, hasAnyValue,
+    validateDefinition, validateRecord, validatePayload, normalizeRecord, hasAnyValue, getBoundDef, isBound, toDefRecord,
     jsonPathFor, defForJsonPath, optionsFor, promptParts, findOption
   };
 })();

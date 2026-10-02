@@ -14,6 +14,7 @@ import "../registry/businessEntity.general.js";
 import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
 

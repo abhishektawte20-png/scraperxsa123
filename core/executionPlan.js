@@ -37,6 +37,9 @@
       if (value === undefined || value === null) continue;
       const records = source.kind === "array" ? value : [value];
       const registryEntry = registry.getField(source.jsonPath);
+      // A field the researcher mapped with "Map this field" becomes runnable
+      // (native workflows always win over a mapping).
+      const bound = registryEntry?.evidenceStatus === "ready" ? null : globalThis.SXRTS.customFields?.getBoundDef(source.jsonPath);
 
       records.forEach((record, index) => {
         if (!record) return;
@@ -48,7 +51,7 @@
         // proposed record can ever be written, so every subsequent one is
         // skipped here rather than silently reported as applied later.
         const isWebsiteAddressOverflow = source.jsonPath === "businessEntity.websiteAddresses" && index > 0;
-        const skipReason = isWebsiteAddressOverflow
+        const skipReason = bound ? null : isWebsiteAddressOverflow
           ? "RTS has only one Website Address field; only the first proposed value can ever be applied."
           : !registryEntry
             ? "No selector registry entry exists for this field yet."
@@ -59,8 +62,9 @@
         actions.push({
           actionId: `A${counter}`,
           profileIdentity: validated.profileIdentity,
-          area: registryEntry?.area ?? null,
-          section: registryEntry?.section ?? null,
+          area: bound ? "Mapped field" : (registryEntry?.area ?? null),
+          section: bound ? bound.label : (registryEntry?.section ?? null),
+          customKey: bound ? bound.key : undefined,
           jsonPath: source.jsonPath,
           recordIndex: source.kind === "array" ? index : null,
           operation: record.action,
@@ -82,9 +86,38 @@
       });
     }
 
+    // Report fields with no native workflow (address, start date, ...): shown
+    // as cards so each can be mapped, and runnable once it is.
+    for (const field of (globalThis.SXRTS.outputFields?.FIELDS ?? []).filter((f) => f.path.startsWith("extras."))) {
+      const bound = globalThis.SXRTS.customFields?.getBoundDef(field.path);
+      globalThis.SXRTS.outputFields.recordsFor(validated, field.path).forEach((record, index) => {
+        if (record.action === "skip") return;
+        counter += 1;
+        actions.push({
+          actionId: `A${counter}`,
+          profileIdentity: validated.profileIdentity,
+          area: bound ? "Mapped field" : field.area,
+          section: bound ? bound.label : field.label,
+          customKey: bound ? bound.key : undefined,
+          jsonPath: field.path,
+          recordIndex: field.kind === "list" ? index : null,
+          operation: record.action,
+          currentValue: null,
+          proposedValue: record,
+          source: record.source ?? null,
+          duplicateStatus: "unknown",
+          conflictStatus: "unknown",
+          saveScope: bound?.label ?? null,
+          executionStatus: bound ? "pending" : "skipped",
+          skipReason: bound ? null : "No selector registry entry exists for this field yet.",
+          verificationResult: null
+        });
+      });
+    }
+
     // Taught fields: validated.custom is already checked against the stored
     // definitions (see SXRTS.customFields.validatePayload).
-    for (const def of globalThis.SXRTS.customFields?.getCached() ?? []) {
+    for (const def of (globalThis.SXRTS.customFields?.getCached() ?? []).filter((d) => !d.binds)) {
       const value = validated.custom?.[def.key];
       if (value === undefined || value === null) continue;
       const records = def.kind === "record" ? value : [value];
@@ -98,6 +131,7 @@
           profileIdentity: validated.profileIdentity,
           area: "Taught field",
           section: def.label,
+          customKey: def.key,
           jsonPath: `custom.${def.key}`,
           recordIndex: def.kind === "record" ? index : null,
           operation: record.action,

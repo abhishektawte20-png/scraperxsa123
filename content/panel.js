@@ -21,6 +21,7 @@
     if (options.checked !== undefined) node.checked = options.checked;
     if (options.disabled !== undefined) node.disabled = options.disabled;
     if (options.rows) node.rows = options.rows;
+    if (options.tip) node.setAttribute("data-tip", options.tip);
     for (const child of children) node.appendChild(child);
     return node;
   }
@@ -39,147 +40,176 @@
       :host { all: initial; }
       * { box-sizing: border-box; }
       .panel {
+        --navy: #0b2f52; --blue: #124a80; --blue-soft: #eaf2fb; --ink: #1b2430; --muted: #6b778c; --line: #e3e8ef;
+        --ok: #166f4c; --ok-soft: #e7f6ef; --warn: #8a5a00; --warn-soft: #fff6e0; --bad: #a3291c; --bad-soft: #fdeeec;
         position: fixed; z-index: 2147483647; right: 18px; top: 18px;
-        width: min(600px, calc(100vw - 36px)); max-height: calc(100vh - 36px); overflow: auto;
-        background: #ffffff; color: #1b2430; border: 1px solid #e2e6ed; border-radius: 14px;
-        box-shadow: 0 20px 48px rgba(15, 30, 60, .22), 0 2px 8px rgba(15,30,60,.10);
-        font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        width: min(620px, calc(100vw - 36px)); max-height: calc(100vh - 36px); overflow: auto;
+        background: #f5f7fa; color: var(--ink); border: 1px solid #d8dfe9; border-radius: 16px;
+        box-shadow: 0 24px 60px rgba(11, 30, 60, .28), 0 2px 10px rgba(11, 30, 60, .10);
+        font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+        scrollbar-width: thin;
       }
       .head {
-        position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px;
-        padding: 16px 18px; background: linear-gradient(135deg, #0b2f52, #124a80); color: #fff;
-        border-radius: 13px 13px 0 0;
+        position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px;
+        padding: 14px 16px 14px 18px; color: #fff; border-radius: 15px 15px 0 0;
+        background: radial-gradient(120% 160% at 0% 0%, #1b6aa8 0%, #124a80 45%, #0b2f52 100%);
+        box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 6px 16px rgba(11,30,60,.18);
       }
-      .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+      .brand { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
       .brand-mark {
-        width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.14);
-        display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px;
-        letter-spacing: -0.5px; flex-shrink: 0;
+        width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(145deg, rgba(255,255,255,.28), rgba(255,255,255,.08)); border: 1px solid rgba(255,255,255,.28);
+        font-weight: 800; font-size: 15px; letter-spacing: -.5px; box-shadow: 0 2px 8px rgba(0,0,0,.18);
       }
-      .brand-text h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .1px; }
-      .brand-text p { margin: 1px 0 0; font-size: 11px; color: rgba(255,255,255,.72); }
+      .brand-text h1 { margin: 0; font-size: 17px; font-weight: 750; letter-spacing: .1px; line-height: 1.15; }
+      .brand-text .sub { margin: 1px 0 0; font-size: 11.5px; color: rgba(255,255,255,.80); }
+      .brand-text .by { margin: 1px 0 0; font-size: 10.5px; color: rgba(255,255,255,.62); letter-spacing: .2px; }
+      .ver { font-size: 10px; font-weight: 650; padding: 2px 8px; border-radius: 100px; background: rgba(255,255,255,.16); color: #fff; }
       .close {
-        width: 28px; height: 28px; border: 0; border-radius: 7px; background: rgba(255,255,255,.12);
-        color: #fff; font-size: 18px; line-height: 1; cursor: pointer; flex-shrink: 0;
+        width: 30px; height: 30px; border: 0; border-radius: 8px; background: rgba(255,255,255,.14);
+        color: #fff; font-size: 19px; line-height: 1; cursor: pointer; flex-shrink: 0; transition: background .12s;
       }
-      .close:hover { background: rgba(255,255,255,.22); }
+      .close:hover { background: rgba(255,255,255,.28); }
 
-      .steps { display: flex; padding: 12px 18px 0; gap: 4px; }
-      .step {
-        flex: 1; text-align: center; font-size: 10.5px; font-weight: 650; color: #8993a4;
-        padding: 7px 4px; border-bottom: 2.5px solid #e2e6ed; text-transform: uppercase; letter-spacing: .3px;
-      }
-      .step.active { color: #124a80; border-bottom-color: #124a80; }
-      .step.done { color: #1a8a5f; border-bottom-color: #1a8a5f; }
+      .steps { display: flex; gap: 6px; padding: 14px 18px 4px; }
+      .step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #8993a4; font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .3px; text-align: center; position: relative; }
+      .step::before { content: attr(data-n); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        background: #fff; border: 2px solid #d3dbe7; color: #8993a4; font-size: 11px; font-weight: 750; z-index: 1; }
+      .step::after { content: ""; position: absolute; top: 11px; left: calc(50% + 14px); right: calc(-50% + 14px); height: 2px; background: #d3dbe7; }
+      .step:last-child::after { display: none; }
+      .step.active { color: var(--blue); }
+      .step.active::before { border-color: var(--blue); color: var(--blue); box-shadow: 0 0 0 4px rgba(18,74,128,.12); }
+      .step.done { color: var(--ok); }
+      .step.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: #fff; }
+      .step.done::after { background: var(--ok); }
 
-      .body { padding: 16px 18px 20px; }
-      .card {
-        border: 1px solid #e6e9ef; border-radius: 10px; padding: 14px; margin: 0 0 14px; background: #fbfcfe;
-      }
-      .card h2 {
-        margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
-        color: #47536b;
-      }
-      .notice {
-        margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #b8860b;
-        background: #fff8e6; color: #6b5100; font-size: 12px;
-      }
-      .cache-notice {
-        margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #124a80;
-        background: #eef5fc; color: #0b2f52; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      }
+      .body { padding: 12px 18px 6px; }
+      .card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 0 0 14px; background: #fff; box-shadow: 0 1px 2px rgba(20,40,70,.04); }
+      .card h2 { margin: 0 0 12px; font-size: 11.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .5px; color: var(--blue); display: flex; align-items: center; gap: 4px; }
+      .notice { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid #f0dcaa; background: var(--warn-soft); color: var(--warn); font-size: 12px; }
+      .cache-notice { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid #cfe0f3; background: var(--blue-soft); color: var(--navy); font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
       .cache-notice .spacer { flex: 1; }
 
-      .field { margin: 0 0 10px; }
+      .field { margin: 0 0 12px; }
       .field:last-child { margin-bottom: 0; }
-      label { display: block; margin: 0 0 4px; font-weight: 650; font-size: 12px; color: #33405a; }
+      label { display: block; margin: 0 0 5px; font-weight: 650; font-size: 12px; color: #33405a; }
       input[type="text"], input:not([type]), textarea, select {
-        width: 100%; border: 1px solid #ccd3de; border-radius: 7px; padding: 7px 9px; font: inherit;
-        background: #fff; color: #1b2430;
+        width: 100%; border: 1px solid #cdd5e1; border-radius: 8px; padding: 8px 10px; font: inherit; background: #fff; color: var(--ink); transition: border-color .12s, box-shadow .12s;
       }
-      input:focus, textarea:focus, select:focus { outline: 2px solid #124a80; outline-offset: 1px; }
-      textarea { min-height: 96px; resize: vertical; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+      input:focus, textarea:focus, select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(18,74,128,.16); }
+      textarea { min-height: 96px; resize: vertical; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
       #sxrts-response { min-height: 130px; }
+      #sxrts-prompt { min-height: 150px; background: #f8fafc; }
 
-      .row { display: flex; gap: 8px; }
+      .row { display: flex; gap: 10px; }
       .row > * { flex: 1; }
 
-      .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-      button.btn {
-        border: 1px solid #124a80; border-radius: 7px; padding: 8px 14px; background: #124a80; color: #fff;
-        font: 650 12.5px/1.2 inherit; cursor: pointer; transition: background .12s;
-      }
-      button.btn:hover:not(:disabled) { background: #0d3a66; }
-      button.btn.secondary { background: #fff; color: #124a80; }
-      button.btn.secondary:hover:not(:disabled) { background: #eef5fc; }
-      button.btn.danger { background: #fff; color: #a3291c; border-color: #d8b3ac; }
-      button.btn.danger:hover:not(:disabled) { background: #fdf1ef; }
-      button.btn.primary-cta { background: #1a8a5f; border-color: #1a8a5f; padding: 10px 18px; font-size: 13px; }
-      button.btn.primary-cta:hover:not(:disabled) { background: #166f4c; }
+      .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      button.btn { border: 1px solid var(--blue); border-radius: 8px; padding: 8px 14px; background: var(--blue); color: #fff; font: 650 12.5px/1.2 inherit; cursor: pointer; transition: background .12s, box-shadow .12s, transform .05s; }
+      button.btn:hover:not(:disabled) { background: #0d3a66; box-shadow: 0 2px 8px rgba(18,74,128,.28); }
+      button.btn:active:not(:disabled) { transform: translateY(1px); }
+      button.btn.secondary { background: #fff; color: var(--blue); }
+      button.btn.secondary:hover:not(:disabled) { background: var(--blue-soft); box-shadow: none; }
+      button.btn.danger { background: #fff; color: var(--bad); border-color: #e3bcb6; }
+      button.btn.danger:hover:not(:disabled) { background: var(--bad-soft); box-shadow: none; }
+      button.btn.primary-cta { background: linear-gradient(180deg, #1f9d6d, #178a5d); border-color: #178a5d; padding: 10px 20px; font-size: 13px; }
+      button.btn.primary-cta:hover:not(:disabled) { background: #146f4c; }
+      button.btn.map { padding: 5px 10px; font-size: 11.5px; background: #fff; color: #7a4a00; border-color: #e6c27a; }
+      button.btn.map:hover:not(:disabled) { background: var(--warn-soft); box-shadow: none; }
       button.btn:disabled { opacity: .45; cursor: not-allowed; }
 
-      .status { min-height: 18px; margin: 4px 0 0; color: #47536b; white-space: pre-wrap; font-size: 12px; }
-      .status.error { color: #a3291c; }
-      .status.success { color: #166f4c; }
+      .status { min-height: 18px; margin: 8px 0 0; color: #47536b; white-space: pre-wrap; font-size: 12px; }
+      .status.error { color: var(--bad); }
+      .status.success { color: var(--ok); }
+      .status.warn { color: var(--warn); }
+      .verdict { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; font-weight: 650; font-size: 12.5px; }
+      .verdict.ok { background: var(--ok-soft); color: var(--ok); }
+      .verdict.bad { background: var(--bad-soft); color: var(--bad); }
+      .verdict .count { margin-left: auto; font-weight: 600; font-size: 11.5px; opacity: .85; }
+      .issues { display: grid; gap: 6px; margin-top: 8px; }
+      .issue { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45; white-space: normal; }
+      .issue.err { background: var(--bad-soft); color: #7e1f15; }
+      .issue.warn { background: var(--warn-soft); color: #6b4700; }
+      .issue.info { background: var(--blue-soft); color: var(--navy); }
+      .issue .chip { font: 700 10px/1.5 ui-monospace, "SF Mono", Menlo, monospace; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,.08); white-space: nowrap; }
+      .issue .path { font-weight: 650; }
 
-      .action-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; max-height: 440px; overflow-y: auto; padding-right: 2px; }
-      .action-card { border: 1px solid #e2e6ed; border-radius: 8px; padding: 10px 12px; background: #fff; }
-      .action-card-skipped { opacity: .6; background: #fbfcfe; }
-      .action-card-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
-      .action-card-head input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; width: auto; }
+      .group-title { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; font-size: 11.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .4px; color: #47536b; }
+      .group-title:first-child { margin-top: 2px; }
+      .group-title .n { padding: 1px 8px; border-radius: 100px; background: #e7ecf3; font-size: 10.5px; }
+      .group-title.ready .n { background: var(--ok-soft); color: var(--ok); }
+      .group-title.waiting .n { background: var(--warn-soft); color: var(--warn); }
+      .group-note { font-size: 11.5px; color: var(--muted); margin: -2px 0 8px; }
+      .action-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+      .action-card { border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; background: #fff; transition: box-shadow .12s; }
+      .action-card:hover { box-shadow: 0 2px 8px rgba(20,40,70,.08); }
+      .action-card-skipped { background: #fbfaf6; border-style: dashed; border-color: #e5d9bd; }
+      .action-card-head { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 8px; }
+      .action-card-head input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; width: auto; accent-color: var(--blue); }
       .action-card-title { flex: 1; min-width: 0; }
-      .action-card-field { font-weight: 700; font-size: 12px; color: #1b2430; overflow-wrap: anywhere; }
-      .action-card-area { font-size: 10.5px; color: #7a869c; text-transform: uppercase; letter-spacing: .3px; margin-top: 1px; }
-      .value-fields { display: flex; flex-direction: column; gap: 6px; padding-left: 24px; }
-      .value-field { display: grid; grid-template-columns: 88px 1fr; gap: 8px; align-items: start; }
-      .value-field-label { font-size: 10.5px; font-weight: 650; color: #7a869c; text-transform: uppercase; letter-spacing: .2px; padding-top: 7px; }
+      .action-card-field { font-weight: 700; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+      .action-card-area { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; margin-top: 1px; }
+      .value-fields { display: flex; flex-direction: column; gap: 6px; padding-left: 26px; }
+      .value-field { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: start; }
+      .value-field-label { font-size: 10.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .2px; padding-top: 8px; }
       .value-field input, .value-field textarea { font-size: 12px; }
-      .action-reason { padding-left: 24px; margin-top: 6px; font-size: 11px; color: #974f0c; }
-      .badge { display: inline-block; padding: 2px 7px; border-radius: 100px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .2px; flex-shrink: 0; }
-      .badge-pending { background: #eef5fc; color: #124a80; }
-      .badge-skipped { background: #eef0f4; color: #7a869c; }
-      .badge-saved { background: #e5f6ee; color: #166f4c; }
-      .badge-failed { background: #fdecea; color: #a3291c; }
-      .hidden { display: none; }
-      .helptext { font-size: 11px; color: #7a869c; margin-top: 6px; }
+      .action-card-skipped .value-field.meta { display: none; }
+      .action-card-skipped .value-field input, .action-card-skipped .value-field textarea, .action-card-skipped .value-field select { background: #faf8f2; color: #55607a; }
+      .action-reason { padding-left: 26px; margin-top: 7px; font-size: 11.5px; color: #8a5a00; }
+      .map-row { padding-left: 26px; margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .map-row .why { font-size: 11px; color: var(--muted); }
+      .badge { display: inline-block; padding: 3px 9px; border-radius: 100px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .25px; flex-shrink: 0; }
+      .badge-pending { background: var(--blue-soft); color: var(--blue); }
+      .badge-skipped { background: #eef0f4; color: var(--muted); }
+      .badge-waiting { background: var(--warn-soft); color: var(--warn); }
+      .badge-saved { background: var(--ok-soft); color: var(--ok); }
+      .badge-failed { background: var(--bad-soft); color: var(--bad); }
+      .hidden { display: none !important; }
+      .helptext { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+      details.more { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 8px 12px; }
+      details.more summary { cursor: pointer; font-weight: 650; font-size: 12px; color: #33405a; }
+
+      .foot { text-align: center; padding: 6px 18px 18px; font-size: 11px; color: var(--muted); }
+      .foot strong { color: var(--navy); font-weight: 700; }
 
       .summary-header { margin-bottom: 14px; }
-      .summary-header h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #1b2430; }
-      .summary-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+      .summary-header h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--ink); }
+      .summary-stats { display: flex; gap: 12px; flex-wrap: wrap; font-weight: 650; }
       .stat-item { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 650; }
-      .stat-item.success { background: #e5f6ee; color: #166f4c; }
-      .stat-item.error { background: #fdecea; color: #a3291c; }
-      .stat-item.skipped { background: #eef0f4; color: #7a869c; }
-
-      .summary-item { margin-bottom: 10px; padding: 10px; border-radius: 8px; border-left: 3px solid #e2e6ed; background: #fbfcfe; }
+      .stat-item.success { background: var(--ok-soft); color: var(--ok); }
+      .stat-item.error { background: var(--bad-soft); color: var(--bad); }
+      .stat-item.skipped { background: #eef0f4; color: var(--muted); }
+      .summary-item { margin-bottom: 10px; padding: 10px; border-radius: 8px; border-left: 3px solid var(--line); background: #fbfcfe; }
       .summary-item-success { border-left-color: #1a8a5f; background: #f0faf7; }
       .summary-item-skipped { border-left-color: #9ca3af; background: #f5f5f7; opacity: .85; }
       .summary-item-error { border-left-color: #dc2626; background: #fef2f2; }
       .summary-item-header { display: flex; gap: 10px; align-items: flex-start; }
       .summary-icon { font-size: 16px; font-weight: 700; flex-shrink: 0; width: 20px; text-align: center; }
       .summary-item-text { flex: 1; min-width: 0; }
-      .summary-field { font-size: 12px; font-weight: 700; color: #1b2430; }
+      .summary-field { font-size: 12px; font-weight: 700; color: var(--ink); }
       .summary-message { font-size: 12px; color: #47536b; margin-top: 2px; }
-      .summary-detail { font-size: 11px; color: #6b5100; background: #fff8e6; padding: 8px; border-radius: 6px; margin-top: 8px; }
+      .summary-detail { font-size: 11px; color: #6b5100; background: var(--warn-soft); padding: 8px; border-radius: 6px; margin-top: 8px; }
       .summary-warning { white-space: pre-wrap; color: #6b5100; margin-top: 12px; padding-top: 12px; border-top: 1px solid #ffd9a8; font-size: 11px; }
 
       .html-capture-modal { display: none; position: fixed; z-index: 2147483648; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, .5); }
       .html-capture-modal.open { display: flex; align-items: center; justify-content: center; }
       .html-capture-content { background: #fff; border-radius: 14px; width: 90vw; max-width: 900px; max-height: 90vh; overflow: auto; padding: 24px; box-shadow: 0 20px 48px rgba(15, 30, 60, .22); }
-      .html-capture-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #e2e6ed; padding-bottom: 12px; }
-      .html-capture-header h2 { margin: 0; font-size: 16px; color: #1b2430; }
-      .html-capture-close { background: none; border: 0; font-size: 24px; color: #7a869c; cursor: pointer; padding: 0; width: 24px; height: 24px; }
-      .html-capture-close:hover { color: #1b2430; }
-      .html-capture-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e2e6ed; }
+      .html-capture-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+      .html-capture-header h2 { margin: 0; font-size: 16px; color: var(--ink); }
+      .html-capture-close { background: none; border: 0; font-size: 24px; color: var(--muted); cursor: pointer; padding: 0; width: 24px; height: 24px; }
+      .html-capture-close:hover { color: var(--ink); }
+      .html-capture-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
       .html-capture-section:last-child { border-bottom: none; }
-      .html-capture-field-name { font-weight: 700; font-size: 12px; color: #124a80; text-transform: uppercase; margin-bottom: 8px; letter-spacing: .3px; }
-      .html-capture-code { background: #f5f5f7; border: 1px solid #e2e6ed; border-radius: 6px; padding: 10px; overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: #1b2430; max-height: 200px; }
-      .html-capture-value { color: #166f4c; font-weight: 600; }
+      .html-capture-field-name { font-weight: 700; font-size: 12px; color: var(--blue); text-transform: uppercase; margin-bottom: 8px; letter-spacing: .3px; }
+      .html-capture-code { background: #f5f5f7; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--ink); max-height: 200px; }
+      .html-capture-value { color: var(--ok); font-weight: 600; }
       .html-capture-buttons { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-      .html-capture-copy-btn { background: #124a80; color: #fff; border: 1px solid #124a80; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
-      .html-capture-copy-btn:hover { background: #0d3a66; }
+      .html-capture-copy-btn { background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+      ${globalThis.SXRTS.ui?.TIP_CSS ?? ""}
     `;
     shadow.appendChild(style);
+    globalThis.SXRTS.ui?.installTips(shadow);
+    const tipText = (node, text) => { node.setAttribute("data-tip", text); return node; };
 
     // ---------- Header ----------
     const panel = element("div", { className: "panel" });
@@ -189,15 +219,17 @@
         element("div", { className: "brand-mark", text: "SX" }),
         element("div", { className: "brand-text" }, [
           element("h1", { text: "ScraperX" }),
-          element("p", { text: "RTS Profile Assistant" })
+          element("p", { className: "sub", text: "RTS Profile Assistant" }),
+          element("p", { className: "by", text: globalThis.SXRTS.ui?.CREDIT ?? "Developed by Abhishek Tawte" })
         ])
       ]),
+      ...(globalThis.SXRTS.ui?.version() ? [element("span", { className: "ver", text: `v${globalThis.SXRTS.ui.version()}` })] : []),
       closeButton
     ]));
 
     const stepBar = element("div", { className: "steps" });
     const steps = ["Identify", "Research", "Validate", "Preview & publish"];
-    const stepEls = steps.map((label) => element("div", { className: "step", text: label }));
+    const stepEls = steps.map((label, i) => { const node = element("div", { className: "step", text: label }); node.dataset.n = String(i + 1); return node; });
     for (const el of stepEls) stepBar.appendChild(el);
     panel.appendChild(stepBar);
 
@@ -210,7 +242,7 @@
     setStep(0);
 
     const body = element("div", { className: "body" });
-    body.appendChild(element("p", { className: "notice", text: "5 fields are live end to end: Name Variations, Website Address, Email Default Structure, Research Notes, and SIC codes. Everything else previews only — see docs/evidence-checklist.md. Fields you teach with \"Teach new field\" are filled too." }));
+    body.appendChild(element("p", { className: "notice", text: "Live end to end: Name Variations, Website Address, Email Default Structure, Research Notes and SIC codes. Any other field can be switched on in seconds: click \"Map this field\" on its row in the preview and point at the field in RTS." }));
 
     const cacheNotice = element("div", { className: "cache-notice hidden" });
     body.appendChild(cacheNotice);
@@ -241,6 +273,7 @@
     ]));
 
     const promptLabel = element("label", { text: "Prompt for ScraperX" });
+    promptLabel.appendChild(globalThis.SXRTS.ui?.help("Send this to your ScraperX agent. It contains the domain and the output checklist this tool validates.") ?? document.createTextNode(""));
     const promptArea = element("textarea", { id: "sxrts-prompt" });
     promptArea.readOnly = true;
     identityCard.appendChild(element("div", { className: "field" }, [promptLabel, promptArea]));
@@ -258,37 +291,43 @@
     // Taught fields feed the prompt, so it is rebuilt once they load and
     // whenever one is added or removed.
     globalThis.SXRTS.customFields?.load().then(regeneratePrompt);
-    const teach = globalThis.SXRTS.teach?.mount(shadow, { onChange: regeneratePrompt });
-    const teachButton = element("button", { className: "btn secondary", text: "Teach new field", type: "button", title: "Map a new RTS field by clicking it on the page; it is added to the prompt and filled from the pasted JSON." });
+    // Re-run validation after a mapping or rule changes so the preview updates by itself.
+    const revalidate = () => { if (lastValidated && textarea.value.trim()) validateButton.click(); };
+    const teach = globalThis.SXRTS.teach?.mount(shadow, {
+      onChange: () => { regeneratePrompt(); revalidate(); },
+      onMapped: (label) => setStatus(publishStatus, `Mapped "${label}". It is now in "Ready to publish" below.`, "success")
+    });
+    const teachButton = element("button", { className: "btn secondary", text: "Teach new field", type: "button", tip: "Teach the extension a brand-new RTS field, or review and delete your mappings. To fill a field the agent already researched, use \"Map this field\" on its row in the preview." });
     teachButton.addEventListener("click", () => teach?.open());
 
     // Saved output rules (e.g. "Facebook: keep only the handle") are applied
     // when the output is validated; changing a rule re-validates what is pasted.
     globalThis.SXRTS.outputRules?.load();
     const rulesUi = globalThis.SXRTS.rulesUi?.mount(shadow, {
-      onChange: () => { if (lastValidated && textarea.value.trim()) validateButton.click(); },
+      onChange: revalidate,
       getSample: (target) => {
         const applied = lastValidated?.rulesApplied?.find((r) => r.target === target);
         return applied?.before ?? globalThis.SXRTS.outputRules.refsFor(lastValidated, target)[0]?.get() ?? null;
       }
     });
-    const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", title: "Saved changes applied to the agent's output before it reaches RTS (for example: keep only the Facebook handle)." });
+    const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", tip: "Saved changes applied to the agent's output before it reaches RTS. Example: keep only the Facebook handle instead of the whole URL." });
     rulesButton.addEventListener("click", () => rulesUi?.open());
 
-    const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button" });
-    const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button" });
+    const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the message to send to your ScraperX agent: the domain plus the output checklist the extension validates. Paste it into the agent and run it." });
+    const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
     identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton]));
-    identityCard.appendChild(element("p", { className: "helptext", text: "The prompt is only the target domain. The methodology and the JSON output format live in the Rovo agent's own configuration; nothing here overrides them." }));
+    identityCard.appendChild(element("p", { className: "helptext", text: "The prompt is the domain plus a checklist of the output rules this tool validates. The methodology itself lives in the agent's own configuration; nothing here changes it." }));
     body.appendChild(identityCard);
 
     // ---------- Card 2: paste + validate ----------
     const jsonCard = element("div", { className: "card" });
     jsonCard.appendChild(element("h2", { text: "2-3 · Research in Rovo, then paste the result" }));
     const responseLabel = element("label", { text: "Paste the ScraperX agent output (text report or JSON)" });
+    responseLabel.appendChild(globalThis.SXRTS.ui?.help("Paste the whole report. Echoed instructions or chat text before or after it are ignored automatically.") ?? document.createTextNode(""));
     const textarea = element("textarea", { id: "sxrts-response", placeholder: "Paste the agent output here: the whole report is fine, extra text before or after it is ignored. Nothing is read from your clipboard automatically." });
     jsonCard.appendChild(element("div", { className: "field" }, [responseLabel, textarea]));
-    const validateButton = element("button", { className: "btn", text: "Validate JSON", type: "button" });
-    const copyFixButton = element("button", { className: "btn secondary hidden", text: "Copy correction prompt", type: "button", title: "A message for Rovo that lists exactly which output rules were broken." });
+    const validateButton = element("button", { className: "btn", text: "Validate JSON", type: "button", tip: "Checks the pasted report against the output rules and builds the preview. Nothing is written to RTS yet." });
+    const copyFixButton = element("button", { className: "btn secondary hidden", text: "Copy correction prompt", type: "button", tip: "Copies a message for the agent that lists exactly which rules were broken and how to fix each." });
     jsonCard.appendChild(element("div", { className: "buttons" }, [validateButton, copyFixButton]));
     const validateStatus = element("div", { className: "status" });
     jsonCard.appendChild(validateStatus);
@@ -298,14 +337,14 @@
     const previewCard = element("div", { className: "card hidden" });
     previewCard.appendChild(element("h2", { text: "4 · Preview, edit if needed, then publish" }));
     previewCard.appendChild(element("p", { className: "helptext", text: "Uncheck anything you don't want applied. Edit a field directly if only a small correction is needed — it's re-validated when you publish." }));
-    const rovoRows = element("details", { className: "hidden" });
+    const rovoRows = element("details", { className: "more hidden" });
     previewCard.appendChild(rovoRows);
     const actionList = element("div", { className: "action-list" });
     previewCard.appendChild(actionList);
-    const selectAllButton = element("button", { className: "btn secondary", text: "Select all pending", type: "button" });
-    const publishButton = element("button", { className: "btn primary-cta", text: "Publish selected to RTS", type: "button" });
-    const captureHtmlButton = element("button", { className: "btn secondary", text: "Capture field HTML", type: "button", title: "View the actual HTML of form fields to verify they are populated" });
-    const clearCacheButton = element("button", { className: "btn danger", text: "Clear cache for this profile", type: "button" });
+    const selectAllButton = element("button", { className: "btn secondary", text: "Select all pending", type: "button", tip: "Ticks every row that is ready to publish." });
+    const publishButton = element("button", { className: "btn primary-cta", text: "Publish selected to RTS", type: "button", tip: "Fills the ticked rows in the open RTS profile, clicks Save, then reads each value back to confirm it saved. The identity lock checks this is the right profile first." });
+    const captureHtmlButton = element("button", { className: "btn secondary", text: "Capture field HTML", type: "button", tip: "Shows the real HTML of the form fields on this page so you can check they were populated." });
+    const clearCacheButton = element("button", { className: "btn danger", text: "Clear cache for this profile", type: "button", tip: "Forgets the saved plan and the last pasted report for this profile." });
     previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, captureHtmlButton, clearCacheButton]));
     const publishStatus = element("div", { className: "status" });
     previewCard.appendChild(publishStatus);
@@ -406,7 +445,7 @@
       if (key === "confidence") {
         return { values: Array.from(globalThis.SXRTS.schema.CONFIDENCE_LEVELS), allowBlank: true };
       }
-      if (jsonPath.startsWith("custom.")) {
+      if (jsonPath.startsWith("custom.") || globalThis.SXRTS.customFields?.getBoundDef(jsonPath)) {
         return globalThis.SXRTS.customFields?.optionsFor(jsonPath, key) ?? null;
       }
       if (jsonPath === "businessEntity.nameVariations" && key === "type") {
@@ -443,7 +482,7 @@
 
       const fields = [];
       for (const [key, val] of Object.entries(proposedValue)) {
-        const fieldRow = element("div", { className: "value-field" });
+        const fieldRow = element("div", { className: `value-field${key === "action" || key === "confidence" ? " meta" : ""}` });
         const label = element("span", { className: "value-field-label", text: key });
         const currentText = val === null || val === undefined ? "" : String(val);
         const options = fieldOptionsFor(jsonPath, key);
@@ -456,7 +495,14 @@
             input.appendChild(element("option", { value: optionLabel, text: optionLabel }));
           }
           const matched = options.values.find((v) => v.toLowerCase() === currentText.toLowerCase());
-          input.value = matched || (options.allowBlank ? "" : options.values[0]);
+          if (!matched && currentText) {
+            // Never swap an unsupported value for another one behind the
+            // researcher's back: keep it visible so validation rejects it.
+            input.appendChild(element("option", { value: currentText, text: `${currentText} (not an available option)` }));
+            input.value = currentText;
+          } else {
+            input.value = matched || (options.allowBlank ? "" : options.values[0]);
+          }
         } else {
           const isLongText = typeof val === "string" && val.length > 60;
           input = isLongText ? element("textarea", { value: val, rows: 2 }) : element("input", { value: currentText });
@@ -496,14 +542,14 @@
       if (!isRunnable) editor.setDisabled(true);
 
       const waitingForEvidence = !isRunnable && /registry entry|evidence for this field/i.test(action.skipReason || "");
-      const statusBadge = element("span", { className: `badge badge-${isRunnable ? "pending" : "skipped"}`, text: waitingForEvidence ? "waiting for RTS evidence" : action.executionStatus });
+      const statusBadge = element("span", { className: `badge badge-${isRunnable ? "pending" : waitingForEvidence ? "waiting" : "skipped"}`, text: waitingForEvidence ? "waiting for RTS evidence" : action.executionStatus });
       const reasonEl = element("div", { className: "action-reason", text: action.skipReason || "" });
 
       const head = element("div", { className: "action-card-head" }, [
         checkbox,
         element("div", { className: "action-card-title" }, [
           element("div", { className: "action-card-field", text: `${action.jsonPath}${action.recordIndex !== null ? `[${action.recordIndex}]` : ""}` }),
-          element("div", { className: "action-card-area", text: action.area || "(unregistered)" })
+          element("div", { className: "action-card-area", text: (() => { const cat = globalThis.SXRTS.outputFields?.get(action.jsonPath); return cat ? `${action.area || cat.area} · ${cat.label}` : (action.area || "(unregistered)"); })() })
         ]),
         statusBadge
       ]);
@@ -511,7 +557,17 @@
       const prefix = action.recordIndex !== null ? `${action.jsonPath}[${action.recordIndex}]` : action.jsonPath;
       const ruleNotes = (lastValidated?.rulesApplied ?? []).filter((r) => r.path.startsWith(prefix))
         .map((r) => element("div", { className: "action-reason", text: `Output rule "${r.rule}" changed this value: ${r.before} → ${r.after}` }));
-      const card = element("div", { className: `action-card${isRunnable ? "" : " action-card-skipped"}` }, [head, editor.element, ...ruleNotes, reasonEl]);
+      const mappable = waitingForEvidence && globalThis.SXRTS.outputFields?.get(action.jsonPath);
+      const mapRow = [];
+      if (mappable) {
+        const mapButton = element("button", { className: "btn map", text: "Map this field", type: "button", tip: `Teach the extension where "${mappable.label}" goes in RTS. You open the field in RTS and click it (about 30 seconds). After that it is filled for every company.` });
+        mapButton.addEventListener("click", () => {
+          const samples = globalThis.SXRTS.outputFields.recordsFor(lastValidated, action.jsonPath);
+          teach?.open({ bindPath: action.jsonPath, samples });
+        });
+        mapRow.push(element("div", { className: "map-row" }, [mapButton, element("span", { className: "why", text: "Not filled yet: the extension doesn't know where this goes in RTS." })]));
+      }
+      const card = element("div", { className: `action-card${isRunnable ? "" : " action-card-skipped"}` }, [head, editor.element, ...ruleNotes, ...mapRow, reasonEl]);
 
       rowsByActionId.set(action.actionId, {
         card, action, checkbox, statusBadge, reasonEl, editor,
@@ -526,6 +582,7 @@
       entry.action.executionStatus = statusText;
       entry.statusBadge.textContent = statusText;
       entry.statusBadge.className = `badge badge-${statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "failed" : "skipped"}`;
+      entry.card.querySelector(".map-row")?.remove();
       entry.reasonEl.textContent = reasonText || "";
       entry.checkbox.checked = false;
       entry.checkbox.disabled = true;
@@ -548,12 +605,23 @@
       lastActions = globalThis.SXRTS.executionPlan.buildExecutionPlan(lastValidated);
       rowsByActionId.clear();
       actionList.replaceChildren();
-      for (const action of lastActions) actionList.appendChild(renderActionRow(action));
+      const ready = lastActions.filter((a) => a.executionStatus === "pending");
+      const waiting = lastActions.filter((a) => a.executionStatus !== "pending");
+      const groupTitle = (cls, text, n) => element("div", { className: `group-title ${cls}` }, [element("span", { text }), element("span", { className: "n", text: String(n) })]);
+      if (ready.length) {
+        actionList.appendChild(groupTitle("ready", "Ready to publish", ready.length));
+        for (const action of ready) actionList.appendChild(renderActionRow(action));
+      }
+      if (waiting.length) {
+        actionList.appendChild(groupTitle("waiting", "Waiting for RTS mapping", waiting.length));
+        actionList.appendChild(element("div", { className: "group-note", text: "The agent found these, but the extension doesn't know where they go in RTS yet. Click \"Map this field\" on a row to fix that." }));
+        for (const action of waiting) actionList.appendChild(renderActionRow(action));
+      }
       previewCard.classList.remove("hidden");
       renderRovoRows(lastValidated.rovo?.rows);
       const skippedCount = lastActions.filter((a) => a.executionStatus === "skipped").length;
       const runnable = lastActions.length - skippedCount;
-      setStatus(publishStatus, `${lastActions.length} proposed change(s): ${runnable} ready to publish, ${skippedCount} waiting for RTS evidence or skipped (not yet supported for automation).`, "");
+      setStatus(publishStatus, `${lastActions.length} proposed change(s): ${runnable} ready to publish, ${skippedCount} waiting for RTS mapping.`, "");
       publishButton.disabled = runnable === 0;
       setStep(3);
       persistToCache();
@@ -561,6 +629,38 @@
 
     let lastIssues = [];
     let lastFormat = "json";
+
+    // Structured validation result: a verdict banner, then one line per finding
+    // (errors red, warnings amber, notes blue), each with its rule code.
+    function renderValidation(ok, lines, headline) {
+      validateStatus.className = `status ${ok ? "success" : "error"}`;
+      validateStatus.replaceChildren();
+      const errors = lines.filter((l) => l.kind === "err").length;
+      const warnings = lines.filter((l) => l.kind === "warn").length;
+      const counts = ok
+        ? `${warnings} warning${warnings === 1 ? "" : "s"}`
+        : `${errors} problem${errors === 1 ? "" : "s"} to fix`;
+      validateStatus.appendChild(element("div", { className: `verdict ${ok ? "ok" : "bad"}` }, [
+        element("span", { text: ok ? "✓" : "✕" }),
+        element("span", { text: headline }),
+        element("span", { className: "count", text: counts })
+      ]));
+      if (!lines.length) return;
+      const list = element("div", { className: "issues" });
+      for (const line of lines) {
+        const match = line.text.match(/^\[(\w+)\]\s*(.*)$/);
+        const body = match ? match[2] : line.text;
+        const split = body.match(/^([A-Za-z_][\w.\[\]() -]*?):\s+(.*)$/);
+        list.appendChild(element("div", { className: `issue ${line.kind}` }, [
+          element("span", { className: "chip", text: match ? `[${match[1]}] ` : "• " }),
+          element("span", {}, split
+            ? [element("span", { className: "path", text: `${split[1]}: ` }), element("span", { text: split[2] })]
+            : [element("span", { text: body })])
+        ]));
+      }
+      validateStatus.appendChild(list);
+    }
+    const lineKind = (text) => (/^\[(NOISE_REMOVED|OUTPUT_RULE)\]/.test(text) ? "info" : "warn");
     copyFixButton.addEventListener("click", async () => {
       const text = globalThis.SXRTS.rovoContract.buildCorrectionPrompt(lastIssues, domainInput.value.trim(), lastFormat);
       try {
@@ -596,8 +696,7 @@
           lastValidated.warnings.push(...customResult.warnings);
         }
         globalThis.SXRTS.cache.setLastJson(lastJsonIdentity(), textarea.value).catch(() => {});
-        const warningText = lastValidated.warnings.length ? `\nWarnings:\n- ${lastValidated.warnings.join("\n- ")}` : "";
-        setStatus(validateStatus, `Valid (schema ${lastValidated.schemaVersion}). Building preview...${warningText}`, "success");
+        renderValidation(true, lastValidated.warnings.map((text) => ({ kind: lineKind(text), text })), "Valid — preview built below");
         setStep(2);
         buildPlan();
       } catch (error) {
@@ -609,7 +708,12 @@
           lastFormat = error.format || "json";
           copyFixButton.classList.remove("hidden");
         }
-        setStatus(validateStatus, error instanceof globalThis.SXRTS.schema.SchemaValidationError ? error.errors.join("\n") : String(error), "error");
+        if (error instanceof globalThis.SXRTS.schema.SchemaValidationError) {
+          const halted = error.errors.some((e) => /^\[HALTED\]/.test(e));
+          renderValidation(false, error.errors.map((text) => ({ kind: "err", text })), halted ? "The agent halted this extraction" : "The output broke the rules below");
+        } else {
+          setStatus(validateStatus, String(error), "error");
+        }
       }
     });
 
@@ -695,8 +799,11 @@
       // caught here with the same error text the initial paste would have
       // gotten, instead of reaching a live DOM write.
       function revalidateEditedValue(action, editedValue) {
-        const customDef = globalThis.SXRTS.customFields?.defForJsonPath(action.jsonPath);
-        if (customDef) return globalThis.SXRTS.customFields.validateRecord(customDef, editedValue);
+        const customDef = action.customKey ? globalThis.SXRTS.customFields?.getDefinition(action.customKey) : null;
+        if (customDef) {
+          const cf = globalThis.SXRTS.customFields;
+          return cf.validateRecord(customDef, customDef.binds ? cf.toDefRecord(customDef, editedValue) : editedValue);
+        }
         const [topKey, subKey] = action.jsonPath.split(".");
         const wrapped = {
           schemaVersion: "1.0",
@@ -806,18 +913,18 @@
         }
       }
 
-      const customEntries = selected.filter((entry) => entry.action.jsonPath.startsWith("custom."));
+      const customEntries = selected.filter((entry) => entry.action.customKey);
       for (const entry of customEntries) {
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
-        const def = globalThis.SXRTS.customFields?.defForJsonPath(entry.action.jsonPath);
+        const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
         if (!def) {
           failed++; setRowStatus(entry.action.actionId, "failed", "This taught field no longer exists.");
           recordResult(entry.action.jsonPath, { status: "error", error: "This taught field no longer exists." });
           continue;
         }
         try {
-          const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, value));
+          const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value));
           recordResult(entry.action.jsonPath, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
@@ -944,6 +1051,13 @@
     captureHtmlButton.addEventListener("click", captureFieldsHtml);
 
     panel.appendChild(body);
+    const credit = globalThis.SXRTS.ui?.CREDIT ?? "Developed by Abhishek Tawte";
+    const creditName = credit.replace(/^Developed by\s+/i, "");
+    panel.appendChild(element("div", { className: "foot" }, [
+      element("strong", { text: "ScraperX" }),
+      element("span", { text: ` RTS Profile Assistant  ·  Developed by ` }),
+      element("strong", { text: creditName })
+    ]));
     shadow.appendChild(panel);
   }
 

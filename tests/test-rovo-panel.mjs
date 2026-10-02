@@ -21,10 +21,12 @@ import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
 import "../core/promptBuilder.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
+import "../content/ui.js";
 import "../content/panel.js";
 import { validOutput } from "./helpers/rovo-sample.mjs";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
@@ -65,8 +67,14 @@ test("a compliant Section 13 paste builds a preview; evidence-less fields read '
   assert.equal(byPath("businessEntity.nameVariations")[0].querySelector(".badge").textContent, "pending");
   assert.equal(byPath("company.keywords")[0].querySelector(".badge").textContent, "waiting for RTS evidence");
   const details = shadow.querySelector("details");
-  assert.match(details.textContent, /Management:.*Jane Doe.*waiting for evidence/);
   assert.match(details.textContent, /Funding:.*2 round\(s\)/);
+  // management and the site fields are preview cards that can be mapped
+  const mgmt = byPath("extras.management")[0];
+  assert.ok(mgmt, "management card is shown");
+  assert.equal(mgmt.querySelector(".badge").textContent, "waiting for RTS evidence");
+  assert.ok(mgmt.querySelector("button.map"), "management card offers Map this field");
+  assert.match(mgmt.textContent, /Map this field/);
+  assert.equal(byPath("extras.address").length, 1);
 });
 
 test("a paste that breaks the output rules is rejected with the exact list, and a correction prompt is offered", async () => {

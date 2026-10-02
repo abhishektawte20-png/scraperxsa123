@@ -14,6 +14,7 @@ import "../registry/businessEntity.general.js";
 import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import { validOutput, NF, sourced } from "./helpers/rovo-sample.mjs";
 
@@ -83,10 +84,12 @@ test("the translated document passes the normal validator and builds an executio
 test("researched-but-unmapped data is listed with an explicit RTS automation status", () => {
   const { rows } = rc.analyze(validOutput());
   const byLabel = Object.fromEntries(rows.map((r) => [r.section, r]));
-  assert.equal(byLabel["Management"].status, "WAITING_FOR_EVIDENCE");
-  assert.equal(byLabel["Address"].status, "WAITING_FOR_EVIDENCE");
-  assert.equal(byLabel["Phone"].status, "NO_VALUE");
+  // address, management etc. are now preview cards that can be mapped; only
+  // informational items remain in this list
   assert.equal(byLabel["Funding"].status, "INFORMATIONAL");
+  assert.equal(byLabel["Formal Name"].status, "INFORMATIONAL");
+  assert.equal(byLabel["Management"], undefined);
+  assert.equal(byLabel["Address"], undefined);
 });
 
 // ---- hard rules (errors) ----

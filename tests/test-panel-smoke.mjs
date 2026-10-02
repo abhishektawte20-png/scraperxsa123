@@ -23,11 +23,13 @@ import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
 import "../core/promptBuilder.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../core/resultsSummary.js";
+import "../content/ui.js";
 import "../content/panel.js";
 
 function setupDom() {
@@ -236,7 +238,10 @@ test("the per-run prompt is only the domain, and no button can replace the Rovo 
   const domain = shadow.querySelector("#sxrts-domain");
   domain.value = "dmcspain.com";
   domain.dispatchEvent(new window.Event("input", { bubbles: true }));
-  assert.equal(shadow.querySelector("#sxrts-prompt").value, "dmcspain.com");
+  const prompt = shadow.querySelector("#sxrts-prompt").value;
+  assert.equal(prompt.split("\n")[0], "dmcspain.com");
+  assert.match(prompt, /Output checklist/);
+  assert.match(prompt, /CONFIRMATION 2 is the full URL you accessed, starting with https:\/\//);
 });
 
 test("action and Name Type render as constrained dropdowns, not free-text inputs", () => {

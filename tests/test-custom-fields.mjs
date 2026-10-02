@@ -15,6 +15,7 @@ import "../registry/company.sites.js";
 import "../registry/index.js";
 import "../core/customFields.js";
 import "../core/promptBuilder.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 
 const store = new Map();

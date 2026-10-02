@@ -518,6 +518,23 @@
     if (sic.length) doc.company.sicCodes = sic.map((e) => ({ code: e.code, classificationSource: null, action: act, source: null }));
     const naics = (Array.isArray(src.naics_codes) ? src.naics_codes : []).filter((e) => real(e?.code));
     if (naics.length) doc.company.naicsCodes = naics.map((e) => ({ code: e.code, action: act }));
+
+    // Values the agent researched that have no native RTS workflow. They can
+    // be tied to an RTS field with "Map this field" (see core/outputFields.js).
+    const extras = {};
+    const one = (key, entry) => { const v = real(entry?.value); if (v) extras[key] = { value: v, action: act, source: entry.source_url ?? null }; };
+    const sc = src.site_and_contact || {};
+    one("address", sc.full_address); one("city", sc.city); one("state", sc.state_or_region); one("country", sc.country);
+    one("postcode", sc.postcode); one("phone", sc.phone); one("fax", sc.fax); one("siteEmail", sc.site_email); one("startDate", sc.start_date);
+    const ic = src.industry_classification?.primary_industry_code;
+    if (real(ic?.number)) extras.industryCode = { value: real(ic.name) ? `${ic.number} — ${ic.name}` : ic.number, action: act, source: null };
+    const emp = src.employee_count?.current;
+    if (real(String(emp?.count ?? ""))) extras.employeeCount = { value: String(emp.count), action: act, source: emp.source_url ?? null };
+    const verticals = (src.verticals?.assigned || []).map((v) => v?.vertical_name).filter(real);
+    if (verticals.length) extras.verticals = verticals.map((value) => ({ value, action: act }));
+    const people = (Array.isArray(src.management) ? src.management : []).filter((m) => real(m?.full_name));
+    if (people.length) extras.management = people.map((m) => ({ fullName: m.full_name, title: (m.titles || []).join(", "), action: act, source: m.source_url ?? null }));
+    if (Object.keys(extras).length) doc.extras = extras;
     return doc;
   }
 
@@ -527,26 +544,13 @@
     const rows = [];
     const row = (section, value, status, detail) => rows.push({ section, value, status, detail });
     const show = (v) => (typeof v === "string" ? v : JSON.stringify(v));
-    const waiting = "RTS selectors/save behavior for this field have not been evidenced.";
 
     const formal = src.name_variations?.formal_name;
-    row("Formal Name", show(formal?.value), real(formal?.value) ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", "The RTS primary Formal Name field is the profile's own identity field and is not written by this extension.");
-    for (const [key, label] of [["full_address", "Address"], ["city", "City"], ["state_or_region", "State / region"], ["country", "Country"], ["postcode", "Postcode"], ["phone", "Phone"], ["fax", "Fax"], ["site_email", "Site email"], ["start_date", "Start date"]]) {
-      const entry = src.site_and_contact?.[key];
-      row(label, show(entry?.value), real(entry?.value) ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
-    }
+    row("Formal Name", show(formal?.value), real(formal?.value) ? "INFORMATIONAL" : "NO_VALUE", "The RTS primary Formal Name is the profile's own identity field and is not written by this extension.");
     const f = src.funding;
     if (isPlainObject(f)) {
       row("Funding", `${f.total_rounds_found ?? "?"} round(s); backing: ${show(f.backing_status)}; routing: ${show(f.team_routing)}`, "INFORMATIONAL", "Routing guidance for the researcher; nothing is written to RTS.");
     }
-    const mgmt = Array.isArray(src.management) ? src.management : [];
-    row("Management", mgmt.length ? mgmt.map((m) => `${m.full_name} (${(m.titles || []).join(", ")})`).join("; ") : "none", mgmt.length ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", "Management automation stays disabled until the whole person/relationship journey is evidenced.");
-    const ic = src.industry_classification?.primary_industry_code;
-    row("Industry code", ic ? `${show(ic.number)} — ${show(ic.name)}` : "", real(ic?.number) ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
-    const verticals = (src.verticals?.assigned || []).map((v) => v.vertical_name).filter(real);
-    row("Verticals", verticals.join(", "), verticals.length ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
-    const emp = src.employee_count?.current;
-    row("Employee count", emp ? (real(emp.date) ? `${show(emp.count)} (${show(emp.date)})` : show(emp.count)) : "", real(String(emp?.count ?? "")) ? "WAITING_FOR_EVIDENCE" : "NO_VALUE", waiting);
     return rows;
   }
 

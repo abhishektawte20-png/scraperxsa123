@@ -22,11 +22,13 @@ import "../registry/company.sic.js";
 import "../registry/company.sites.js";
 import "../registry/index.js";
 import "../core/promptBuilder.js";
+import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../content/rules.js";
+import "../content/ui.js";
 import "../content/panel.js";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
 

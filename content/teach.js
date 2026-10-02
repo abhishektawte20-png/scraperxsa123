@@ -35,6 +35,14 @@
     .teach-item { border: 1px solid #e2e6ed; border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
     .teach-overlay { position: fixed; inset: 0; z-index: 2147483646; cursor: crosshair; }
     .teach-hl { position: fixed; z-index: 2147483647; pointer-events: none; border: 2px solid #e8590c; background: rgba(232,89,12,.12); border-radius: 3px; display: none; }
+    .teach-guide { background: #f2f7fd; border: 1px solid #d5e3f3; border-radius: 10px; padding: 10px 12px; margin: 4px 0 6px; }
+    .teach-guide h4 { margin: 0 0 6px; font-size: 12px; color: #0b2f52; }
+    .teach-guide ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+    .teach-guide li { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: #33405a; }
+    .teach-guide .n { flex: 0 0 18px; height: 18px; border-radius: 50%; background: #c9d8ea; color: #0b2f52; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .teach-guide li.done .n { background: #1a8a5f; color: #fff; }
+    .teach-guide li.done { color: #166f4c; }
+    .teach-found { background: #fff8e6; border-left: 3px solid #b8860b; border-radius: 6px; padding: 7px 10px; margin: 6px 0; font-size: 12px; color: #6b5100; word-break: break-word; }
     .teach-bar { position: fixed; z-index: 2147483647; left: 50%; top: 12px; transform: translateX(-50%); background: #0b2f52; color: #fff; padding: 8px 16px; border-radius: 8px; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
   `;
 
@@ -51,7 +59,7 @@
     return node;
   }
 
-  function mount(shadow, { onChange } = {}) {
+  function mount(shadow, { onChange, onMapped } = {}) {
     const sb = () => globalThis.SXRTS.selectorBuilder;
     const cf = () => globalThis.SXRTS.customFields;
 
@@ -66,8 +74,17 @@
     let view = "list";
     let draft = null;
 
+    const ui = () => globalThis.SXRTS.ui;
+    const tipped = (node, text) => (ui() ? ui().tip(node, text) : node);
+
     function newDraft() {
-      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "" };
+      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [] };
+    }
+
+    // Draft for "Map this field": the report field decides the kind and name.
+    function boundDraft(path, samples) {
+      const bind = globalThis.SXRTS.outputFields.get(path);
+      return { ...newDraft(), kind: bind.kind === "single" ? "single" : "record", label: bind.label, key: globalThis.SXRTS.outputFields.keyFor(path), keyTouched: true, bind, samples };
     }
 
     function close() {
@@ -173,30 +190,30 @@
       card.replaceChildren();
       const close_ = el("button", { className: "teach-x", text: "×", type: "button", title: "Close" });
       close_.addEventListener("click", close);
-      card.appendChild(el("div", { className: "teach-head" }, [el("h2", { text: "Taught fields" }), close_]));
+      card.appendChild(el("div", { className: "teach-head" }, [el("h2", { text: "Mapped & taught fields" }), close_]));
 
-      const teachBtn = el("button", { className: "teach-btn", text: "Teach new field", type: "button" });
+      const teachBtn = tipped(el("button", { className: "teach-btn", text: "Teach new field", type: "button" }), "Add a brand-new RTS field that is not in the agent's report yet. To fill a field the agent already researched, use \"Map this field\" on its row in the preview instead.");
       teachBtn.addEventListener("click", () => { draft = newDraft(); view = "wizard"; render(); });
       card.appendChild(el("div", { className: "teach-row" }, [teachBtn]));
-      card.appendChild(el("p", { className: "teach-muted", text: "Fields you teach here are added to the Rovo prompt and filled from the pasted JSON, the same way as the built-in fields. They are stored in this browser only." }));
+      card.appendChild(el("p", { className: "teach-muted", text: "Mappings tell the extension where an agent value goes in RTS. They are saved in this browser only." }));
 
       const defs = cf().getCached();
       if (!defs.length) {
-        card.appendChild(el("p", { className: "teach-muted", text: "No taught fields yet." }));
+        card.appendChild(el("p", { className: "teach-muted", text: "Nothing mapped yet. Click \"Map this field\" on a row marked Waiting for RTS mapping." }));
         return;
       }
       for (const def of defs) {
         const found = foundOnPage(def);
         const remove = el("button", { className: "teach-btn danger", text: "Delete", type: "button" });
         remove.addEventListener("click", async () => {
-          if (!window.confirm(`Delete the taught field "${def.label}"?`)) return;
+          if (!window.confirm(`Delete "${def.label}"?`)) return;
           await cf().removeDefinition(def.key);
           onChange?.();
           render();
         });
         card.appendChild(el("div", { className: "teach-item" }, [
           el("div", {}, [
-            el("div", { text: `${def.label}  ·  custom.${def.key}` }),
+            el("div", { text: def.binds ? `${def.label}  ·  mapped from the agent's report` : `${def.label}  ·  custom.${def.key}` }),
             el("div", { className: "teach-muted", text: `${def.kind === "record" ? "Repeatable record" : "Single field"} · ${def.fields.length} field(s)` }),
             el("div", { className: found ? "teach-ok" : "teach-warn", text: found ? "✓ Found on this page" : "Not found on this page (open the right tab/section)" })
           ]),
@@ -228,13 +245,17 @@
         draft.error = info.reason;
         return render();
       }
+      const outKeys = draft.bind?.keys.map((k) => k.key) ?? [];
       if (draft.kind === "single") {
-        draft.fields = [{ ...info, key: "value", description: "" }];
+        draft.fields = [{ ...info, key: "value", description: "", out: outKeys[0] }];
       } else {
-        draft.fields.push({ ...info, key: uniqueKey(info.suggestedKey), description: "" });
+        const unused = outKeys.find((k) => !draft.fields.some((f) => f.out === k)) ?? outKeys[0];
+        draft.fields.push({ ...info, key: uniqueKey(info.suggestedKey), description: "", out: unused });
       }
-      if (!draft.label && info.label) draft.label = info.label.slice(0, 60);
-      if (!draft.keyTouched && !draft.key) draft.key = sb().toCamelKey(draft.label);
+      if (!draft.bind) {
+        if (!draft.label && info.label) draft.label = info.label.slice(0, 60);
+        if (!draft.keyTouched && !draft.key) draft.key = sb().toCamelKey(draft.label);
+      }
       render();
     }
 
@@ -262,7 +283,8 @@
           ...(f.kind === "select" ? { options: f.options } : {})
         })),
         saveButton: draft.saveButton ? { selectors: draft.saveButton.selectors, text: draft.saveButton.text } : null,
-        ...(draft.kind === "record" && draft.addButton ? { addButton: { selectors: draft.addButton.selectors, text: draft.addButton.text } } : {})
+        ...(draft.kind === "record" && draft.addButton ? { addButton: { selectors: draft.addButton.selectors, text: draft.addButton.text } } : {}),
+        ...(draft.bind ? { binds: { path: draft.bind.path, map: Object.fromEntries(draft.fields.map((f) => [f.key, f.out])) } } : {})
       };
       const errors = cf().validateDefinition(def);
       if (errors.length) {
@@ -276,6 +298,14 @@
         return render();
       }
       onChange?.();
+      if (draft.bind) {
+        // Mapping a field from its preview row: get out of the way so the
+        // researcher can carry on with the preview.
+        const label = draft.bind.label;
+        close();
+        onMapped?.(label);
+        return;
+      }
       view = "list";
       render();
     }
@@ -286,71 +316,118 @@
       return input;
     }
 
+    function guide(steps) {
+      return el("div", { className: "teach-guide" }, [
+        el("h4", { text: "How this works" }),
+        el("ol", {}, steps.map((step, i) => el("li", { className: step.done ? "done" : "" }, [el("span", { className: "n", text: step.done ? "✓" : String(i + 1) }), el("span", { text: step.text })])))
+      ]);
+    }
+
+    function pickControls() {
+      const section = el("div", { className: "teach-section" }, [el("h3", { text: draft.kind === "record" ? "Pick the Add button, then each input of a row" : "Pick the field in RTS" })]);
+      if (draft.kind === "record") {
+        const addBtn = tipped(el("button", { className: "teach-btn secondary", text: draft.addButton ? "Re-pick Add button" : "Pick Add button", type: "button" }),
+          "Click this, then click the button on the RTS page that adds a new row (for example \"Add New ...\"). The extension clicks it for every item it needs to add.");
+        addBtn.addEventListener("click", () => pickButton("addButton", "Click the Add button that creates a new row"));
+        section.appendChild(el("div", { className: "teach-row" }, [addBtn]));
+        if (draft.addButton) section.appendChild(pickedBlock({ ...draft.addButton, kind: null, label: draft.addButton.text }));
+      }
+      for (const [index, field] of draft.fields.entries()) {
+        const extra = [];
+        if (draft.bind && draft.kind === "record") {
+          const select = el("select");
+          for (const key of draft.bind.keys) select.appendChild(el("option", { value: key.key, text: key.label }));
+          select.value = field.out;
+          select.addEventListener("change", () => { field.out = select.value; });
+          extra.push(tipped(el("label", { text: "Which agent value goes into this input?" }), "Each input of the RTS row takes one value from the agent's report. Choose which one belongs here."), select);
+        } else if (!draft.bind && draft.kind === "record") {
+          const keyBox = textInput(field.key, "field key", (v) => { field.key = v; });
+          const descBox = textInput(field.description, "what goes here (for Rovo)", (v) => { field.description = v; });
+          extra.push(el("label", { text: "Key in the JSON" }), keyBox, el("label", { text: "Description" }), descBox);
+        }
+        if (draft.kind === "record") {
+          const removeBtn = el("button", { className: "teach-btn danger", text: "Remove", type: "button" });
+          removeBtn.addEventListener("click", () => { draft.fields.splice(index, 1); render(); });
+          extra.push(el("div", { className: "teach-row" }, [removeBtn]));
+        }
+        section.appendChild(pickedBlock(field, extra));
+      }
+      const label = draft.kind === "record" ? "Pick an input" : (draft.fields.length ? "Re-pick field" : "Pick field on page");
+      const pickBtn = tipped(el("button", { className: "teach-btn", text: label, type: "button" }),
+        "Click this, then move over the RTS page: the field you would fill is outlined in orange. Click it to select. Press Esc to cancel. Only plain text boxes and native dropdowns are supported.");
+      pickBtn.addEventListener("click", pickField);
+      section.appendChild(el("div", { className: "teach-row" }, [pickBtn]));
+      return section;
+    }
+
+    function saveControls() {
+      const btn = tipped(el("button", { className: "teach-btn secondary", text: draft.saveButton ? "Re-pick Save button" : "Pick Save button", type: "button" }),
+        "Click this, then click the Save button for this section in RTS. A greyed-out Save button can still be picked. The extension clicks it once after filling, then checks the value really saved.");
+      btn.addEventListener("click", () => pickButton("saveButton", "Click the Save button for this section"));
+      const section = el("div", { className: "teach-section" }, [el("h3", { text: "Pick its Save button" }), el("div", { className: "teach-row" }, [btn])]);
+      if (draft.saveButton) section.appendChild(pickedBlock({ ...draft.saveButton, kind: null, label: draft.saveButton.text }));
+      return section;
+    }
+
+    function footer(saveLabel) {
+      const saveDef = el("button", { className: "teach-btn", text: saveLabel, type: "button" });
+      saveDef.addEventListener("click", save);
+      const cancel = el("button", { className: "teach-btn secondary", text: "Cancel", type: "button" });
+      cancel.addEventListener("click", () => { view = "list"; render(); });
+      return el("div", { className: "teach-row" }, [saveDef, cancel]);
+    }
+
     function renderWizard() {
       card.replaceChildren();
-      const back = el("button", { className: "teach-x", text: "×", type: "button", title: "Back to list" });
+      const back = el("button", { className: "teach-x", text: "×", type: "button", title: "Back" });
       back.addEventListener("click", () => { view = "list"; render(); });
-      card.appendChild(el("div", { className: "teach-head" }, [el("h2", { text: "Teach a new field" }), back]));
+      const bound = Boolean(draft.bind);
+      card.appendChild(el("div", { className: "teach-head" }, [el("h2", { text: bound ? `Map "${draft.bind.label}" to RTS` : "Teach a new field" }), back]));
 
-      // 1. type
-      const single = el("button", { className: `teach-btn${draft.kind === "single" ? "" : " secondary"}`, text: "Single field", type: "button" });
-      const record = el("button", { className: `teach-btn${draft.kind === "record" ? "" : " secondary"}`, text: "Repeatable record (Add → fill → Save)", type: "button" });
+      const hasFields = draft.fields.length > 0 && (draft.kind === "single" || Boolean(draft.addButton));
+      if (bound) {
+        if (draft.samples?.length) {
+          const shown = draft.samples.slice(0, 3).map((r) => draft.bind.keys.map((k) => r[k.key]).filter(Boolean).join(" / ")).join("  ·  ");
+          card.appendChild(el("div", { className: "teach-found", text: `The agent found: ${shown}${draft.samples.length > 3 ? ` (+${draft.samples.length - 3} more)` : ""}` }));
+        }
+        card.appendChild(guide([
+          { done: false, text: `In RTS, open the page or section where "${draft.bind.label}" is entered and keep it visible. ${draft.bind.hint}` },
+          { done: hasFields, text: draft.kind === "record" ? "Click \"Pick Add button\", then \"Pick an input\" for each box in a row, and choose which agent value goes in each." : "Click \"Pick field on page\", then click the field in RTS." },
+          { done: Boolean(draft.saveButton), text: "Click \"Pick Save button\", then click the section's Save button. Then save the mapping." }
+        ]));
+        card.appendChild(pickControls());
+        card.appendChild(saveControls());
+        if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
+        card.appendChild(footer("Save mapping"));
+        return;
+      }
+
+      card.appendChild(guide([
+        { done: Boolean(draft.label && draft.key), text: "Choose the kind of field and name it." },
+        { done: hasFields, text: "Open the field in RTS, then pick it on the page." },
+        { done: Boolean(draft.saveButton), text: "Pick the Save button, then save." }
+      ]));
+      const single = tipped(el("button", { className: `teach-btn${draft.kind === "single" ? "" : " secondary"}`, text: "Single field", type: "button" }), "One value in one box or dropdown (for example Founded year).");
+      const record = tipped(el("button", { className: `teach-btn${draft.kind === "record" ? "" : " secondary"}`, text: "Repeatable record (Add → fill → Save)", type: "button" }), "A list where you click an Add button to get a new row, fill the row, then save (for example Name Variations).");
       const setKind = (kind) => { if (draft.kind !== kind) { draft.kind = kind; draft.fields = []; draft.addButton = null; render(); } };
       single.addEventListener("click", () => setKind("single"));
       record.addEventListener("click", () => setKind("record"));
       card.appendChild(el("div", { className: "teach-section" }, [el("h3", { text: "1 · What kind of field?" }), el("div", { className: "teach-row" }, [single, record])]));
 
-      // 2. name + description
       const keyInput = textInput(draft.key, "e.g. foundedYear", (v) => { draft.key = v; draft.keyTouched = true; });
-      const nameSection = el("div", { className: "teach-section" }, [
+      card.appendChild(el("div", { className: "teach-section" }, [
         el("h3", { text: "2 · Name it" }),
         el("label", { text: "Field name (shown in the preview)" }),
         textInput(draft.label, "e.g. Founded year", (v) => { draft.label = v; if (!draft.keyTouched) { draft.key = sb().toCamelKey(v); keyInput.value = draft.key; } }),
-        el("label", { text: "JSON key (Rovo will return it under custom.<key>)" }),
+        el("label", { text: "JSON key (the agent returns it under custom.<key>)" }),
         keyInput,
-        el("label", { text: "What should Rovo research for it? (added to the prompt)" }),
+        el("label", { text: "What should the agent research for it?" }),
         textInput(draft.description, "e.g. Year the company was founded, 4 digits", (v) => { draft.description = v; })
-      ]);
-      card.appendChild(nameSection);
-
-      // 3. pick on page
-      const pickSection = el("div", { className: "teach-section" }, [el("h3", { text: draft.kind === "record" ? "3 · Pick the Add button, then each input in a row" : "3 · Pick the field on the page" })]);
-      if (draft.kind === "record") {
-        const addBtn = el("button", { className: "teach-btn secondary", text: draft.addButton ? "Re-pick Add button" : "Pick Add button", type: "button" });
-        addBtn.addEventListener("click", () => pickButton("addButton", "Click the Add button that creates a new row"));
-        pickSection.appendChild(el("div", { className: "teach-row" }, [addBtn]));
-        if (draft.addButton) pickSection.appendChild(pickedBlock({ ...draft.addButton, kind: null, label: draft.addButton.text }));
-      }
-      for (const [index, field] of draft.fields.entries()) {
-        const extra = [];
-        if (draft.kind === "record") {
-          const keyBox = textInput(field.key, "field key", (v) => { field.key = v; });
-          const descBox = textInput(field.description, "what goes here (for Rovo)", (v) => { field.description = v; });
-          const removeBtn = el("button", { className: "teach-btn danger", text: "Remove", type: "button" });
-          removeBtn.addEventListener("click", () => { draft.fields.splice(index, 1); render(); });
-          extra.push(el("label", { text: "Key in the JSON" }), keyBox, el("label", { text: "Description" }), descBox, el("div", { className: "teach-row" }, [removeBtn]));
-        }
-        pickSection.appendChild(pickedBlock(field, extra));
-      }
-      const pickBtn = el("button", { className: "teach-btn", text: draft.kind === "record" ? "Pick another input" : (draft.fields.length ? "Re-pick field" : "Pick field on page"), type: "button" });
-      pickBtn.addEventListener("click", pickField);
-      pickSection.appendChild(el("div", { className: "teach-row" }, [pickBtn]));
-      card.appendChild(pickSection);
-
-      // 4. save button
-      const saveBtnPick = el("button", { className: "teach-btn secondary", text: draft.saveButton ? "Re-pick Save button" : "Pick Save button", type: "button" });
-      saveBtnPick.addEventListener("click", () => pickButton("saveButton", "Click the Save button for this section"));
-      const saveSection = el("div", { className: "teach-section" }, [el("h3", { text: "4 · Pick its Save button" }), el("div", { className: "teach-row" }, [saveBtnPick])]);
-      if (draft.saveButton) saveSection.appendChild(pickedBlock({ ...draft.saveButton, kind: null, label: draft.saveButton.text }));
-      card.appendChild(saveSection);
-
+      ]));
+      card.appendChild(pickControls());
+      card.appendChild(saveControls());
       if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
-
-      const saveDef = el("button", { className: "teach-btn", text: "Save taught field", type: "button" });
-      saveDef.addEventListener("click", save);
-      const cancel = el("button", { className: "teach-btn secondary", text: "Cancel", type: "button" });
-      cancel.addEventListener("click", () => { view = "list"; render(); });
-      card.appendChild(el("div", { className: "teach-row" }, [saveDef, cancel]));
+      card.appendChild(footer("Save taught field"));
     }
 
     function render() {
@@ -358,11 +435,17 @@
       else renderList();
     }
 
-    function open() {
+    // open({ bindPath, samples }) jumps straight into mapping that report field.
+    function open(options = {}) {
       // Appended on first use, after the panel, so it stacks above it (both
       // sit at the browser's maximum z-index; DOM order breaks the tie).
       if (!modal.isConnected) shadow.appendChild(modal);
-      view = "list";
+      if (options.bindPath && globalThis.SXRTS.outputFields?.get(options.bindPath)) {
+        draft = boundDraft(options.bindPath, options.samples ?? []);
+        view = "wizard";
+      } else {
+        view = "list";
+      }
       render();
       modal.classList.add("open");
     }
