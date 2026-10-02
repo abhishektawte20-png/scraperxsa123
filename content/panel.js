@@ -273,7 +273,7 @@
     ]));
 
     const promptLabel = element("label", { text: "Prompt for ScraperX" });
-    promptLabel.appendChild(globalThis.SXRTS.ui?.help("Send this to your ScraperX agent. It contains the domain and the output checklist this tool validates.") ?? document.createTextNode(""));
+    promptLabel.appendChild(globalThis.SXRTS.ui?.help("Send this to your ScraperX agent. It is just the domain; the agent's own instructions define the output format.") ?? document.createTextNode(""));
     const promptArea = element("textarea", { id: "sxrts-prompt" });
     promptArea.readOnly = true;
     identityCard.appendChild(element("div", { className: "field" }, [promptLabel, promptArea]));
@@ -313,10 +313,10 @@
     const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", tip: "Saved changes applied to the agent's output before it reaches RTS. Example: keep only the Facebook handle instead of the whole URL." });
     rulesButton.addEventListener("click", () => rulesUi?.open());
 
-    const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the message to send to your ScraperX agent: the domain plus the output checklist the extension validates. Paste it into the agent and run it." });
+    const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the target domain. Paste it into your ScraperX agent and run it. The agent's own instructions hold the methodology and the output format." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
     identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton]));
-    identityCard.appendChild(element("p", { className: "helptext", text: "The prompt is the domain plus a checklist of the output rules this tool validates. The methodology itself lives in the agent's own configuration; nothing here changes it." }));
+    identityCard.appendChild(element("p", { className: "helptext", text: "Send only the domain. The methodology and the JSON output format live in the agent's own instructions, so nothing here can contradict them." }));
     body.appendChild(identityCard);
 
     // ---------- Card 2: paste + validate ----------

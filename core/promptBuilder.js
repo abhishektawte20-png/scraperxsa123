@@ -170,36 +170,14 @@
     ].join("\n");
   }
 
-  // What the extension checks on every paste, as a checklist the agent can
-  // follow. Each line restates a rule from the agent's own methodology / output
-  // format; none adds to or changes it. (rovoText.js / rovoContract.js enforce
-  // exactly these.)
-  const FORMAT_CHECKLIST = [
-    "Return the complete ScraperX report in the standard section format, with every section present. Anything not found uses the exact prescribed fallback phrase, never N/A, unknown or null.",
-    "SECTION 1: write CONFIRMATION 1, 2 and 3. CONFIRMATION 2 is the full URL you accessed, starting with https://.",
-    "Every extracted value (each name variation, address, start date, site email, email default structure, every social media identifier, every management entry) has its own line directly under it: \"Source: <full https:// URL>\". If there is no valid source, return the fallback phrase instead of the value.",
-    "Never use pitchbook.com, tracxn.com, atlassian.net, Confluence or any data aggregator as a source anywhere.",
-    "SECTION 1B: Total Rounds Found equals the number of rounds listed in the timeline.",
-    "Social media identifiers: the full profile URL (LinkedIn as the base company page URL).",
-    "SECTION 9: exactly two lines, the Business Description first, then the Full Description beginning \"The company\".",
-    "Always include EMPLOYEE COUNT, SIC CODES (at most 3, 4-digit codes, exactly one marked Best fit), NAICS CODES (at most 3, 6-digit codes, exactly one marked Best fit) and KEYWORDS (at least 10, each 2-3 words, comma-separated on one line).",
-    "End with the ANC block exactly as configured."
-  ];
-
-  // The per-run message for the Rovo agent whose own configuration holds the
-  // (frozen) methodology: the target domain on the first line, then the output
-  // checklist above. buildPrompt/buildAgentInstructions remain only for the
-  // legacy v1.0 JSON contract and are not used by the panel.
+  // The per-run message for the Rovo agent. The agent's own instructions hold
+  // the methodology AND the output format (see
+  // docs/rovo-agent-json-output-block.txt), so the message is only the domain:
+  // anything else sent here could contradict them.
   function buildRunPrompt({ domain } = {}) {
-    const target = String(domain ?? "").trim() || "[enter the company domain]";
-    return [
-      target,
-      "",
-      "Output checklist (the ScraperX extension validates these before anything is written to RTS):",
-      ...FORMAT_CHECKLIST.map((line, i) => `${i + 1}. ${line}`)
-    ].join("\n");
+    return String(domain ?? "").trim() || "[enter the company domain]";
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.promptBuilder = { buildPrompt, buildAgentInstructions, buildRunPrompt, FORMAT_CHECKLIST };
+  globalThis.SXRTS.promptBuilder = { buildPrompt, buildAgentInstructions, buildRunPrompt };
 })();

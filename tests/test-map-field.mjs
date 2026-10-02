@@ -248,6 +248,6 @@ test("branding: header and footer name the developer; the prompt carries the che
   assert.ok(bubble, "tooltip bubble installed");
   const copy = btn(shadow, "Copy prompt");
   copy.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true }));
-  assert.match(bubble.textContent, /Copies the message to send to your ScraperX agent/);
+  assert.match(bubble.textContent, /Copies the target domain/);
   assert.ok(bubble.classList.contains("show"));
 });

@@ -239,9 +239,7 @@ test("the per-run prompt is only the domain, and no button can replace the Rovo 
   domain.value = "dmcspain.com";
   domain.dispatchEvent(new window.Event("input", { bubbles: true }));
   const prompt = shadow.querySelector("#sxrts-prompt").value;
-  assert.equal(prompt.split("\n")[0], "dmcspain.com");
-  assert.match(prompt, /Output checklist/);
-  assert.match(prompt, /CONFIRMATION 2 is the full URL you accessed, starting with https:\/\//);
+  assert.equal(prompt, "dmcspain.com");
 });
 
 test("action and Name Type render as constrained dropdowns, not free-text inputs", () => {
