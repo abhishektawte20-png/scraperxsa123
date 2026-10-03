@@ -96,6 +96,7 @@
         const info = control ? sb.inspectControl(control, { allowMultiple: true, preferStable: true }) : null;
         if (!info) state.error = "That is not a text box or native dropdown. Click directly on the input.";
         else if (info.kind === "unsupported") state.error = info.reason;
+        else if (info.needsLabel) state.error = "Nothing about that box can identify it on this form. Pick a different box, or tell the developer which form this is.";
         else state.fields.push(info);
       }
       render();

@@ -55,8 +55,94 @@
     return "";
   }
 
+  // The researcher names a box by pointing at the text printed next to it.
+  // "sx-after::<tag>::<text>[||n]" matches the first <tag> that follows an
+  // element whose whole text is <text> (n picks the n-th when several do).
+  const ANCHOR_PREFIX = "sx-after::";
+  const CONTROL_QUERY = {
+    textarea: "textarea",
+    select: "select",
+    input: "input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=checkbox]):not([type=radio]):not([type=image]):not([type=file])"
+  };
+
+  function anchorElements(want) {
+    const found = new Set();
+    const walker = document.createTreeWalker(document.body || document.documentElement, 4); // 4 = show text nodes
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      const piece = normText(text.nodeValue);
+      if (!piece || !want.includes(piece)) continue;
+      for (let node = text.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
+        if (normText(node.textContent) === want) { found.add(node); break; }
+      }
+    }
+    return Array.from(found);
+  }
+
+  function anchoredControls(tag, want) {
+    const controls = Array.from(document.querySelectorAll(CONTROL_QUERY[tag] || tag));
+    const result = [];
+    for (const anchor of anchorElements(want)) {
+      const control = controls.find((c) => !anchor.contains(c) && (anchor.compareDocumentPosition(c) & 4)); // 4 = follows
+      if (control && !result.includes(control)) result.push(control);
+    }
+    return result;
+  }
+
+  // Builds (and checks) the selector for a box from the label text. Returns
+  // null when the text does not lead back to exactly that box.
+  function anchorSelectorForText(control, text) {
+    const clean = String(text || "").replace(/\s+/g, " ").trim();
+    if (!clean || clean.length > 80) return null;
+    const tag = control.tagName.toLowerCase();
+    const base = `${ANCHOR_PREFIX}${tag}::${clean}`;
+    const found = matchesAll(base);
+    if (found.length === 1 && found[0] === control) return base;
+    if (found.includes(control)) {
+      const indexed = `${base}||${found.indexOf(control) + 1}`;
+      if (matchesAll(indexed)[0] === control) return indexed;
+    }
+    return null;
+  }
+
+  // The clicked element is the label; if it holds no text of its own, a
+  // parent that does (up to two levels) is used.
+  function anchorSelectorFor(control, clicked) {
+    for (let node = clicked, depth = 0; node && depth < 3; node = node.parentElement, depth++) {
+      if (node.contains(control)) break;
+      const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      return { text, selector: anchorSelectorForText(control, text) };
+    }
+    return { text: "", selector: null };
+  }
+
+  // Last resort, immune to odd tag names, repeated ids and anything CSS
+  // cannot express: "sx-path::2.0.5" walks child numbers down from <html>.
+  const PATH_PREFIX = "sx-path::";
+  function indexPath(el) {
+    const indexes = [];
+    for (let node = el; node && node !== document.documentElement; node = node.parentElement) {
+      if (!node.parentElement) return "";
+      indexes.unshift(Array.prototype.indexOf.call(node.parentElement.children, node));
+    }
+    return `${PATH_PREFIX}${indexes.join(".")}`;
+  }
+
   function matchesAll(selector, root = document) {
     try {
+      if (selector.startsWith(ANCHOR_PREFIX)) {
+        const body = selector.slice(ANCHOR_PREFIX.length);
+        const tag = body.slice(0, body.indexOf("::"));
+        const indexed = /\|\|(\d+)$/.exec(body);
+        const nth = indexed ? Number(indexed[1]) : 0;
+        const all = anchoredControls(tag, normText(body.slice(tag.length + 2).replace(/\|\|\d+$/, "")));
+        return nth ? all.slice(nth - 1, nth) : all;
+      }
+      if (selector.startsWith(PATH_PREFIX)) {
+        let node = document.documentElement;
+        for (const index of selector.slice(PATH_PREFIX.length).split(".").filter(Boolean)) node = node?.children[Number(index)];
+        return node ? [node] : [];
+      }
       if (selector.startsWith(LABEL_PREFIX)) {
         // sx-label::<tag>::<label>[||<n>] — an optional trailing number picks
         // the n-th box (1-based, page order) when several share one label.
@@ -164,6 +250,13 @@
         }
       }
     }
+    if (!good.length) {
+      const path = indexPath(el);
+      if (path && matchesAll(path)[0] === el) {
+        good.push(path);
+        fragile = true;
+      }
+    }
     return { selectors: good, fragile };
   }
 
@@ -246,10 +339,9 @@
       return { ...base, kind: "unsupported", reason: "This field sits inside an embedded frame or a hidden shadow area of the page, which the extension cannot reach from here." };
     }
     const { selectors, fragile } = buildSelectors(el, { ...options, labelFallback: true });
-    if (!selectors.length) {
-      return { ...base, kind: "unsupported", reason: "No reliable selector could be built for this field (it has no stable id, name or class)." };
-    }
-    const result = { ...base, kind, selectors, fragile };
+    // Nothing on the box itself or around it identifies it: the researcher
+    // names it by pointing at its label (see anchorSelectorFor).
+    const result = { ...base, kind, selectors, fragile, needsLabel: !selectors.length };
     if (kind === "select") {
       result.options = Array.from(el.options)
         .filter((o) => o.textContent.trim() && o.value !== "")
@@ -338,6 +430,6 @@
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.selectorBuilder = {
     buildSelectors, resolveControl, resolveButton, inspectControl, inspectButton,
-    resolveFirst, resolveAll, resolveButtonByDefinition, toCamelKey, isStableClass, isStableId, inspectRow, textHasWord, matchAll: matchesAll, LABEL_PREFIX
+    resolveFirst, resolveAll, resolveButtonByDefinition, toCamelKey, isStableClass, isStableId, inspectRow, textHasWord, matchAll: matchesAll, LABEL_PREFIX, ANCHOR_PREFIX, anchorSelectorFor, anchorSelectorForText
   };
 })();

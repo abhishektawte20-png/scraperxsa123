@@ -237,22 +237,32 @@
       return details;
     }
 
-    // "sx-label::textarea::Brief Description:" reads as the box next to that label.
-    function describeSelector(selector) {
-      const prefix = sb().LABEL_PREFIX;
-      if (!selector) return "(matched by button text)";
-      if (!selector.startsWith(prefix)) return selector;
-      const body = selector.slice(prefix.length);
-      const tag = body.slice(0, body.indexOf("::"));
-      const number = /\|\|(\d+)$/.exec(body);
-      const label = body.slice(tag.length + 2).replace(/\|\|\d+$/, "");
-      return `${tag} next to the label "${label}"${number ? ` (number ${number[1]} with that label)` : ""}`;
+    // Selectors the extension builds itself, in words.
+    function describeSelector(selector, info = {}) {
+      if (!selector) return info.needsLabel ? "(nothing identifies this box yet: name it by its label below)" : "(matched by button text)";
+      const sbx = sb();
+      const split = (prefix) => {
+        const body = selector.slice(prefix.length);
+        const tag = body.slice(0, body.indexOf("::"));
+        const number = /\|\|(\d+)$/.exec(body);
+        return { tag, number: number?.[1], text: body.slice(tag.length + 2).replace(/\|\|\d+$/, "") };
+      };
+      if (selector.startsWith(sbx.ANCHOR_PREFIX)) {
+        const { tag, number, text } = split(sbx.ANCHOR_PREFIX);
+        return `the ${tag} that comes after the text "${text}"${number ? ` (number ${number})` : ""}`;
+      }
+      if (selector.startsWith(sbx.LABEL_PREFIX)) {
+        const { tag, number, text } = split(sbx.LABEL_PREFIX);
+        return `${tag} next to the label "${text}"${number ? ` (number ${number} with that label)` : ""}`;
+      }
+      if (selector.startsWith("sx-path::")) return "the box at its exact position in the page";
+      return selector;
     }
 
     function pickedBlock(info, extra = []) {
       const lines = [
         el("div", { className: "meta", text: `${info.tag}${info.kind ? ` · ${info.kind === "select" ? "native dropdown" : "text box"}` : ""}${info.label ? ` · "${info.label}"` : ""}` }),
-        el("div", { className: "meta" }, [el("code", { text: describeSelector(info.selectors?.[0]) })])
+        el("div", { className: "meta" }, [el("code", { text: describeSelector(info.selectors?.[0], info) })])
       ];
       if (info.options) lines.push(el("div", { className: "meta", text: `Options (${info.options.length}): ${info.options.map((o) => o.label).join(", ")}` }));
       if (info.fragile) lines.push(el("div", { className: "teach-warn", text: "⚠ No stable attribute found; this selector depends on page structure and may break when RTS changes." }));
@@ -419,16 +429,61 @@
       }
       const outKeys = draft.bind?.keys.map((k) => k.key) ?? [];
       if (draft.kind === "single") {
-        draft.fields = [{ ...info, key: "value", description: "", out: outKeys[0] }];
+        draft.fields = [{ ...info, el: control, key: "value", description: "", out: outKeys[0] }];
       } else {
         const unused = outKeys.find((k) => !draft.fields.some((f) => f.out === k)) ?? outKeys[0];
-        draft.fields.push({ ...info, key: uniqueKey(info.suggestedKey), description: "", out: unused });
+        draft.fields.push({ ...info, el: control, key: uniqueKey(info.suggestedKey), description: "", out: unused });
       }
       if (!draft.bind) {
         if (!draft.label && info.label) draft.label = info.label.slice(0, 60);
         if (!draft.keyTouched && !draft.key) draft.key = sb().toCamelKey(draft.label);
       }
       render();
+    }
+
+    // Names a box by the text printed next to it. Works whatever the page's
+    // markup is like, so it is the way out when nothing on the box identifies it.
+    function useLabel(field, text, selector) {
+      field.selectors = [selector, ...field.selectors.filter((existing) => existing !== selector)];
+      field.fragile = false;
+      field.needsLabel = false;
+      field.labelText = text;
+    }
+
+    async function nameByLabel(field) {
+      draft.error = "";
+      const target = await pickElement("Click the text printed next to this box (its label), for example \"Brief Description:\"");
+      if (!target) return render();
+      const { text, selector } = sb().anchorSelectorFor(field.el, target);
+      if (!selector) {
+        draft.error = text
+          ? `The text "${text.slice(0, 60)}" does not lead back to this box. Click the label that sits right above or beside it.`
+          : "Click directly on the label text, not on empty space.";
+        return render();
+      }
+      useLabel(field, text, selector);
+      render();
+    }
+
+    function labelRows(field) {
+      if (!field.el) return [];
+      const button = tipped(el("button", { className: field.needsLabel ? "teach-btn" : "teach-btn secondary", text: field.labelText ? "Pick a different label" : "Name this box by its label", type: "button" }),
+        "Use this when the page has several look-alike boxes, or the extension cannot tell this one apart. Click this, then click the text printed next to the box, for example \"Brief Description:\". The extension then finds the box from that text every time, for every researcher.");
+      button.addEventListener("click", () => nameByLabel(field));
+      const rows = [];
+      if (field.needsLabel) rows.push(el("div", { className: "teach-warn", text: "Nothing on this box can identify it by itself. Name it by its label to finish." }));
+      rows.push(el("div", { className: "teach-row" }, [button]));
+      if (field.labelText) {
+        const input = el("input", { type: "text", value: field.labelText });
+        input.addEventListener("change", () => {
+          const selector = sb().anchorSelectorForText(field.el, input.value);
+          if (!selector) draft.error = `The text "${input.value.slice(0, 60)}" does not lead back to this box. Use the label's exact words.`;
+          else { draft.error = ""; useLabel(field, input.value.trim(), selector); }
+          render();
+        });
+        rows.push(tipped(el("label", { text: "Label the extension looks for (edit if it is not quite right)" }), "The exact words printed next to the box on the page. Capital letters and extra spaces do not matter."), input);
+      }
+      return rows;
     }
 
     async function pickButton(slot, message) {
@@ -555,6 +610,10 @@
 
     async function save() {
       if (draft.window) return saveWindow();
+      if (draft.fields.some((f) => !f.selectors?.length)) {
+        draft.error = "A box still has nothing that identifies it. Click \"Name this box by its label\" under it, then click the text printed next to the box.";
+        return render();
+      }
       if (draft.popup && !draft.openButton) {
         draft.error = "Pick the button that opens the popup first, or choose \"Directly on the page\".";
         return render();
@@ -780,7 +839,7 @@
           removeBtn.addEventListener("click", () => { draft.fields.splice(index, 1); render(); });
           extra.push(el("div", { className: "teach-row" }, [removeBtn]));
         }
-        section.appendChild(pickedBlock(field, extra));
+        section.appendChild(pickedBlock(field, [...extra, ...labelRows(field)]));
       }
       const label = draft.kind === "record" ? "Pick an input" : (draft.fields.length ? "Re-pick field" : "Pick field on page");
       const pickBtn = tipped(el("button", { className: "teach-btn", text: label, type: "button" }),

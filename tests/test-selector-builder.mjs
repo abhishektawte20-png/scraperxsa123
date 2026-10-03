@@ -214,3 +214,66 @@ test("fuzz: every text box and dropdown in 300 random pages with repeated ids, n
   }
   assert.ok(checked > 500, `checked ${checked} controls`);
 });
+
+test("a box under tags whose names CSS cannot select (o:p, fb:comments) still gets a selector", () => {
+  // `o:p` reads as a pseudo-class in a CSS selector, so every CSS path through it is invalid.
+  const doc = setup('<o:p><div><textarea></textarea></div></o:p><o:p><div><textarea></textarea></div></o:p>');
+  const boxes = Array.from(doc.querySelectorAll("textarea"));
+  assert.equal(boxes.length, 2);
+  for (const box of boxes) {
+    const info = sb().inspectControl(box);
+    assert.equal(info.kind, "text", info.reason);
+    assert.equal(info.fragile, true);
+    assert.match(info.selectors[0], /^sx-path::/);
+    assert.equal(sb().resolveFirst(info.selectors), box);
+  }
+});
+
+test("a form field named 'id' (which hides form.id) does not break picking", () => {
+  const doc = setup('<form><input name="id" value="1"><input name="classList"><div><textarea></textarea></div></form><form><input name="id"><div><textarea></textarea></div></form>');
+  for (const box of doc.querySelectorAll("textarea")) {
+    const info = sb().inspectControl(box);
+    assert.equal(info.kind, "text", info.reason);
+    assert.equal(sb().resolveFirst(info.selectors), box);
+  }
+});
+
+test("naming a box by the text beside it: the selector leads back to exactly that box, even among look-alikes", () => {
+  const block = (label) => `<table><tr><td><b>${label}</b></td></tr><tr><td><div><textarea></textarea></div></td></tr></table>`;
+  const doc = setup(block("Brief Description:") + block("Full Description:") + block("Notes:") + block("Notes:"));
+  const boxes = Array.from(doc.querySelectorAll("textarea"));
+  const labelOf = (i) => doc.querySelectorAll("b")[i];
+
+  const brief = sb().anchorSelectorFor(boxes[0], labelOf(0));
+  assert.equal(brief.text, "Brief Description:");
+  assert.equal(brief.selector, "sx-after::textarea::Brief Description:");
+  assert.equal(sb().resolveFirst([brief.selector]), boxes[0]);
+  assert.equal(sb().resolveFirst([sb().anchorSelectorFor(boxes[1], labelOf(1)).selector]), boxes[1]);
+
+  // Two boxes share the label "Notes:": each gets its own number.
+  assert.equal(sb().anchorSelectorFor(boxes[2], labelOf(2)).selector, "sx-after::textarea::Notes:||1");
+  assert.equal(sb().anchorSelectorFor(boxes[3], labelOf(3)).selector, "sx-after::textarea::Notes:||2");
+  assert.equal(sb().resolveFirst(["sx-after::textarea::Notes:||2"]), boxes[3]);
+});
+
+test("naming by label tolerates case and spacing, rejects text that does not lead to the box, and survives a re-render", () => {
+  const html = (cls) => `<div><span class="${cls}">Brief   description:</span></div><div><textarea></textarea></div><div><span>Other</span></div><div><textarea></textarea></div>`;
+  const first = setup(html("a-1x9Kq3"));
+  const [box, other] = first.querySelectorAll("textarea");
+  assert.equal(sb().anchorSelectorForText(box, "brief description:"), "sx-after::textarea::brief description:");
+  assert.equal(sb().anchorSelectorForText(other, "Brief description:"), null, "that text leads to the first box, not this one");
+  assert.equal(sb().anchorSelectorForText(box, "Nothing like this"), null);
+  assert.equal(sb().anchorSelectorForText(box, ""), null);
+  const selector = sb().anchorSelectorForText(box, "Brief description:");
+
+  const second = setup(html("zz-7Pq2Lm"));
+  assert.equal(sb().resolveFirst([selector]), second.querySelector("textarea"));
+});
+
+test("a box nothing can identify is accepted as 'needs a label' instead of being refused", () => {
+  const doc = setup("<div><textarea></textarea></div>");
+  const info = sb().inspectControl(doc.querySelector("textarea"));
+  assert.equal(info.kind, "text");
+  assert.ok(info.selectors.length > 0, "even this one has a position-based fallback");
+  assert.equal(info.needsLabel, false);
+});
