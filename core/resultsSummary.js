@@ -39,6 +39,16 @@
       };
     }
 
+    if (result.status === "savedStateVerified") {
+      return {
+        icon: "✓",
+        status: "success",
+        label: field,
+        message: `Saved ${result.name || "value"}; RTS now shows it as linked`,
+        detail: result.detail || null
+      };
+    }
+
     if (result.status === "skipped") {
       const reasons = {
         "duplicate": "already exists",

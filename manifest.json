@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "ScraperX RTS Profile Assistant",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "ScraperX RTS Profile Assistant, developed by Abhishek Tawte. Validates the ScraperX agent report against the output rules, previews every proposed change, and fills PitchBook RTS fields with profile identity locking and save verification. Any field can be mapped from the preview in seconds.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage"
+  ],
+  "host_permissions": [
+    "https://rts.pitchbook.com/*"
   ],
   "background": {
     "service_worker": "background/background.js"

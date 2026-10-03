@@ -46,7 +46,7 @@
     .teach-bar button { margin-left: 10px; background: #fff; color: #0b2f52; border: 0; border-radius: 5px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
     .teach-bar button.ghost { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.6); }
     .teach-section h3.teach-step { margin-top: 16px; }
-    .teach-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .teach-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
     .teach-choice button { text-align: left; background: #fff; color: #1b2430; border: 1.5px solid #c9d1de; border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 12px; cursor: pointer; }
     .teach-choice button b { display: block; font-size: 12.5px; color: #124a80; margin-bottom: 2px; }
     .teach-choice button.on { border-color: #124a80; background: #f2f7fd; box-shadow: 0 0 0 2px rgba(18,74,128,.15); }
@@ -97,7 +97,7 @@
     const tipped = (node, text) => (ui() ? ui().tip(node, text) : node);
 
     function newDraft() {
-      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [], popup: false, openButton: null, closeButton: null, openNote: "" };
+      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [], popup: false, openButton: null, closeButton: null, openNote: "", window: false, windowPick: null, rowBy: null, openEl: null };
     }
 
     // Draft for "Map this field": the report field decides the kind and name.
@@ -285,7 +285,7 @@
         card.appendChild(el("div", { className: "teach-item" }, [
           el("div", {}, [
             el("div", { text: def.binds ? `${def.label}  ·  mapped from the agent's report` : `${def.label}  ·  custom.${def.key}` }),
-            el("div", { className: "teach-muted", text: `${def.kind === "record" ? "Repeatable record" : def.openButton ? "Single field in a popup" : "Single field"} · ${def.fields.length} field(s)` }),
+            el("div", { className: "teach-muted", text: `${def.window ? (def.kind === "record" ? "List filled in a separate window" : "Single field in a separate window") : def.kind === "record" ? "Repeatable record" : def.openButton ? "Single field in a popup" : "Single field"} · ${def.fields.length} field(s)` }),
             el("div", { className: found ? "teach-ok" : "teach-warn", text: def.openButton
               ? (found ? `✓ Popup button "${def.openButton.text || "(no text)"}" found on this page` : "Popup button not found on this page (open the right tab/section)")
               : (found ? "✓ Found on this page" : "Not found on this page (open the right tab/section)") })
@@ -336,15 +336,99 @@
       draft.error = "";
       const target = await pickElement(message, { actions: slot === "openButton" ? [] : popupActions() });
       if (!target) return render();
-      const info = sb().inspectButton(sb().resolveButton(target));
+      const button = sb().resolveButton(target);
+      // A button that exists once per row (a "New" button in every network
+      // row) must be recognised in every row, not just the one clicked.
+      const rows = slot === "openButton" && draft.window && draft.bind?.rowKey;
+      const info = sb().inspectButton(button, rows ? { allowMultiple: true, preferStable: true } : {});
       if (!info.selectors.length && !info.text) {
         draft.error = "No reliable selector or visible text could be read from that button.";
         return render();
       }
+      if (rows) {
+        const found = sb().inspectRow(button, info.selectors);
+        if (!found) {
+          draft.error = "The rows could not be told apart from this button. Pick the same kind of button in a row that is still open (for example a \"New\" button), or send the row's HTML to the developer.";
+          return render();
+        }
+        draft.rowBy = { outKey: draft.bind.rowKey, rowSelector: found.selector };
+        draft.openNote = `Recognised ${found.count} rows. The extension picks the row by its name (for example the network) when it publishes.`;
+      } else if (slot === "openButton") {
+        draft.openNote = "";
+      }
       draft[slot] = info;
-      if (slot === "openButton") draft.openNote = "";
+      if (slot === "openButton") draft.openEl = button;
+      draft.windowPick = slot === "openButton" ? null : draft.windowPick;
       render();
-      if (slot === "openButton") await openNow();
+      if (slot === "openButton" && !draft.window) await openNow();
+    }
+
+    // Opens the separate popup window from the picked button and has the
+    // background worker put a field picker into it. The picks come back
+    // through chrome.storage.local, keyed by a one-off token.
+    function startWindowPick() {
+      draft.error = "";
+      if (!draft.openEl?.isConnected) {
+        draft.error = "The opening button is no longer on the page. Pick it again.";
+        return render();
+      }
+      const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const listener = (changes, area) => {
+        const value = area === "local" ? changes[globalThis.SXRTS.popupPicker?.STORAGE_KEY || "sxrts_window_pick"]?.newValue : null;
+        if (value?.token !== token) return;
+        chrome.storage.onChanged.removeListener(listener);
+        applyWindowPick(value.pick);
+      };
+      let port;
+      try {
+        port = chrome.runtime.connect({ name: "sx-window" });
+      } catch {
+        draft.error = "The extension connection is not available. Reload the extension and the RTS page.";
+        return render();
+      }
+      chrome.storage.onChanged.addListener(listener);
+      const stop = (message) => {
+        chrome.storage.onChanged.removeListener(listener);
+        draft.error = message;
+        draft.openNote = "";
+        try { port.disconnect(); } catch { /* closed */ }
+        render();
+      };
+      port.onMessage.addListener((message) => {
+        if (message.type === "armed") draft.openEl.click();
+        else if (message.type === "picker-open") {
+          draft.openNote = "The window opened with a ScraperX box in its top-right corner. Click the parts of the form there, press Done, then come back to this window.";
+          render();
+        } else if (message.type === "error") stop(message.error);
+      });
+      draft.openNote = "Opening the window…";
+      render();
+      port.postMessage({ type: "start", mode: "pick", token, origin: window.location.origin });
+    }
+
+    // Out keys a window input can take: the row's name (network) is used to
+    // find the row, never typed into an input.
+    function windowOutKeys() {
+      return draft.bind ? draft.bind.keys.filter((k) => k.key !== draft.bind.rowKey) : [];
+    }
+
+    function applyWindowPick(pick) {
+      draft.openNote = "";
+      const outs = windowOutKeys().map((k) => k.key);
+      const taken = new Set();
+      const fields = pick.fields.map((info, i) => {
+        const key = draft.kind === "single" ? "value" : (() => {
+          let base = info.suggestedKey && cf().KEY_PATTERN.test(info.suggestedKey) ? info.suggestedKey : "field";
+          let candidate = base;
+          for (let n = 2; taken.has(candidate); n++) candidate = `${base}${n}`;
+          return candidate;
+        })();
+        taken.add(key);
+        return { ...info, key, description: "", out: outs[i] ?? outs[0] };
+      });
+      draft.windowPick = { ...pick, fields };
+      if (!draft.bind && fields[0] && !draft.label && fields[0].label) draft.label = fields[0].label.slice(0, 60);
+      render();
     }
 
     // While picking inside a popup the page is covered, so the bar offers a
@@ -371,6 +455,7 @@
     }
 
     async function save() {
+      if (draft.window) return saveWindow();
       if (draft.popup && !draft.openButton) {
         draft.error = "Pick the button that opens the popup first, or choose \"Directly on the page\".";
         return render();
@@ -390,6 +475,11 @@
         ...(draft.kind === "record" && draft.addButton ? { addButton: { selectors: draft.addButton.selectors, text: draft.addButton.text } } : {}),
         ...(draft.bind ? { binds: { path: draft.bind.path, map: Object.fromEntries(draft.fields.map((f) => [f.key, f.out])) } } : {})
       };
+      return commit(def);
+    }
+
+    // Validates and stores a finished definition, then leaves the wizard.
+    async function commit(def) {
       const errors = cf().validateDefinition(def);
       if (errors.length) {
         draft.error = errors.join("\n");
@@ -414,10 +504,45 @@
       render();
     }
 
+    async function saveWindow() {
+      const pick = draft.windowPick;
+      if (!draft.openButton) draft.error = "Pick the button that opens the window first.";
+      else if (!pick?.fields.length || !pick.saveButton) draft.error = "Open the window and pick its text box and Save button first.";
+      else if (draft.kind === "single" && pick.fields.length !== 1) draft.error = "A single field fills one box. Remove the extra boxes you picked in the window.";
+      else if (draft.kind === "record" && !draft.rowBy) draft.error = "The rows were not recognised. Pick the opening button again.";
+      if (draft.error) return render();
+      const button = (b) => ({ selectors: b.selectors, text: b.text });
+      draft.error = "";
+      const def = {
+        key: draft.key.trim(),
+        label: draft.label.trim(),
+        description: draft.description.trim(),
+        kind: draft.kind,
+        fields: pick.fields.map((f) => ({
+          key: f.key, label: f.label || f.key, description: "", kind: f.kind, selectors: f.selectors,
+          ...(f.kind === "select" ? { options: f.options } : {})
+        })),
+        saveButton: button(pick.saveButton),
+        openButton: button(draft.openButton),
+        window: { path: pick.path, preSave: pick.preSave.map(button) },
+        ...(draft.kind === "record" ? { rowBy: draft.rowBy } : {}),
+        ...(draft.bind ? { binds: { path: draft.bind.path, map: Object.fromEntries(pick.fields.map((f) => [f.key, f.out])) } } : {})
+      };
+      return commit(def);
+    }
+
     function textInput(value, placeholder, onInput) {
       const input = el("input", { type: "text", value, placeholder });
       input.addEventListener("input", () => onInput(input.value));
       return input;
+    }
+
+    function windowSteps() {
+      return [
+        { done: Boolean(draft.openButton), text: draft.bind?.rowKey ? "Pick the button that opens the window in any one row (for example a \"New\" button). The extension finds the right row by its name later." : "Pick the button that opens the window." },
+        { done: Boolean(draft.windowPick), text: "Press \"Open the window and pick its fields\". In the window, click the text box, any button to press before Save, and Save, then press Done." },
+        { done: false, text: "Come back to this window, check the mapping, and save it." }
+      ];
     }
 
     // The extra guide step shown when the field sits inside a popup.
@@ -432,40 +557,101 @@
       ]);
     }
 
-    // Single fields only: is the field on the page, or inside a popup that a
-    // button opens? A popup adds the opening button (and an optional Close).
+    // Where is the field? On the page itself, inside a popup on the page
+    // (single fields), or in a separate browser window that a button opens
+    // (single fields, and lists whose rows each have such a button).
     function placeControls() {
       const section = el("div", { className: "teach-section" });
-      if (draft.kind !== "single") return document.createDocumentFragment();
+      const rowWindow = draft.kind === "record" && Boolean(draft.bind?.rowKey);
+      if (draft.kind !== "single" && !rowWindow) return document.createDocumentFragment();
       section.appendChild(el("h3", { text: "Where is the field?" }));
       const choice = (on, title, text, tip) => tipped(el("button", { className: on ? "on" : "", type: "button" }, [el("b", { text: title }), el("span", { text })]), tip);
-      const direct = choice(!draft.popup, "Directly on the page", "You can see the field without clicking anything.", "Choose this when the text box is already visible on the RTS page.");
-      const popup = choice(draft.popup, "Inside a popup", "A button opens a small window. The text box and its Save button are in that window.", "Choose this when you have to click a button first, and a popup window appears where you type the value and press Save.");
-      const setPopup = (value) => {
-        draft.popup = value;
-        if (!value) { draft.openButton = null; draft.closeButton = null; draft.openNote = ""; }
+      const mode = draft.window ? "window" : draft.popup ? "popup" : "page";
+      const options = [
+        ["page", "Directly on the page", rowWindow ? "A row has an Add button and its boxes appear on the page." : "You can see the field without clicking anything.", "Choose this when the text box is on the RTS page itself."]
+      ];
+      if (!rowWindow) options.push(["popup", "Inside a popup", "A button opens a small box on the same page.", "Choose this when you click a button and a box appears on top of the same RTS page, where you type the value and press Save."]);
+      options.push(["window", "Separate window", "A button opens a new browser window.", "Choose this when you click a button and a new Chrome window opens (it has its own address bar and title), where you type the value and press Save."]);
+      const set = (value) => {
+        draft.popup = value === "popup";
+        draft.window = value === "window";
+        if (value === "page") { draft.openButton = null; draft.closeButton = null; draft.openNote = ""; draft.openEl = null; draft.rowBy = null; draft.windowPick = null; }
+        if (value !== "popup") draft.closeButton = null;
+        if (value !== "window") { draft.rowBy = null; draft.windowPick = null; }
         render();
       };
-      direct.addEventListener("click", () => setPopup(false));
-      popup.addEventListener("click", () => setPopup(true));
-      section.appendChild(el("div", { className: "teach-choice" }, [direct, popup]));
-      if (!draft.popup) return section;
+      const buttons = options.map(([id, title, text, tip]) => {
+        const button = choice(mode === id, title, text, tip);
+        button.addEventListener("click", () => set(id));
+        return button;
+      });
+      section.appendChild(el("div", { className: "teach-choice" }, buttons));
+      if (mode === "page") return section;
 
-      const openBtn = tipped(el("button", { className: "teach-btn secondary", text: draft.openButton ? "Re-pick the opening button" : "Pick the button that opens the popup", type: "button" }),
-        "Click this, then click the button on the RTS page that opens the popup. The extension clicks it for you afterwards so the popup is open while you pick the field inside it.");
-      openBtn.addEventListener("click", () => pickButton("openButton", "Click the button that opens the popup"));
-      section.appendChild(el("h3", { className: "teach-step", text: "Step A · The button that opens the popup" }));
+      const noun = mode === "window" ? "window" : "popup";
+      const openBtn = tipped(el("button", { className: "teach-btn secondary", text: draft.openButton ? "Re-pick the opening button" : `Pick the button that opens the ${noun}`, type: "button" }),
+        mode === "window" && draft.bind?.rowKey
+          ? "Click this, then click the button in ONE row that opens the window (for example the \"New\" button of any network). The extension recognises the same button in every row and picks the right row by its name when it publishes."
+          : `Click this, then click the button on the RTS page that opens the ${noun}.`);
+      openBtn.addEventListener("click", () => pickButton("openButton", `Click the button that opens the ${noun}`));
+      section.appendChild(el("h3", { className: "teach-step", text: `Step A · The button that opens the ${noun}` }));
       section.appendChild(el("div", { className: "teach-row" }, [openBtn]));
-      if (draft.openButton) {
-        section.appendChild(pickedBlock({ ...draft.openButton, kind: null, label: draft.openButton.text }));
-        const now = tipped(el("button", { className: "teach-btn", text: "Open the popup now", type: "button" }), "The extension clicks the opening button for you. Use this again any time the popup has closed.");
-        now.addEventListener("click", openNow);
-        const mine = tipped(el("button", { className: "teach-btn secondary", text: "I'll open it myself", type: "button" }), "Hides this window so you can click the button on the page yourself. Press Continue when the popup is open.");
-        mine.addEventListener("click", openMyself);
-        section.appendChild(el("div", { className: "teach-row" }, [now, mine]));
+      if (!draft.openButton) return section;
+      section.appendChild(pickedBlock({ ...draft.openButton, kind: null, label: draft.openButton.text }));
+
+      if (mode === "window") {
         if (draft.openNote) section.appendChild(el("div", { className: "teach-note", text: draft.openNote }));
+        return section;
       }
+      const now = tipped(el("button", { className: "teach-btn", text: "Open the popup now", type: "button" }), "The extension clicks the opening button for you. Use this again any time the popup has closed.");
+      now.addEventListener("click", openNow);
+      const mine = tipped(el("button", { className: "teach-btn secondary", text: "I'll open it myself", type: "button" }), "Hides this window so you can click the button on the page yourself. Press Continue when the popup is open.");
+      mine.addEventListener("click", openMyself);
+      section.appendChild(el("div", { className: "teach-row" }, [now, mine]));
+      if (draft.openNote) section.appendChild(el("div", { className: "teach-note", text: draft.openNote }));
       return section;
+    }
+
+    // Step B for a separate window: open it, let the researcher click its
+    // parts there, then show and finish the mapping here.
+    function windowControls() {
+      const section = el("div", { className: "teach-section" }, [el("h3", { className: "teach-step", text: "Step B · Pick the parts of the window" })]);
+      if (!draft.openButton) {
+        section.appendChild(el("p", { className: "teach-muted", text: "Pick the opening button first." }));
+        return section;
+      }
+      const open = tipped(el("button", { className: "teach-btn", text: draft.windowPick ? "Open the window and pick again" : "Open the window and pick its fields", type: "button" }),
+        "The extension clicks the opening button for you. The window opens with a small ScraperX box in its top-right corner: click the text box, any button that must be pressed before Save, and the Save button there, then press Done.");
+      open.addEventListener("click", startWindowPick);
+      section.appendChild(el("div", { className: "teach-row" }, [open]));
+      section.appendChild(el("p", { className: "teach-muted", text: "If no window opens, Chrome blocked it: allow pop-ups for rts.pitchbook.com in Chrome's site settings." }));
+
+      const pick = draft.windowPick;
+      if (!pick) return section;
+      const outs = windowOutKeys();
+      for (const [index, field] of pick.fields.entries()) {
+        const extra = [];
+        if (draft.bind && draft.kind === "record") {
+          const select = el("select");
+          for (const key of outs) select.appendChild(el("option", { value: key.key, text: key.label }));
+          select.value = field.out;
+          select.addEventListener("change", () => { field.out = select.value; });
+          extra.push(tipped(el("label", { text: "Which agent value goes into this box?" }), "Each box of the window takes one value from the agent's report. Choose which one belongs here."), select);
+        }
+        const remove = el("button", { className: "teach-btn danger", text: "Remove", type: "button" });
+        remove.addEventListener("click", () => { pick.fields.splice(index, 1); render(); });
+        extra.push(el("div", { className: "teach-row" }, [remove]));
+        section.appendChild(pickedBlock(field, extra));
+      }
+      for (const button of pick.preSave) section.appendChild(pickedBlock({ ...button, kind: null, label: `Pressed before Save: ${button.text}` }));
+      if (pick.saveButton) section.appendChild(pickedBlock({ ...pick.saveButton, kind: null, label: `Save: ${pick.saveButton.text}` }));
+      return section;
+    }
+
+    // The part of the wizard that picks fields: the page itself, or the window.
+    function controlsSections() {
+      if (draft.window) return [windowControls()];
+      return [pickControls(), saveControls()];
     }
 
     function pickControls() {
@@ -536,7 +722,7 @@
       const bound = Boolean(draft.bind);
       card.appendChild(el("div", { className: "teach-head" }, [el("h2", { text: bound ? `Map "${draft.bind.label}" to RTS` : "Teach a new field" }), back]));
 
-      const hasFields = draft.fields.length > 0 && (draft.kind === "single" || Boolean(draft.addButton));
+      const hasFields = draft.window ? Boolean(draft.windowPick?.fields.length) : draft.fields.length > 0 && (draft.kind === "single" || Boolean(draft.addButton));
       if (bound) {
         if (draft.samples?.length) {
           const shown = draft.samples.slice(0, 3).map((r) => draft.bind.keys.map((k) => r[k.key]).filter(Boolean).join(" / ")).join("  ·  ");
@@ -544,13 +730,12 @@
         }
         card.appendChild(guide([
           { done: false, text: `In RTS, open the page or section where "${draft.bind.label}" is entered and keep it visible. ${draft.bind.hint}` },
-          ...popupSteps(),
+          ...(draft.window ? windowSteps() : [...popupSteps(),
           { done: hasFields, text: draft.kind === "record" ? "Click \"Pick Add button\", then \"Pick an input\" for each box in a row, and choose which agent value goes in each." : draft.popup ? "Click \"Pick field on page\", then click the text box inside the popup." : "Click \"Pick field on page\", then click the field in RTS." },
-          { done: Boolean(draft.saveButton), text: draft.popup ? "Click \"Pick Save button\", then click the popup's Save button. Then save the mapping." : "Click \"Pick Save button\", then click the section's Save button. Then save the mapping." }
+          { done: Boolean(draft.saveButton), text: draft.popup ? "Click \"Pick Save button\", then click the popup's Save button. Then save the mapping." : "Click \"Pick Save button\", then click the section's Save button. Then save the mapping." }])
         ]));
         card.appendChild(placeControls());
-        card.appendChild(pickControls());
-        card.appendChild(saveControls());
+        card.append(...controlsSections());
         if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
         card.appendChild(footer("Save mapping"));
         return;
@@ -558,13 +743,13 @@
 
       card.appendChild(guide([
         { done: Boolean(draft.label && draft.key), text: "Choose the kind of field and name it." },
-        ...popupSteps(),
+        ...(draft.window ? windowSteps() : [...popupSteps(),
         { done: hasFields, text: draft.popup ? "With the popup open, pick the text box inside it." : "Open the field in RTS, then pick it on the page." },
-        { done: Boolean(draft.saveButton), text: draft.popup ? "Pick the popup's Save button, then save." : "Pick the Save button, then save." }
+        { done: Boolean(draft.saveButton), text: draft.popup ? "Pick the popup's Save button, then save." : "Pick the Save button, then save." }])
       ]));
       const single = tipped(el("button", { className: `teach-btn${draft.kind === "single" ? "" : " secondary"}`, text: "Single field", type: "button" }), "One value in one box or dropdown (for example Founded year).");
       const record = tipped(el("button", { className: `teach-btn${draft.kind === "record" ? "" : " secondary"}`, text: "Repeatable record (Add → fill → Save)", type: "button" }), "A list where you click an Add button to get a new row, fill the row, then save (for example Name Variations).");
-      const setKind = (kind) => { if (draft.kind !== kind) { draft.kind = kind; draft.fields = []; draft.addButton = null; draft.popup = false; draft.openButton = null; draft.closeButton = null; draft.openNote = ""; render(); } };
+      const setKind = (kind) => { if (draft.kind !== kind) { draft.kind = kind; draft.fields = []; draft.addButton = null; draft.popup = false; draft.window = false; draft.windowPick = null; draft.rowBy = null; draft.openEl = null; draft.openButton = null; draft.closeButton = null; draft.openNote = ""; render(); } };
       single.addEventListener("click", () => setKind("single"));
       record.addEventListener("click", () => setKind("record"));
       card.appendChild(el("div", { className: "teach-section" }, [el("h3", { text: "1 · What kind of field?" }), el("div", { className: "teach-row" }, [single, record])]));
@@ -580,8 +765,7 @@
         textInput(draft.description, "e.g. Year the company was founded, 4 digits", (v) => { draft.description = v; })
       ]));
       card.appendChild(placeControls());
-      card.appendChild(pickControls());
-      card.appendChild(saveControls());
+      card.append(...controlsSections());
       if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
       card.appendChild(footer("Save taught field"));
     }

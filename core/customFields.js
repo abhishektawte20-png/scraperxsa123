@@ -10,7 +10,9 @@
  * "single" definition; N named sub-fields for a "record" definition that is
  * added with an Add button), an optional addButton, and a saveButton.
  * A single field that lives inside a popup also has an openButton (the
- * button that opens the popup) and, optionally, a closeButton.
+ * button that opens the popup) and, optionally, a closeButton. If the popup
+ * is a separate browser window the definition also has `window` (buttons to
+ * press before Save); a list in such a window names its row with `rowBy`.
  *
  * In the Rovo JSON a definition lives under the top-level "custom" object:
  *   single: custom.<key> = { value, action, source }
@@ -76,16 +78,26 @@
         }
       }
     }
-    if (def.kind === "record") {
+    // A list in a separate window has no Add button: each row has its own
+    // button that opens the window, and the row is found by rowBy.
+    if (def.kind === "record" && !def.window) {
       validateSelectors("The Add button", def.addButton?.selectors, errors);
     }
     validateSelectors("The Save button", def.saveButton?.selectors, errors);
     if (def.openButton !== undefined && def.openButton !== null) {
-      if (def.kind !== "single") errors.push("Only a single field can sit inside a popup.");
+      if (def.kind !== "single" && !def.window) errors.push("Only a single field can sit inside a popup.");
       validateOptionalButton("The button that opens the popup", def.openButton, errors);
       validateOptionalButton("The popup's Close button", def.closeButton, errors);
     } else if (def.closeButton) {
       errors.push("A Close button only makes sense for a field inside a popup.");
+    }
+    if (def.window !== undefined && def.window !== null) {
+      if (!isPlainObject(def.window)) errors.push("The popup window settings are invalid.");
+      if (!def.openButton) errors.push("A field in a separate window needs the button that opens it.");
+      if (def.kind === "record" && (!def.rowBy?.outKey || typeof def.rowBy.rowSelector !== "string" || !def.rowBy.rowSelector || !def.binds)) {
+        errors.push("The rows of this list could not be recognised. Pick the opening button again.");
+      }
+      for (const button of def.window?.preSave ?? []) validateOptionalButton("A button pressed before Save", button, errors);
     }
     if (def.binds !== undefined) errors.push(...validateBinds(def));
     return errors;
@@ -130,6 +142,8 @@
   // the report value it was mapped to.
   function toDefRecord(def, outRecord) {
     const record = { action: outRecord?.action || "addIfMissing", source: outRecord?.source ?? null };
+    // Names the row whose window is filled (for example the network).
+    if (def.rowBy) record.__row = outRecord?.[def.rowBy.outKey] ?? null;
     for (const field of def.fields) {
       const outKey = def.binds.map[field.key];
       const value = outRecord?.[outKey];

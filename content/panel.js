@@ -931,6 +931,7 @@
           const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value));
           recordResult(entry.action.jsonPath, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
+          else if (result.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", result.detail); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
           failed++; setRowStatus(entry.action.actionId, "failed", error.message);
