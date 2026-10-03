@@ -86,3 +86,43 @@ test("suggested keys are camelCase, keeping already-camelCase words intact", () 
   assert.equal(sb().toCamelKey("2nd Level"), "field2ndLevel");
   assert.equal(sb().toCamelKey("!!!"), "");
 });
+
+test("a box with no id, name or stable class is found by the label printed beside it (Brief / Full Description)", () => {
+  // Same layout as RTS: identical blocks, generated class names, label in an earlier sibling.
+  const block = (label) => `<div class="blk"><div class="row"><label>${label} <img alt="?"></label></div><div class="wrap-9fA3kQ"><textarea class="box-9fA3kQ"></textarea></div></div>`;
+  const doc = setup(block("Brief Description:") + block("Full Description:"));
+  const [brief, full] = doc.querySelectorAll("textarea");
+
+  const briefInfo = sb().inspectControl(brief);
+  assert.equal(briefInfo.kind, "text");
+  assert.equal(briefInfo.selectors[0], "sx-label::textarea::Brief Description:");
+  assert.equal(briefInfo.fragile, false);
+  assert.equal(sb().resolveFirst(briefInfo.selectors), brief);
+  assert.equal(sb().resolveFirst(sb().inspectControl(full).selectors), full, "the Full Description box resolves to itself, not to the Brief one");
+});
+
+test("the label selector still resolves after the page re-renders with different generated class names", () => {
+  const html = (cls) => `<div class="blk"><div><label>Brief Description:</label></div><div><textarea class="${cls}"></textarea></div></div>`;
+  const first = setup(html("a-1x9Kq3"));
+  const selectors = sb().inspectControl(first.querySelector("textarea")).selectors;
+  const second = setup(html("zz-7Pq2Lm"));
+  assert.equal(sb().resolveFirst(selectors), second.querySelector("textarea"));
+});
+
+test("with no label either, a longer position path is used until it is unique", () => {
+  const nest = (n) => `<main>${"<div>".repeat(7)}<textarea></textarea>${"</div>".repeat(7)}</main>`;
+  const doc = setup(nest(1) + nest(2));
+  const [a, b] = doc.querySelectorAll("textarea");
+  const infoB = sb().inspectControl(b);
+  assert.equal(infoB.kind, "text");
+  assert.equal(infoB.fragile, true);
+  assert.equal(sb().resolveAll(infoB.selectors).length, 1);
+  assert.equal(sb().resolveFirst(infoB.selectors), b);
+  assert.notEqual(sb().resolveFirst(infoB.selectors), a);
+});
+
+test("buttons never get a label-based selector", () => {
+  const doc = setup('<div><span>Facebook</span></div><div><input type="button" value="New"></div>');
+  const info = sb().inspectButton(doc.querySelector("input"));
+  assert.ok(info.selectors.every((s) => !s.startsWith("sx-label::")));
+});

@@ -33,18 +33,45 @@
     return `"${String(value).replace(/["\\]/g, "\\$&")}"`;
   }
 
-  function matchesAll(selector) {
+  // A control with no stable attribute is found by the label printed next to
+  // it. The pseudo-selector "sx-label::<tag>::<label text>" matches every
+  // <tag> whose nearest preceding label text is that text.
+  const LABEL_PREFIX = "sx-label::";
+  const normText = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const CONTROLS = "input, textarea, select";
+
+  // The text printed just before a control: the closest earlier sibling (of
+  // the control or of one of its first few ancestors) that has text and holds
+  // no other control.
+  function precedingLabelText(el) {
+    let node = el;
+    for (let depth = 0; node && node.nodeType === 1 && depth < 4; node = node.parentElement, depth++) {
+      for (let prev = node.previousElementSibling; prev; prev = prev.previousElementSibling) {
+        if (prev.querySelector(CONTROLS) || prev.matches(CONTROLS)) break;
+        const text = (prev.textContent || "").replace(/\s+/g, " ").trim();
+        if (text && text.length <= 80) return text;
+      }
+    }
+    return "";
+  }
+
+  function matchesAll(selector, root = document) {
     try {
-      return Array.from(document.querySelectorAll(selector));
+      if (selector.startsWith(LABEL_PREFIX)) {
+        const [tag, ...rest] = selector.slice(LABEL_PREFIX.length).split("::");
+        const want = normText(rest.join("::"));
+        return Array.from(root.querySelectorAll(tag)).filter((control) => normText(precedingLabelText(control)) === want);
+      }
+      return Array.from(root.querySelectorAll(selector));
     } catch {
       return [];
     }
   }
 
-  function structuralPath(el) {
+  function structuralPath(el, maxDepth = 5) {
     const parts = [];
     let node = el;
-    while (node && node.nodeType === 1 && node !== document.documentElement && parts.length < 5) {
+    while (node && node.nodeType === 1 && node !== document.documentElement && parts.length < maxDepth) {
       const tag = node.tagName.toLowerCase();
       if (node.id && isStableId(node.id)) {
         parts.unshift(`#${node.id}`);
@@ -62,7 +89,7 @@
   // preferStable: for elements inside a popup or a repeated row, where the
   // same id may be reused by hidden copies. Test attributes (unique by
   // intent) come first, then ids, then the rest.
-  function buildSelectors(el, { allowMultiple = false, preferStable = false } = {}) {
+  function buildSelectors(el, { allowMultiple = false, preferStable = false, labelFallback = false } = {}) {
     const tag = el.tagName.toLowerCase();
     const candidates = [];
 
@@ -101,11 +128,24 @@
     }
 
     let fragile = false;
+    // Next best: the label printed beside a form control.
+    if (!good.length && labelFallback && /^(input|textarea|select)$/.test(tag)) {
+      const label = precedingLabelText(el);
+      const selector = label ? `${LABEL_PREFIX}${tag}::${label}` : "";
+      const found = selector ? matchesAll(selector) : [];
+      if (found.includes(el) && (allowMultiple || found.length === 1)) good.push(selector);
+    }
+    // Last resort: the element's position, taking more ancestors until it is
+    // unique (two identical boxes only differ higher up the page).
     if (!good.length) {
-      const path = structuralPath(el);
-      if (path && matchesAll(path).includes(el) && (allowMultiple || matchesAll(path).length === 1)) {
-        good.push(path);
-        fragile = true;
+      for (const depth of [5, 8, 12, 20]) {
+        const path = structuralPath(el, depth);
+        const found = path ? matchesAll(path) : [];
+        if (found.includes(el) && (allowMultiple || found.length === 1)) {
+          good.push(path);
+          fragile = true;
+          break;
+        }
       }
     }
     return { selectors: good, fragile };
@@ -186,7 +226,7 @@
       return { ...base, kind: "unsupported", reason: "This field is disabled or read-only right now. Make it editable on the page, then pick it again." };
     }
 
-    const { selectors, fragile } = buildSelectors(el, options);
+    const { selectors, fragile } = buildSelectors(el, { ...options, labelFallback: true });
     if (!selectors.length) {
       return { ...base, kind: "unsupported", reason: "No reliable selector could be built for this field (it has no stable id, name or class)." };
     }
@@ -279,6 +319,6 @@
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.selectorBuilder = {
     buildSelectors, resolveControl, resolveButton, inspectControl, inspectButton,
-    resolveFirst, resolveAll, resolveButtonByDefinition, toCamelKey, isStableClass, isStableId, inspectRow, textHasWord
+    resolveFirst, resolveAll, resolveButtonByDefinition, toCamelKey, isStableClass, isStableId, inspectRow, textHasWord, matchAll: matchesAll, LABEL_PREFIX
   };
 })();

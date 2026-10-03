@@ -31,12 +31,9 @@
     return true;
   }
 
+  // Through the selector builder, so "sx-label::" selectors resolve too.
   function queryAll(selector) {
-    try {
-      return Array.from(document.querySelectorAll(selector));
-    } catch {
-      return [];
-    }
+    return globalThis.SXRTS.selectorBuilder.matchAll(selector);
   }
 
   function shownMatches(selectors) {

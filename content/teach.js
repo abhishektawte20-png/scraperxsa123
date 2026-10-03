@@ -237,10 +237,19 @@
       return details;
     }
 
+    // "sx-label::textarea::Brief Description:" reads as the box next to that label.
+    function describeSelector(selector) {
+      const prefix = sb().LABEL_PREFIX;
+      if (!selector) return "(matched by button text)";
+      if (!selector.startsWith(prefix)) return selector;
+      const [tag, ...rest] = selector.slice(prefix.length).split("::");
+      return `${tag} next to the label "${rest.join("::")}"`;
+    }
+
     function pickedBlock(info, extra = []) {
       const lines = [
         el("div", { className: "meta", text: `${info.tag}${info.kind ? ` · ${info.kind === "select" ? "native dropdown" : "text box"}` : ""}${info.label ? ` · "${info.label}"` : ""}` }),
-        el("div", { className: "meta" }, [el("code", { text: info.selectors?.[0] || "(matched by button text)" })])
+        el("div", { className: "meta" }, [el("code", { text: describeSelector(info.selectors?.[0]) })])
       ];
       if (info.options) lines.push(el("div", { className: "meta", text: `Options (${info.options.length}): ${info.options.map((o) => o.label).join(", ")}` }));
       if (info.fragile) lines.push(el("div", { className: "teach-warn", text: "⚠ No stable attribute found; this selector depends on page structure and may break when RTS changes." }));
