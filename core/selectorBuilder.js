@@ -74,12 +74,14 @@
     }
   }
 
-  function structuralPath(el, maxDepth = 5) {
+  // useIds: stop at the first ancestor with a stable id, but only one the
+  // page uses once (RTS repeats ids, and a repeated id anchors nothing).
+  function structuralPath(el, maxDepth = 5, useIds = true) {
     const parts = [];
     let node = el;
     while (node && node.nodeType === 1 && node !== document.documentElement && parts.length < maxDepth) {
       const tag = node.tagName.toLowerCase();
-      if (node.id && isStableId(node.id)) {
+      if (useIds && node.id && isStableId(node.id) && matchesAll(`#${node.id}`).length === 1) {
         parts.unshift(`#${node.id}`);
         break;
       }
@@ -150,10 +152,10 @@
     // Last resort: the element's position, taking more ancestors until it is
     // unique (two identical boxes only differ higher up the page).
     if (!good.length) {
-      // The last depth has no limit: a path from the page root always
-      // identifies exactly one element.
-      for (const depth of [5, 8, 12, 20, Infinity]) {
-        const path = structuralPath(el, depth);
+      // The last attempt has no depth limit and ignores ids: a path from the
+      // page root always identifies exactly one element.
+      for (const [depth, useIds] of [[5, true], [8, true], [12, true], [20, true], [Infinity, false]]) {
+        const path = structuralPath(el, depth, useIds);
         const found = path ? matchesAll(path) : [];
         if (found.includes(el) && (allowMultiple || found.length === 1)) {
           good.push(path);

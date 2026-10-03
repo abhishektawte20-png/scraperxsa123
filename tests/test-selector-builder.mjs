@@ -159,3 +159,58 @@ test("any pile of identical, unlabelled, attribute-free boxes can be picked and 
     }
   }
 });
+
+test("identical boxes inside blocks that reuse the same id (RTS repeats ids) still get a selector", () => {
+  // No label, no name, generated classes, and an ancestor id that appears more than once.
+  const block = (n) => `<div id="descBlock"><div><div class="g-${n}x9Kq3"><textarea class="t-${n}Zt8Rw"></textarea></div></div></div>`;
+  const doc = setup(block(1) + block(2) + block(3));
+  for (const box of doc.querySelectorAll("textarea")) {
+    const info = sb().inspectControl(box);
+    assert.equal(info.kind, "text", info.reason);
+    assert.equal(sb().resolveAll(info.selectors).length, 1);
+    assert.equal(sb().resolveFirst(info.selectors), box);
+  }
+});
+
+test("the same, with labels that repeat and ids that repeat", () => {
+  const block = `<div id="blk"><div id="row"><label>Notes:</label></div><div id="wrap"><textarea></textarea></div></div>`;
+  const doc = setup(block + block);
+  for (const box of doc.querySelectorAll("textarea")) {
+    const info = sb().inspectControl(box);
+    assert.equal(info.kind, "text", info.reason);
+    assert.equal(sb().resolveFirst(info.selectors), box);
+  }
+});
+
+test("fuzz: every text box and dropdown in 300 random pages with repeated ids, names, labels and classes gets a selector that resolves back to exactly it", () => {
+  let seed = 20261003;
+  const rand = (n) => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed % n; };
+  const pick = (list) => list[rand(list.length)];
+  const attrs = () => [
+    rand(3) === 0 ? ` id="${pick(["blk", "row", "wrap", "box", "x"])}"` : "",
+    rand(2) === 0 ? ` class="${pick(["a-1x9Kq3", "b-7Pq2Lm", "wrap", "row"])}"` : ""
+  ].join("");
+  function node(depth) {
+    if (depth === 0 || rand(5) === 0) {
+      const control = pick(["textarea", "input", "select"]);
+      const own = [rand(3) === 0 ? ` name="${pick(["n1", "n2"])}"` : "", rand(4) === 0 ? ` placeholder="${pick(["p1", "p2"])}"` : "", rand(4) === 0 ? ` class="${pick(["a-1x9Kq3", "c-4Mn8Zs"])}"` : "", rand(5) === 0 ? ` id="${pick(["blk", "x", "fld"])}"` : ""].join("");
+      return control === "select" ? `<select${own}><option value="">--</option><option value="a">A</option></select>` : control === "input" ? `<input type="text"${own}>` : `<textarea${own}></textarea>`;
+    }
+    const tag = pick(["div", "div", "span", "section", "p"]);
+    const kids = Array.from({ length: 1 + rand(3) }, () => (rand(3) === 0 ? `<label>${pick(["Notes:", "Description:", "Name"])}</label>` : "") + node(depth - 1)).join("");
+    return `<${tag}${attrs()}>${kids}</${tag}>`;
+  }
+  let checked = 0;
+  for (let page = 0; page < 300; page++) {
+    const doc = setup(Array.from({ length: 1 + rand(4) }, () => node(2 + rand(4))).join(""));
+    for (const control of doc.querySelectorAll("input, textarea, select")) {
+      const info = sb().inspectControl(control);
+      assert.ok(info.kind === "text" || info.kind === "select", `page ${page}: ${info.reason}\n${doc.body.innerHTML}`);
+      const found = sb().resolveAll(info.selectors);
+      assert.equal(found.length, 1, `page ${page}: ${info.selectors} matched ${found.length}`);
+      assert.equal(found[0], control);
+      checked++;
+    }
+  }
+  assert.ok(checked > 500, `checked ${checked} controls`);
+});
