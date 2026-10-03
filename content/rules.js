@@ -68,23 +68,30 @@
       const add = el("button", { className: "rules-btn", text: "Add rule", type: "button" });
       add.addEventListener("click", () => { draft = newDraft(); view = "edit"; render(); });
       card.appendChild(el("div", { className: "rules-row" }, [add]));
-      card.appendChild(el("p", { className: "rules-muted", text: "A rule changes the agent's output before it is previewed or written to RTS, for example keeping only a Facebook handle instead of the whole URL. Rules are saved in this browser and apply to every profile." }));
+      card.appendChild(el("p", { className: "rules-muted", text: "A rule changes the agent's output before it is previewed or written to RTS, for example keeping only a Facebook handle instead of the whole URL. Rules you make are saved in this browser; team rules come with the extension. All of them apply to every profile." }));
       const rules = or().getCached();
       if (!rules.length) card.appendChild(el("p", { className: "rules-muted", text: "No rules yet." }));
       for (const rule of rules) {
         const target = or().TARGETS.find((t) => t.id === rule.target)?.label ?? rule.target;
         const edit = el("button", { className: "rules-btn secondary", text: "Edit", type: "button" });
         edit.addEventListener("click", () => { draft = { ...rule, steps: rule.steps.map((s) => ({ ...s })), sample: null, error: "" }; view = "edit"; render(); });
-        const del = el("button", { className: "rules-btn danger", text: "Delete", type: "button" });
-        del.addEventListener("click", async () => {
-          if (!window.confirm(`Delete the rule "${rule.label}"?`)) return;
-          await or().removeRule(rule.id);
-          onChange?.();
-          render();
-        });
+        const fromTeam = or().isFromTeam(rule);
+        const overrides = or().overridesTeam(rule);
+        const buttons = [edit];
+        if (!fromTeam) {
+          const del = el("button", { className: "rules-btn danger", text: overrides ? "Reset to team default" : "Delete", type: "button" });
+          del.addEventListener("click", async () => {
+            if (!window.confirm(overrides ? `Go back to the team version of "${rule.label}"?` : `Delete the rule "${rule.label}"?`)) return;
+            await or().removeRule(rule.id);
+            onChange?.();
+            render();
+          });
+          buttons.push(del);
+        }
+        const origin = fromTeam ? "  ·  team default" : overrides ? "  ·  your change (replaces the team default)" : "";
         card.appendChild(el("div", { className: "rules-item" }, [
-          el("div", {}, [el("div", { text: rule.label }), el("div", { className: "rules-muted", text: `${target}: ${or().describeSteps(rule.steps)}` })]),
-          el("div", { className: "rules-row" }, [edit, del])
+          el("div", {}, [el("div", { text: rule.label + origin }), el("div", { className: "rules-muted", text: `${target}: ${or().describeSteps(rule.steps)}` })]),
+          el("div", { className: "rules-row" }, buttons)
         ]));
       }
     }

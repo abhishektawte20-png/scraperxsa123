@@ -26,7 +26,18 @@
   const KINDS = ["single", "record"];
   const FIELD_KINDS = ["text", "select"];
 
+  // What the extension works with is the team's shipped defaults (see
+  // core/teamDefaults.js) plus this browser's own mappings. A local mapping
+  // for the same field replaces the team's. Only local ones are ever stored.
+  let local = [];
+  let team = [];
   let cached = [];
+
+  const sameField = (a, b) => a.key === b.key || Boolean(a.binds && b.binds && a.binds.path === b.binds.path);
+
+  function rebuild() {
+    cached = [...team.filter((t) => !local.some((l) => sameField(t, l))).map((t) => ({ ...t, fromTeam: true })), ...local];
+  }
 
   function normalize(value) {
     return value === null || value === undefined ? "" : String(value).trim().replace(/\s+/g, " ").toLowerCase();
@@ -118,12 +129,15 @@
   }
 
   async function load() {
+    const shipped = globalThis.SXRTS.teamDefaults?.mappings;
+    team = Array.isArray(shipped) ? shipped.filter((d) => validateDefinition(d).length === 0) : [];
     try {
       const stored = await chrome.storage.local.get(STORAGE_KEY);
-      cached = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((d) => validateDefinition(d).length === 0) : [];
+      local = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((d) => validateDefinition(d).length === 0) : [];
     } catch {
-      cached = [];
+      local = [];
     }
+    rebuild();
     return cached;
   }
 
@@ -152,9 +166,10 @@
     return record;
   }
 
-  async function persist(next) {
-    await chrome.storage.local.set({ [STORAGE_KEY]: next });
-    cached = next;
+  async function persist(nextLocal) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: nextLocal });
+    local = nextLocal;
+    rebuild();
   }
 
   async function saveDefinition(def) {
@@ -164,12 +179,46 @@
     if (reserved.includes(def.key)) throw new Error(`"${def.key}" is already a built-in field name.`);
     const record = { ...def, updatedAt: new Date().toISOString() };
     // One mapping per report field: saving again replaces the earlier one.
-    await persist([...cached.filter((existing) => existing.key !== def.key && !(def.binds && existing.binds?.path === def.binds.path)), record]);
+    await persist([...local.filter((existing) => existing.key !== def.key && !(def.binds && existing.binds?.path === def.binds.path)), record]);
     return record;
   }
 
+  // Removes this browser's own mapping; a team default for the same field, if
+  // there is one, comes back into effect.
   async function removeDefinition(key) {
-    await persist(cached.filter((def) => def.key !== key));
+    await persist(local.filter((def) => def.key !== key));
+  }
+
+  const isFromTeam = (def) => Boolean(def?.fromTeam);
+  const overridesTeam = (def) => !def?.fromTeam && team.some((t) => sameField(t, def));
+  const getTeam = () => team;
+
+  // Drops every local mapping that replaces a team default.
+  async function resetToTeam() {
+    const kept = local.filter((def) => !team.some((t) => sameField(t, def)));
+    const dropped = local.length - kept.length;
+    await persist(kept);
+    return dropped;
+  }
+
+  // The effective set, without bookkeeping, for sharing with the team.
+  function exportable() {
+    return cached.map(({ fromTeam, ...def }) => def);
+  }
+
+  // Imported mappings go in as this browser's own. Anything invalid is
+  // reported and skipped.
+  async function importDefinitions(list) {
+    const skipped = [];
+    let next = [...local];
+    for (const def of list) {
+      const errors = validateDefinition(def);
+      if (errors.length) { skipped.push(`${def?.label || def?.key || "A mapping"}: ${errors.join(" ")}`); continue; }
+      const { fromTeam, ...clean } = def;
+      next = [...next.filter((existing) => !sameField(existing, clean)), clean];
+    }
+    await persist(next);
+    return { imported: list.length - skipped.length, skipped };
   }
 
   function jsonPathFor(def) {
@@ -307,6 +356,6 @@
   globalThis.SXRTS.customFields = {
     ACTIONS, KEY_PATTERN, load, getCached, getDefinition, saveDefinition, removeDefinition,
     validateDefinition, validateRecord, validatePayload, normalizeRecord, hasAnyValue, getBoundDef, isBound, toDefRecord,
-    jsonPathFor, defForJsonPath, optionsFor, promptParts, findOption
+    jsonPathFor, defForJsonPath, optionsFor, promptParts, findOption, isFromTeam, overridesTeam, getTeam, resetToTeam, exportable, importDefinitions
   };
 })();

@@ -22,19 +22,21 @@ function chromiumPath() {
   return dir ? path.join(root, dir, "chrome-linux", "chrome") : undefined;
 }
 
-function buildExtension(target) {
+function buildExtension(target, teamFile) {
   for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(repo, item), path.join(target, item), { recursive: true });
   const manifestPath = path.join(target, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.host_permissions = ["http://127.0.0.1/*"];
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  // The file a team lead ships: an exported teamDefaults.js dropped over the empty one.
+  if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode) {
+async function scenario(mode, teamFile) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
-  buildExtension(ext);
+  buildExtension(ext, teamFile);
 const MAIN = `<!doctype html><body style="font:14px sans-serif">
 <span class="flat-button__caption-x1">PBID: PB-1</span>
 <h3>Social Media Identifiers</h3>
@@ -84,7 +86,7 @@ const POPUP = `<!doctype html><body style="font:13px sans-serif">
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base);
+    return await drive(ctx, base, { teamFile });
   } finally {
     await ctx.close();
     server.close();
@@ -92,7 +94,7 @@ const POPUP = `<!doctype html><body style="font:13px sans-serif">
   }
 }
 
-async function drive(ctx, base) {
+async function drive(ctx, base, { teamFile } = {}) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -141,46 +143,64 @@ async function drive(ctx, base) {
     [...root.querySelectorAll("button")].find((b) => b.textContent === "Validate JSON").click();
   }, TEXT_SAMPLE);
   await page.waitForTimeout(300);
-  await inPanel(() => {
-    const root = document.getElementById("sx-test-root").shadowRoot;
-    [...root.querySelectorAll(".action-card")].find((c) => /socialMediaIdentifiers\[0\]/.test(c.querySelector(".action-card-field").textContent)).querySelector("button.map").click();
-  });
-  await page.waitForTimeout(200);
+  let exportedFile = null;
+  if (!teamFile) {
+    await inPanel(() => {
+      const root = document.getElementById("sx-test-root").shadowRoot;
+      [...root.querySelectorAll(".action-card")].find((c) => /socialMediaIdentifiers\[0\]/.test(c.querySelector(".action-card-field").textContent)).querySelector("button.map").click();
+    });
+    await page.waitForTimeout(200);
 
-  // Map: separate window, pick any row's New button (a real click on the page).
-  await click("Separate window");
-  await click("Pick the button that opens the window");
-  await clickAt(page, '.smRow[data-n="Facebook"] #change');
-  const note = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-note")?.textContent);
-  assert.match(note, /Recognised 4 rows/);
-  assert.equal(await inPanel(() => window.opens), 0, "picking the button does not click it");
+    // Map: separate window, pick any row's New button (a real click on the page).
+    await click("Separate window");
+    await click("Pick the button that opens the window");
+    await clickAt(page, '.smRow[data-n="Facebook"] #change');
+    const note = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-note")?.textContent);
+    assert.match(note, /Recognised 4 rows/);
+    assert.equal(await inPanel(() => window.opens), 0, "picking the button does not click it");
 
-  // Open the window, then pick its parts there.
-  const popupPromise = ctx.waitForEvent("page");
-  await click("Open the window and pick its fields");
-  const popup = await popupPromise;
-  await popup.waitForLoadState();
-  await popup.waitForFunction(() => [...document.querySelectorAll("div")].some((d) => d.shadowRoot?.querySelector(".card")), null, { timeout: 8000 });
-  const pickerClick = async (text) => {
-    const p = await popup.evaluate((t) => {
-      const host = [...document.querySelectorAll("div")].find((d) => d.shadowRoot?.querySelector(".card"));
-      const b = [...host.shadowRoot.querySelectorAll("button")].find((x) => x.textContent.trim().startsWith(t));
-      b.scrollIntoView({ block: "center" });
-      const r = b.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    }, text);
-    await popup.mouse.click(p.x, p.y);
-    await popup.waitForTimeout(150);
-  };
-  await pickerClick("Pick the text box"); await clickAt(popup, "#identifierText");
-  await pickerClick("Pick a button to press first"); await clickAt(popup, "#showExisting");
-  await pickerClick("Pick the Save button"); await clickAt(popup, "#save"); // greyed out, still pickable
-  await pickerClick("Done");
-  await page.waitForTimeout(500);
-  assert.match(await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-card").textContent), /#identifierText/);
-  await popup.close();
-  await click("Save mapping");
-  await page.waitForTimeout(300);
+    // Open the window, then pick its parts there.
+    const popupPromise = ctx.waitForEvent("page");
+    await click("Open the window and pick its fields");
+    const popup = await popupPromise;
+    await popup.waitForLoadState();
+    await popup.waitForFunction(() => [...document.querySelectorAll("div")].some((d) => d.shadowRoot?.querySelector(".card")), null, { timeout: 8000 });
+    const pickerClick = async (text) => {
+      const p = await popup.evaluate((t) => {
+        const host = [...document.querySelectorAll("div")].find((d) => d.shadowRoot?.querySelector(".card"));
+        const b = [...host.shadowRoot.querySelectorAll("button")].find((x) => x.textContent.trim().startsWith(t));
+        b.scrollIntoView({ block: "center" });
+        const r = b.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }, text);
+      await popup.mouse.click(p.x, p.y);
+      await popup.waitForTimeout(150);
+    };
+    await pickerClick("Pick the text box"); await clickAt(popup, "#identifierText");
+    await pickerClick("Pick a button to press first"); await clickAt(popup, "#showExisting");
+    await pickerClick("Pick the Save button"); await clickAt(popup, "#save"); // greyed out, still pickable
+    await pickerClick("Done");
+    await page.waitForTimeout(500);
+    assert.match(await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-card").textContent), /#identifierText/);
+    await popup.close();
+    await click("Save mapping");
+    await page.waitForTimeout(300);
+
+    // Share it: Export team defaults from the Mapped & taught fields window.
+    await click("Teach new field", ".card");
+    const downloadPromise = page.waitForEvent("download");
+    await click("Export team defaults");
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), "teamDefaults.js");
+    exportedFile = fs.readFileSync(await download.path(), "utf8");
+    await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-x").click());
+  } else {
+    // A researcher with the shipped file: the mapping is already in effect, nothing to map.
+    const mapButtons = await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".action-card")]
+      .filter((c) => /socialMediaIdentifiers/.test(c.querySelector(".action-card-field").textContent))
+      .map((c) => ({ badge: c.querySelector(".badge")?.textContent, hasMapButton: Boolean(c.querySelector("button.map")) })));
+    assert.deepEqual(mapButtons, [{ badge: "pending", hasMapButton: false }, { badge: "pending", hasMapButton: false }]);
+  }
 
   // Publish both social records through the real panel.
   await inPanel(() => {
@@ -201,16 +221,29 @@ async function drive(ctx, base) {
     summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Published \d+, skipped \d+, failed \d+/)?.[0]),
     saved: await inPanel(() => window.saved),
     rows: await inPanel(() => [...document.querySelectorAll(".smRow")].map((r) => `${r.dataset.n}:${r.querySelector("#change") ? "New" : "linked"}`)),
-    openWindows: ctx.pages().filter((p) => p.url().includes("/popup.html")).length
+    openWindows: ctx.pages().filter((p) => p.url().includes("/popup.html")).length,
+    exportedFile
   };
 }
 
+const expectPublished = (result) => {
+  assert.equal(result.summary, "Published 2, skipped 0, failed 0");
+  assert.deepEqual(result.saved, { Facebook: "https://www.facebook.com/psyphergames", Instagram: "https://www.instagram.com/psyphergames/" });
+  assert.deepEqual(result.rows, ["Twitter:New", "Facebook:linked", "Instagram:linked", "LinkedIn:linked"]);
+  assert.equal(result.openWindows, 0, "no popup window is left open");
+};
+
 for (const mode of ["close", "stay"]) {
   test(`maps and publishes through a separate popup window (the page ${mode === "close" ? "closes the window itself on Save" : "leaves the window open on Save"})`, { timeout: 150000 }, async () => {
-    const result = await scenario(mode);
-    assert.equal(result.summary, "Published 2, skipped 0, failed 0");
-    assert.deepEqual(result.saved, { Facebook: "https://www.facebook.com/psyphergames", Instagram: "https://www.instagram.com/psyphergames/" });
-    assert.deepEqual(result.rows, ["Twitter:New", "Facebook:linked", "Instagram:linked", "LinkedIn:linked"]);
-    assert.equal(result.openWindows, 0, "no popup window is left open");
+    expectPublished(await scenario(mode));
   });
 }
+
+test("a mapping exported by the team lead works from day one for a researcher who maps nothing", { timeout: 300000 }, async () => {
+  const lead = await scenario("close");
+  expectPublished(lead);
+  assert.match(lead.exportedFile, /globalThis\.SXRTS\.teamDefaults/);
+  assert.match(lead.exportedFile, /"businessEntity\.socialMediaIdentifiers"/);
+  const researcher = await scenario("close", lead.exportedFile);
+  expectPublished(researcher);
+});

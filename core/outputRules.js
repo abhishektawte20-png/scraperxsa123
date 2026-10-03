@@ -123,33 +123,74 @@
     return errors;
   }
 
+  // Like the field mappings: the team's shipped rules plus this browser's own,
+  // a local rule with the same id replacing the team's. Only local ones are stored.
+  let local = [];
+  let team = [];
+
+  function rebuild() {
+    cached = [...team.filter((t) => !local.some((l) => l.id === t.id)).map((t) => ({ ...t, fromTeam: true })), ...local];
+  }
+
   async function load() {
+    const shipped = globalThis.SXRTS.teamDefaults?.rules;
+    team = Array.isArray(shipped) ? shipped.filter((r) => validateRule(r).length === 0 && r.id) : [];
     try {
       const stored = await chrome.storage.local.get(STORAGE_KEY);
-      cached = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((r) => validateRule(r).length === 0) : [];
+      local = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((r) => validateRule(r).length === 0) : [];
     } catch {
-      cached = [];
+      local = [];
     }
+    rebuild();
     return cached;
   }
 
   const getCached = () => cached;
+  const getTeam = () => team;
+  const isFromTeam = (rule) => Boolean(rule?.fromTeam);
+  const overridesTeam = (rule) => !rule?.fromTeam && team.some((t) => t.id === rule.id);
 
-  async function persist(next) {
-    await chrome.storage.local.set({ [STORAGE_KEY]: next });
-    cached = next;
+  async function persist(nextLocal) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: nextLocal });
+    local = nextLocal;
+    rebuild();
   }
 
   async function saveRule(rule) {
     const errors = validateRule(rule);
     if (errors.length) throw new Error(errors.join(" "));
     const record = { id: rule.id || `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, label: rule.label.trim(), target: rule.target, steps: rule.steps.map((s) => ({ ...s })), enabled: rule.enabled !== false };
-    await persist([...cached.filter((r) => r.id !== record.id), record]);
+    await persist([...local.filter((r) => r.id !== record.id), record]);
     return record;
   }
 
+  // Removes this browser's own rule; a team rule with the same id comes back.
   async function removeRule(id) {
-    await persist(cached.filter((r) => r.id !== id));
+    await persist(local.filter((r) => r.id !== id));
+  }
+
+  async function resetToTeam() {
+    const kept = local.filter((r) => !team.some((t) => t.id === r.id));
+    const dropped = local.length - kept.length;
+    await persist(kept);
+    return dropped;
+  }
+
+  function exportable() {
+    return cached.map(({ fromTeam, ...rule }) => rule);
+  }
+
+  async function importRules(list) {
+    const skipped = [];
+    let next = [...local];
+    for (const rule of list) {
+      const errors = validateRule(rule);
+      if (errors.length || !rule.id) { skipped.push(`${rule?.label || "A rule"}: ${errors.join(" ") || "it has no id."}`); continue; }
+      const { fromTeam, ...clean } = rule;
+      next = [...next.filter((r) => r.id !== clean.id), clean];
+    }
+    await persist(next);
+    return { imported: list.length - skipped.length, skipped };
   }
 
   // Applies every enabled rule to the internal document, in place. A step
@@ -178,5 +219,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.outputRules = { STEPS, TARGETS, runSteps, refsFor, validateRule, load, getCached, saveRule, removeRule, apply, describeSteps };
+  globalThis.SXRTS.outputRules = { STEPS, TARGETS, runSteps, refsFor, validateRule, load, getCached, saveRule, removeRule, apply, describeSteps, getTeam, isFromTeam, overridesTeam, resetToTeam, exportable, importRules };
 })();

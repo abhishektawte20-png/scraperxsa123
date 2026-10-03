@@ -278,7 +278,8 @@
       const teachBtn = tipped(el("button", { className: "teach-btn", text: "Teach new field", type: "button" }), "Add a brand-new RTS field that is not in the agent's report yet. To fill a field the agent already researched, use \"Map this field\" on its row in the preview instead.");
       teachBtn.addEventListener("click", () => { draft = newDraft(); view = "wizard"; render(); });
       card.appendChild(el("div", { className: "teach-row" }, [teachBtn]));
-      card.appendChild(el("p", { className: "teach-muted", text: "Mappings tell the extension where an agent value goes in RTS. They are saved in this browser only." }));
+      card.appendChild(el("p", { className: "teach-muted", text: "Mappings tell the extension where an agent value goes in RTS. Ones you make are saved in this browser; team defaults come with the extension." }));
+      card.appendChild(shareSection());
 
       const defs = cf().getCached();
       if (!defs.length) {
@@ -287,24 +288,110 @@
       }
       for (const def of defs) {
         const found = foundOnPage(def);
-        const remove = el("button", { className: "teach-btn danger", text: "Delete", type: "button" });
-        remove.addEventListener("click", async () => {
-          if (!window.confirm(`Delete "${def.label}"?`)) return;
-          await cf().removeDefinition(def.key);
-          onChange?.();
-          render();
-        });
+        const fromTeam = cf().isFromTeam(def);
+        const overrides = cf().overridesTeam(def);
+        const origin = fromTeam ? "  ·  team default" : overrides ? "  ·  your change (replaces the team default)" : "";
+        const actions = [];
+        if (def.binds) {
+          const remap = tipped(el("button", { className: "teach-btn secondary", text: "Re-map", type: "button" }), "Pick the field in RTS again. Your new mapping is saved in this browser and replaces the existing one here only.");
+          remap.addEventListener("click", () => { draft = boundDraft(def.binds.path, []); view = "wizard"; render(); });
+          actions.push(remap);
+        }
+        if (!fromTeam) {
+          const remove = el("button", { className: "teach-btn danger", text: overrides ? "Reset to team default" : "Delete", type: "button" });
+          remove.addEventListener("click", async () => {
+            if (!window.confirm(overrides ? `Go back to the team default for "${def.label}"?` : `Delete "${def.label}"?`)) return;
+            await cf().removeDefinition(def.key);
+            onChange?.();
+            render();
+          });
+          actions.push(remove);
+        }
         card.appendChild(el("div", { className: "teach-item" }, [
           el("div", {}, [
-            el("div", { text: def.binds ? `${def.label}  ·  mapped from the agent's report` : `${def.label}  ·  custom.${def.key}` }),
+            el("div", { text: (def.binds ? `${def.label}  ·  mapped from the agent's report` : `${def.label}  ·  custom.${def.key}`) + origin }),
             el("div", { className: "teach-muted", text: `${def.window ? (def.kind === "record" ? "List filled in a separate window" : "Single field in a separate window") : def.kind === "record" ? "Repeatable record" : def.openButton ? "Single field in a popup" : "Single field"} · ${def.fields.length} field(s)` }),
             el("div", { className: found ? "teach-ok" : "teach-warn", text: def.openButton
               ? (found ? `✓ Popup button "${def.openButton.text || "(no text)"}" found on this page` : "Popup button not found on this page (open the right tab/section)")
               : (found ? "✓ Found on this page" : "Not found on this page (open the right tab/section)") })
           ]),
-          remove
+          el("div", { className: "teach-row" }, actions)
         ]));
       }
+    }
+
+    // ---------- team defaults: export, import, reset ----------
+    let shareNote = "";
+
+    function download(name, text) {
+      const url = URL.createObjectURL(new Blob([text], { type: "text/javascript" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function shareSection() {
+      const ts = globalThis.SXRTS.teamShare;
+      const box = el("div", { className: "teach-guide" }, [el("h4", { text: "Team defaults" })]);
+      if (!ts) return box;
+      const info = ts.teamInfo();
+      box.appendChild(el("p", { className: "teach-muted", text: info.mappings || info.rules
+        ? `This version ships ${info.mappings} mapping(s) and ${info.rules} rule(s)${info.exportedAt ? `, exported ${new Date(info.exportedAt).toLocaleDateString()}` : ""}. Every researcher gets them automatically.`
+        : "This version ships no team defaults yet. Map your fields, then Export to create them." }));
+
+      const exportBtn = tipped(el("button", { className: "teach-btn", text: "Export team defaults", type: "button" }),
+        "Saves every mapping and output rule you can see now as a file called teamDefaults.js. Put it in the extension's core folder (replace the existing teamDefaults.js), reload the extension, and send that folder to the researchers.");
+      exportBtn.addEventListener("click", () => {
+        const data = ts.buildData();
+        try {
+          download("teamDefaults.js", ts.buildFile(data));
+          shareNote = `Downloaded teamDefaults.js with ${ts.describe(data)}. To share it: replace core/teamDefaults.js in the extension folder with this file, reload the extension, then send the folder to the researchers. If nothing downloaded, use "Copy instead".`;
+        } catch (error) {
+          shareNote = `Could not create the file: ${error.message}`;
+        }
+        render();
+      });
+      const copyBtn = tipped(el("button", { className: "teach-btn secondary", text: "Copy instead", type: "button" }), "Copies the same file's text so you can paste it into core/teamDefaults.js yourself.");
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(ts.buildFile());
+          shareNote = "Copied. Paste it over the whole of core/teamDefaults.js in the extension folder.";
+        } catch {
+          shareNote = "Chrome blocked copying. Use Export instead.";
+        }
+        render();
+      });
+      const picker = el("input", { type: "file" });
+      picker.accept = ".js,.json,text/javascript,application/json";
+      picker.style.display = "none";
+      picker.addEventListener("change", async () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        const parsed = ts.parseFile(await file.text());
+        if (parsed.error) { shareNote = parsed.error; return render(); }
+        if (!window.confirm(`Import ${ts.describe(parsed.data)} into this browser? Ones for the same field here are replaced.`)) return;
+        const result = await ts.importData(parsed.data);
+        shareNote = `Imported ${result.imported}.${result.skipped.length ? ` Skipped ${result.skipped.length}: ${result.skipped.join(" | ")}` : ""}`;
+        onChange?.();
+        render();
+      });
+      const importBtn = tipped(el("button", { className: "teach-btn secondary", text: "Import file…", type: "button" }), "Loads a teamDefaults.js (or .json) file into this browser, for example a fix you received before the next version of the extension.");
+      importBtn.addEventListener("click", () => picker.click());
+      const resetBtn = tipped(el("button", { className: "teach-btn danger", text: "Reset to team defaults", type: "button" }), "Removes your own changes to team mappings and rules so the team versions apply again. Mappings and rules you made that the team does not have are kept.");
+      resetBtn.addEventListener("click", async () => {
+        if (!window.confirm("Go back to the team versions of every mapping and rule you have changed on this browser?")) return;
+        const dropped = await ts.resetToTeam();
+        shareNote = dropped ? `Reset ${dropped} change(s) to the team defaults.` : "Nothing of yours was replacing a team default.";
+        onChange?.();
+        render();
+      });
+      box.appendChild(el("div", { className: "teach-row" }, [exportBtn, copyBtn, importBtn, resetBtn, picker]));
+      if (shareNote) box.appendChild(el("div", { className: "teach-note", text: shareNote }));
+      return box;
     }
 
     // ---------- wizard view ----------
