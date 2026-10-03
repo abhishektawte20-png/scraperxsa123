@@ -126,3 +126,36 @@ test("buttons never get a label-based selector", () => {
   const info = sb().inspectButton(doc.querySelector("input"));
   assert.ok(info.selectors.every((s) => !s.startsWith("sx-label::")));
 });
+
+test("boxes that share one label are told apart by their number", () => {
+  const block = `<div><div><label>Notes:</label></div><div><textarea class="a-9fA3kQ"></textarea></div></div>`;
+  const doc = setup(block + block + block);
+  const boxes = Array.from(doc.querySelectorAll("textarea"));
+  for (const [i, box] of boxes.entries()) {
+    const info = sb().inspectControl(box);
+    assert.equal(info.kind, "text");
+    assert.equal(info.selectors[0], `sx-label::textarea::Notes:||${i + 1}`);
+    assert.equal(sb().resolveAll(info.selectors).length, 1);
+    assert.equal(sb().resolveFirst(info.selectors), box);
+  }
+});
+
+test("any pile of identical, unlabelled, attribute-free boxes can be picked and resolves back to exactly that box", () => {
+  const deep = (inner) => "<div><span>".repeat(14) + inner + "</span></div>".repeat(14);
+  const layouts = [
+    Array.from({ length: 8 }, () => "<textarea></textarea>").join(""),
+    Array.from({ length: 6 }, () => `<div><textarea></textarea></div>`).join(""),
+    Array.from({ length: 4 }, () => `<section>${deep("<textarea></textarea>")}</section>`).join(""),
+    `<table>${Array.from({ length: 5 }, () => "<tr><td><textarea></textarea></td><td><textarea></textarea></td></tr>").join("")}</table>`,
+    Array.from({ length: 5 }, () => `<div class="c-1x9Kq3"><div class="d-7Pq2Lm"><textarea class="e-5Zt8Rw"></textarea></div></div>`).join("")
+  ];
+  for (const html of layouts) {
+    const doc = setup(html);
+    for (const box of doc.querySelectorAll("textarea")) {
+      const info = sb().inspectControl(box);
+      assert.equal(info.kind, "text", `a selector was built for ${html.slice(0, 40)}`);
+      assert.equal(sb().resolveAll(info.selectors).length, 1);
+      assert.equal(sb().resolveFirst(info.selectors), box);
+    }
+  }
+});

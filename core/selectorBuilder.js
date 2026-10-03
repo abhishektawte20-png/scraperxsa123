@@ -58,9 +58,15 @@
   function matchesAll(selector, root = document) {
     try {
       if (selector.startsWith(LABEL_PREFIX)) {
-        const [tag, ...rest] = selector.slice(LABEL_PREFIX.length).split("::");
-        const want = normText(rest.join("::"));
-        return Array.from(root.querySelectorAll(tag)).filter((control) => normText(precedingLabelText(control)) === want);
+        // sx-label::<tag>::<label>[||<n>] — an optional trailing number picks
+        // the n-th box (1-based, page order) when several share one label.
+        const body = selector.slice(LABEL_PREFIX.length);
+        const tag = body.slice(0, body.indexOf("::"));
+        const indexed = /\|\|(\d+)$/.exec(body);
+        const nth = indexed ? Number(indexed[1]) : 0;
+        const want = normText(body.slice(tag.length + 2).replace(/\|\|\d+$/, ""));
+        const same = Array.from(root.querySelectorAll(tag)).filter((control) => normText(precedingLabelText(control)) === want);
+        return nth ? same.slice(nth - 1, nth) : same;
       }
       return Array.from(root.querySelectorAll(selector));
     } catch {
@@ -133,12 +139,20 @@
       const label = precedingLabelText(el);
       const selector = label ? `${LABEL_PREFIX}${tag}::${label}` : "";
       const found = selector ? matchesAll(selector) : [];
-      if (found.includes(el) && (allowMultiple || found.length === 1)) good.push(selector);
+      if (found.includes(el) && (allowMultiple || found.length === 1)) {
+        good.push(selector);
+      } else if (found.includes(el)) {
+        // Several boxes share this label ("Notes:" twice): say which one.
+        const indexed = `${selector}||${found.indexOf(el) + 1}`;
+        if (matchesAll(indexed)[0] === el) good.push(indexed);
+      }
     }
     // Last resort: the element's position, taking more ancestors until it is
     // unique (two identical boxes only differ higher up the page).
     if (!good.length) {
-      for (const depth of [5, 8, 12, 20]) {
+      // The last depth has no limit: a path from the page root always
+      // identifies exactly one element.
+      for (const depth of [5, 8, 12, 20, Infinity]) {
         const path = structuralPath(el, depth);
         const found = path ? matchesAll(path) : [];
         if (found.includes(el) && (allowMultiple || found.length === 1)) {
@@ -226,6 +240,9 @@
       return { ...base, kind: "unsupported", reason: "This field is disabled or read-only right now. Make it editable on the page, then pick it again." };
     }
 
+    if (el.getRootNode?.() !== document) {
+      return { ...base, kind: "unsupported", reason: "This field sits inside an embedded frame or a hidden shadow area of the page, which the extension cannot reach from here." };
+    }
     const { selectors, fragile } = buildSelectors(el, { ...options, labelFallback: true });
     if (!selectors.length) {
       return { ...base, kind: "unsupported", reason: "No reliable selector could be built for this field (it has no stable id, name or class)." };

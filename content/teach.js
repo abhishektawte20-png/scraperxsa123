@@ -242,8 +242,11 @@
       const prefix = sb().LABEL_PREFIX;
       if (!selector) return "(matched by button text)";
       if (!selector.startsWith(prefix)) return selector;
-      const [tag, ...rest] = selector.slice(prefix.length).split("::");
-      return `${tag} next to the label "${rest.join("::")}"`;
+      const body = selector.slice(prefix.length);
+      const tag = body.slice(0, body.indexOf("::"));
+      const number = /\|\|(\d+)$/.exec(body);
+      const label = body.slice(tag.length + 2).replace(/\|\|\d+$/, "");
+      return `${tag} next to the label "${label}"${number ? ` (number ${number[1]} with that label)` : ""}`;
     }
 
     function pickedBlock(info, extra = []) {
