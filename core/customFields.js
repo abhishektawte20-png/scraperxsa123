@@ -9,6 +9,8 @@
  * A definition is a list of `fields` (one field named "value" for a
  * "single" definition; N named sub-fields for a "record" definition that is
  * added with an Add button), an optional addButton, and a saveButton.
+ * A single field that lives inside a popup also has an openButton (the
+ * button that opens the popup) and, optionally, a closeButton.
  *
  * In the Rovo JSON a definition lives under the top-level "custom" object:
  *   single: custom.<key> = { value, action, source }
@@ -36,6 +38,14 @@
     if (!Array.isArray(selectors) || !selectors.length || selectors.some((s) => typeof s !== "string" || !s.trim())) {
       errors.push(`${owner}: at least one CSS selector is required.`);
     }
+  }
+
+  // Popup buttons may be identified by selectors or by their visible text.
+  function validateOptionalButton(owner, button, errors) {
+    if (button === undefined || button === null) return;
+    const hasSelectors = Array.isArray(button.selectors) && button.selectors.some((s) => typeof s === "string" && s.trim());
+    const hasText = typeof button.text === "string" && button.text.trim() !== "";
+    if (!hasSelectors && !hasText) errors.push(`${owner}: could not be identified on the page. Pick it again.`);
   }
 
   function validateDefinition(def) {
@@ -70,6 +80,13 @@
       validateSelectors("The Add button", def.addButton?.selectors, errors);
     }
     validateSelectors("The Save button", def.saveButton?.selectors, errors);
+    if (def.openButton !== undefined && def.openButton !== null) {
+      if (def.kind !== "single") errors.push("Only a single field can sit inside a popup.");
+      validateOptionalButton("The button that opens the popup", def.openButton, errors);
+      validateOptionalButton("The popup's Close button", def.closeButton, errors);
+    } else if (def.closeButton) {
+      errors.push("A Close button only makes sense for a field inside a popup.");
+    }
     if (def.binds !== undefined) errors.push(...validateBinds(def));
     return errors;
   }

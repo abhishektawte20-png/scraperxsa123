@@ -43,6 +43,14 @@
     .teach-guide li.done .n { background: #1a8a5f; color: #fff; }
     .teach-guide li.done { color: #166f4c; }
     .teach-found { background: #fff8e6; border-left: 3px solid #b8860b; border-radius: 6px; padding: 7px 10px; margin: 6px 0; font-size: 12px; color: #6b5100; word-break: break-word; }
+    .teach-bar button { margin-left: 10px; background: #fff; color: #0b2f52; border: 0; border-radius: 5px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .teach-bar button.ghost { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.6); }
+    .teach-section h3.teach-step { margin-top: 16px; }
+    .teach-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .teach-choice button { text-align: left; background: #fff; color: #1b2430; border: 1.5px solid #c9d1de; border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 12px; cursor: pointer; }
+    .teach-choice button b { display: block; font-size: 12.5px; color: #124a80; margin-bottom: 2px; }
+    .teach-choice button.on { border-color: #124a80; background: #f2f7fd; box-shadow: 0 0 0 2px rgba(18,74,128,.15); }
+    .teach-note { background: #eef7f1; border-left: 3px solid #1a8a5f; border-radius: 6px; padding: 7px 10px; margin: 6px 0; font-size: 12px; color: #166f4c; }
     .teach-bar { position: fixed; z-index: 2147483647; left: 50%; top: 12px; transform: translateX(-50%); background: #0b2f52; color: #fff; padding: 8px 16px; border-radius: 8px; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
   `;
 
@@ -59,6 +67,17 @@
     return node;
   }
 
+  // Popups on the page close when they see a click outside themselves, and
+  // dialog libraries pull focus back inside a dialog. Our own window must not
+  // trigger either, so its pointer and focus events stop here instead of
+  // reaching the page's document-level listeners.
+  function isolate(node) {
+    for (const name of ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "click", "focusin", "focusout"]) {
+      node.addEventListener(name, (event) => event.stopPropagation());
+    }
+    return node;
+  }
+
   function mount(shadow, { onChange, onMapped } = {}) {
     const sb = () => globalThis.SXRTS.selectorBuilder;
     const cf = () => globalThis.SXRTS.customFields;
@@ -67,7 +86,7 @@
     style.textContent = CSS;
     shadow.appendChild(style);
 
-    const modal = el("div", { className: "teach-modal" });
+    const modal = isolate(el("div", { className: "teach-modal" }));
     const card = el("div", { className: "teach-card" });
     modal.appendChild(card);
 
@@ -78,7 +97,7 @@
     const tipped = (node, text) => (ui() ? ui().tip(node, text) : node);
 
     function newDraft() {
-      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [] };
+      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [], popup: false, openButton: null, closeButton: null, openNote: "" };
     }
 
     // Draft for "Map this field": the report field decides the kind and name.
@@ -102,12 +121,23 @@
     // browser sends no click to a disabled control, and RTS Save buttons are
     // disabled until a field is edited), and it keeps the pick clicks away
     // from the page's own handlers.
-    function pickElement(message) {
+    // actions: extra buttons on the bar, e.g. "Open the popup" while picking
+    // inside one (the overlay blocks the page, so the researcher cannot click
+    // the opener themselves).
+    function pickElement(message, { actions = [] } = {}) {
       return new Promise((resolve) => {
         const overlay = el("div", { className: "teach-overlay" });
         const box = el("div", { className: "teach-hl" });
-        const bar = el("div", { className: "teach-bar", text: `${message} — press Esc to cancel` });
-        shadow.append(overlay, box, bar);
+        const bar = isolate(el("div", { className: "teach-bar" }, [el("span", { text: `${message} — press Esc to cancel` })]));
+        for (const action of actions) {
+          const button = el("button", { text: action.label, type: "button" });
+          button.addEventListener("click", () => action.run());
+          bar.appendChild(button);
+        }
+        // The panel is moved out of the way while picking: a popup is often
+        // centred right underneath it.
+        const away = el("style", { text: ".panel { display: none !important; }" });
+        shadow.append(overlay, box, bar, away);
         modal.classList.remove("open");
 
         function targetAt(event) {
@@ -142,6 +172,7 @@
           overlay.remove();
           box.remove();
           bar.remove();
+          away.remove();
           modal.classList.add("open");
           resolve(target);
         }
@@ -151,6 +182,43 @@
         for (const name of ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "contextmenu"]) overlay.addEventListener(name, stop);
         window.addEventListener("keydown", onKey, true);
       });
+    }
+
+    // Hides this window and the dimmed backdrop so the researcher can use the
+    // RTS page themselves (for example to open a popup), then continues when
+    // they press Continue. Resolves true on Continue, false on Cancel/Esc.
+    function waitForUser(message) {
+      return new Promise((resolve) => {
+        const go = el("button", { text: "Continue", type: "button" });
+        const cancel = el("button", { className: "ghost", text: "Cancel", type: "button" });
+        const bar = isolate(el("div", { className: "teach-bar" }, [el("span", { text: message }), go, cancel]));
+        const away = el("style", { text: ".panel { display: none !important; }" });
+        shadow.append(bar, away);
+        modal.classList.remove("open");
+        function finish(done) {
+          window.removeEventListener("keydown", onKey, true);
+          bar.remove();
+          away.remove();
+          modal.classList.add("open");
+          resolve(done);
+        }
+        function onKey(event) {
+          if (event.key === "Escape") finish(false);
+        }
+        go.addEventListener("click", () => finish(true));
+        cancel.addEventListener("click", () => finish(false));
+        window.addEventListener("keydown", onKey, true);
+      });
+    }
+
+    // Clicks the mapped opener for the researcher. Programmatic clicks work
+    // for ordinary buttons; if the page ignores one, they can open it
+    // themselves with "I'll open it myself".
+    function clickOpener() {
+      const button = draft.openButton ? sb().resolveButtonByDefinition(draft.openButton) : null;
+      if (!button) return false;
+      button.click();
+      return true;
     }
 
     // ---------- shared rendering pieces ----------
@@ -181,6 +249,9 @@
 
     // ---------- list view ----------
     function foundOnPage(def) {
+      // A popup's field only exists while the popup is open, so what can be
+      // checked from here is the button that opens it.
+      if (def.openButton) return Boolean(sb().resolveButtonByDefinition(def.openButton));
       const controls = def.fields.every((field) => sb().resolveFirst(field.selectors));
       const save = sb().resolveButtonByDefinition(def.saveButton);
       return controls && Boolean(save);
@@ -214,8 +285,10 @@
         card.appendChild(el("div", { className: "teach-item" }, [
           el("div", {}, [
             el("div", { text: def.binds ? `${def.label}  ·  mapped from the agent's report` : `${def.label}  ·  custom.${def.key}` }),
-            el("div", { className: "teach-muted", text: `${def.kind === "record" ? "Repeatable record" : "Single field"} · ${def.fields.length} field(s)` }),
-            el("div", { className: found ? "teach-ok" : "teach-warn", text: found ? "✓ Found on this page" : "Not found on this page (open the right tab/section)" })
+            el("div", { className: "teach-muted", text: `${def.kind === "record" ? "Repeatable record" : def.openButton ? "Single field in a popup" : "Single field"} · ${def.fields.length} field(s)` }),
+            el("div", { className: found ? "teach-ok" : "teach-warn", text: def.openButton
+              ? (found ? `✓ Popup button "${def.openButton.text || "(no text)"}" found on this page` : "Popup button not found on this page (open the right tab/section)")
+              : (found ? "✓ Found on this page" : "Not found on this page (open the right tab/section)") })
           ]),
           remove
         ]));
@@ -233,7 +306,7 @@
 
     async function pickField() {
       draft.error = "";
-      const target = await pickElement(draft.kind === "record" ? "Click a text box or dropdown in the row" : "Click the text box or dropdown to fill");
+      const target = await pickElement(draft.kind === "record" ? "Click a text box or dropdown in the row" : draft.popup ? "Click the text box or dropdown inside the popup" : "Click the text box or dropdown to fill", { actions: popupActions() });
       if (!target) return render();
       const control = sb().resolveControl(target);
       if (!control) {
@@ -261,7 +334,7 @@
 
     async function pickButton(slot, message) {
       draft.error = "";
-      const target = await pickElement(message);
+      const target = await pickElement(message, { actions: slot === "openButton" ? [] : popupActions() });
       if (!target) return render();
       const info = sb().inspectButton(sb().resolveButton(target));
       if (!info.selectors.length && !info.text) {
@@ -269,10 +342,39 @@
         return render();
       }
       draft[slot] = info;
+      if (slot === "openButton") draft.openNote = "";
+      render();
+      if (slot === "openButton") await openNow();
+    }
+
+    // While picking inside a popup the page is covered, so the bar offers a
+    // way to bring the popup back if it closed.
+    function popupActions() {
+      return draft.popup && draft.openButton ? [{ label: "Open the popup", run: clickOpener }] : [];
+    }
+
+    async function openNow() {
+      draft.error = "";
+      if (!clickOpener()) {
+        draft.error = "The opening button was not found on the page any more. Pick it again.";
+        return render();
+      }
+      draft.openNote = "Clicked it for you. If the popup is now open on the page, pick the field inside it next. If nothing opened, use \"I'll open it myself\".";
+      render();
+    }
+
+    async function openMyself() {
+      draft.error = "";
+      const done = await waitForUser("Open the popup on the RTS page yourself, then press Continue");
+      if (done) draft.openNote = "Good. The popup is open: pick the field inside it next.";
       render();
     }
 
     async function save() {
+      if (draft.popup && !draft.openButton) {
+        draft.error = "Pick the button that opens the popup first, or choose \"Directly on the page\".";
+        return render();
+      }
       const def = {
         key: draft.key.trim(),
         label: draft.label.trim(),
@@ -283,6 +385,8 @@
           ...(f.kind === "select" ? { options: f.options } : {})
         })),
         saveButton: draft.saveButton ? { selectors: draft.saveButton.selectors, text: draft.saveButton.text } : null,
+        ...(draft.kind === "single" && draft.popup && draft.openButton ? { openButton: { selectors: draft.openButton.selectors, text: draft.openButton.text } } : {}),
+        ...(draft.kind === "single" && draft.popup && draft.openButton && draft.closeButton ? { closeButton: { selectors: draft.closeButton.selectors, text: draft.closeButton.text } } : {}),
         ...(draft.kind === "record" && draft.addButton ? { addButton: { selectors: draft.addButton.selectors, text: draft.addButton.text } } : {}),
         ...(draft.bind ? { binds: { path: draft.bind.path, map: Object.fromEntries(draft.fields.map((f) => [f.key, f.out])) } } : {})
       };
@@ -316,6 +420,11 @@
       return input;
     }
 
+    // The extra guide step shown when the field sits inside a popup.
+    function popupSteps() {
+      return draft.popup ? [{ done: Boolean(draft.openButton), text: "Pick the button that opens the popup. The extension then opens it for you." }] : [];
+    }
+
     function guide(steps) {
       return el("div", { className: "teach-guide" }, [
         el("h4", { text: "How this works" }),
@@ -323,8 +432,44 @@
       ]);
     }
 
+    // Single fields only: is the field on the page, or inside a popup that a
+    // button opens? A popup adds the opening button (and an optional Close).
+    function placeControls() {
+      const section = el("div", { className: "teach-section" });
+      if (draft.kind !== "single") return document.createDocumentFragment();
+      section.appendChild(el("h3", { text: "Where is the field?" }));
+      const choice = (on, title, text, tip) => tipped(el("button", { className: on ? "on" : "", type: "button" }, [el("b", { text: title }), el("span", { text })]), tip);
+      const direct = choice(!draft.popup, "Directly on the page", "You can see the field without clicking anything.", "Choose this when the text box is already visible on the RTS page.");
+      const popup = choice(draft.popup, "Inside a popup", "A button opens a small window. The text box and its Save button are in that window.", "Choose this when you have to click a button first, and a popup window appears where you type the value and press Save.");
+      const setPopup = (value) => {
+        draft.popup = value;
+        if (!value) { draft.openButton = null; draft.closeButton = null; draft.openNote = ""; }
+        render();
+      };
+      direct.addEventListener("click", () => setPopup(false));
+      popup.addEventListener("click", () => setPopup(true));
+      section.appendChild(el("div", { className: "teach-choice" }, [direct, popup]));
+      if (!draft.popup) return section;
+
+      const openBtn = tipped(el("button", { className: "teach-btn secondary", text: draft.openButton ? "Re-pick the opening button" : "Pick the button that opens the popup", type: "button" }),
+        "Click this, then click the button on the RTS page that opens the popup. The extension clicks it for you afterwards so the popup is open while you pick the field inside it.");
+      openBtn.addEventListener("click", () => pickButton("openButton", "Click the button that opens the popup"));
+      section.appendChild(el("h3", { className: "teach-step", text: "Step A · The button that opens the popup" }));
+      section.appendChild(el("div", { className: "teach-row" }, [openBtn]));
+      if (draft.openButton) {
+        section.appendChild(pickedBlock({ ...draft.openButton, kind: null, label: draft.openButton.text }));
+        const now = tipped(el("button", { className: "teach-btn", text: "Open the popup now", type: "button" }), "The extension clicks the opening button for you. Use this again any time the popup has closed.");
+        now.addEventListener("click", openNow);
+        const mine = tipped(el("button", { className: "teach-btn secondary", text: "I'll open it myself", type: "button" }), "Hides this window so you can click the button on the page yourself. Press Continue when the popup is open.");
+        mine.addEventListener("click", openMyself);
+        section.appendChild(el("div", { className: "teach-row" }, [now, mine]));
+        if (draft.openNote) section.appendChild(el("div", { className: "teach-note", text: draft.openNote }));
+      }
+      return section;
+    }
+
     function pickControls() {
-      const section = el("div", { className: "teach-section" }, [el("h3", { text: draft.kind === "record" ? "Pick the Add button, then each input of a row" : "Pick the field in RTS" })]);
+      const section = el("div", { className: "teach-section" }, [el("h3", { text: draft.kind === "record" ? "Pick the Add button, then each input of a row" : draft.popup ? "Step B · Pick the field inside the popup" : "Pick the field in RTS" })]);
       if (draft.kind === "record") {
         const addBtn = tipped(el("button", { className: "teach-btn secondary", text: draft.addButton ? "Re-pick Add button" : "Pick Add button", type: "button" }),
           "Click this, then click the button on the RTS page that adds a new row (for example \"Add New ...\"). The extension clicks it for every item it needs to add.");
@@ -364,8 +509,15 @@
       const btn = tipped(el("button", { className: "teach-btn secondary", text: draft.saveButton ? "Re-pick Save button" : "Pick Save button", type: "button" }),
         "Click this, then click the Save button for this section in RTS. A greyed-out Save button can still be picked. The extension clicks it once after filling, then checks the value really saved.");
       btn.addEventListener("click", () => pickButton("saveButton", "Click the Save button for this section"));
-      const section = el("div", { className: "teach-section" }, [el("h3", { text: "Pick its Save button" }), el("div", { className: "teach-row" }, [btn])]);
+      const section = el("div", { className: "teach-section" }, [el("h3", { text: draft.popup ? "Step C · Pick the popup's Save button" : "Pick its Save button" }), el("div", { className: "teach-row" }, [btn])]);
       if (draft.saveButton) section.appendChild(pickedBlock({ ...draft.saveButton, kind: null, label: draft.saveButton.text }));
+      if (draft.popup) {
+        const close = tipped(el("button", { className: "teach-btn secondary", text: draft.closeButton ? "Re-pick Close button" : "Pick Close button (optional)", type: "button" }),
+          "Optional. Click this, then the popup's Close or Cancel button. The extension uses it to close the popup after it has checked the saved value. Without it, the Esc key is used.");
+        close.addEventListener("click", () => pickButton("closeButton", "Click the popup's Close (or Cancel) button"));
+        section.appendChild(el("div", { className: "teach-row" }, [close]));
+        if (draft.closeButton) section.appendChild(pickedBlock({ ...draft.closeButton, kind: null, label: draft.closeButton.text }));
+      }
       return section;
     }
 
@@ -392,9 +544,11 @@
         }
         card.appendChild(guide([
           { done: false, text: `In RTS, open the page or section where "${draft.bind.label}" is entered and keep it visible. ${draft.bind.hint}` },
-          { done: hasFields, text: draft.kind === "record" ? "Click \"Pick Add button\", then \"Pick an input\" for each box in a row, and choose which agent value goes in each." : "Click \"Pick field on page\", then click the field in RTS." },
-          { done: Boolean(draft.saveButton), text: "Click \"Pick Save button\", then click the section's Save button. Then save the mapping." }
+          ...popupSteps(),
+          { done: hasFields, text: draft.kind === "record" ? "Click \"Pick Add button\", then \"Pick an input\" for each box in a row, and choose which agent value goes in each." : draft.popup ? "Click \"Pick field on page\", then click the text box inside the popup." : "Click \"Pick field on page\", then click the field in RTS." },
+          { done: Boolean(draft.saveButton), text: draft.popup ? "Click \"Pick Save button\", then click the popup's Save button. Then save the mapping." : "Click \"Pick Save button\", then click the section's Save button. Then save the mapping." }
         ]));
+        card.appendChild(placeControls());
         card.appendChild(pickControls());
         card.appendChild(saveControls());
         if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
@@ -404,12 +558,13 @@
 
       card.appendChild(guide([
         { done: Boolean(draft.label && draft.key), text: "Choose the kind of field and name it." },
-        { done: hasFields, text: "Open the field in RTS, then pick it on the page." },
-        { done: Boolean(draft.saveButton), text: "Pick the Save button, then save." }
+        ...popupSteps(),
+        { done: hasFields, text: draft.popup ? "With the popup open, pick the text box inside it." : "Open the field in RTS, then pick it on the page." },
+        { done: Boolean(draft.saveButton), text: draft.popup ? "Pick the popup's Save button, then save." : "Pick the Save button, then save." }
       ]));
       const single = tipped(el("button", { className: `teach-btn${draft.kind === "single" ? "" : " secondary"}`, text: "Single field", type: "button" }), "One value in one box or dropdown (for example Founded year).");
       const record = tipped(el("button", { className: `teach-btn${draft.kind === "record" ? "" : " secondary"}`, text: "Repeatable record (Add → fill → Save)", type: "button" }), "A list where you click an Add button to get a new row, fill the row, then save (for example Name Variations).");
-      const setKind = (kind) => { if (draft.kind !== kind) { draft.kind = kind; draft.fields = []; draft.addButton = null; render(); } };
+      const setKind = (kind) => { if (draft.kind !== kind) { draft.kind = kind; draft.fields = []; draft.addButton = null; draft.popup = false; draft.openButton = null; draft.closeButton = null; draft.openNote = ""; render(); } };
       single.addEventListener("click", () => setKind("single"));
       record.addEventListener("click", () => setKind("record"));
       card.appendChild(el("div", { className: "teach-section" }, [el("h3", { text: "1 · What kind of field?" }), el("div", { className: "teach-row" }, [single, record])]));
@@ -424,6 +579,7 @@
         el("label", { text: "What should the agent research for it?" }),
         textInput(draft.description, "e.g. Year the company was founded, 4 digits", (v) => { draft.description = v; })
       ]));
+      card.appendChild(placeControls());
       card.appendChild(pickControls());
       card.appendChild(saveControls());
       if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
