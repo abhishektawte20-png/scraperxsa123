@@ -97,7 +97,7 @@
     const tipped = (node, text) => (ui() ? ui().tip(node, text) : node);
 
     function newDraft() {
-      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [], popup: false, openButton: null, closeButton: null, openNote: "", window: false, windowPick: null, rowBy: null, openEl: null };
+      return { kind: "single", label: "", key: "", keyTouched: false, description: "", fields: [], addButton: null, saveButton: null, error: "", bind: null, samples: [], popup: false, openButton: null, closeButton: null, openNote: "", window: false, windowPick: null, rowBy: null, openEl: null, tree: { expander: null, leaf: null, save: null, sectionSave: null }, treeCode: "541511", treeNote: "" };
     }
 
     // Draft for "Map this field": the report field decides the kind and name.
@@ -215,7 +215,7 @@
     // for ordinary buttons; if the page ignores one, they can open it
     // themselves with "I'll open it myself".
     function clickOpener() {
-      const button = draft.openButton ? sb().resolveButtonByDefinition(draft.openButton) : null;
+      const button = draft.openEl?.isConnected ? draft.openEl : draft.openButton ? sb().resolveButtonByDefinition(draft.openButton) : null;
       if (!button) return false;
       button.click();
       return true;
@@ -486,11 +486,186 @@
       return rows;
     }
 
+    // ---------- tree picker (NAICS dialog) ----------
+    const isTree = () => draft.bind?.picker === "naics-tree";
+    const BUTTON_QUERY = "button, [role=button], input[type=button], input[type=submit], a";
+    const treeActions = () => (draft.openButton ? [{ label: "Open the dialog", run: clickOpener }] : []);
+
+    // The real <input> behind a + or radio drawing the researcher clicked.
+    function inputNear(target, type) {
+      for (let node = target, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+        if (node.matches?.(`input[type=${type}]`)) return node;
+        const inside = node.querySelectorAll?.(`input[type=${type}]`);
+        if (inside?.length === 1) return inside[0];
+      }
+      return null;
+    }
+
+    // Every + and every radio must match, so drop selectors that name one item.
+    function sharedSelectors(selectors) {
+      const shared = selectors.filter((selector) => !selector.startsWith("#") && !/\[(aria-label|title)=/.test(selector) && !/^sx-/.test(selector));
+      return shared.length ? shared : selectors;
+    }
+
+    const TREE_STEPS = {
+      expander: "Click one of the + buttons in the dialog",
+      leaf: "Click the round radio button beside a code (open a branch first)",
+      save: "Click the dialog's Save button",
+      sectionSave: "Click the section's Save Changes button, beside Add NAICS (the dialog must be closed)"
+    };
+
+    // The dialog must be open to point at things in it.
+    async function ensureDialogOpen(def) {
+      const tp = globalThis.SXRTS.workflows.treePicker;
+      if (tp.isOpen(def)) return;
+      if (!clickOpener()) throw new Error("The Add NAICS button is no longer on the page. Pick it again.");
+      const start = Date.now();
+      while (!tp.isOpen(def) && Date.now() - start < 5000) await new Promise((resolve) => setTimeout(resolve, 80));
+      if (!tp.isOpen(def)) throw new Error("The NAICS dialog did not open.");
+    }
+
+    async function pickTreePart(slot) {
+      draft.error = "";
+      draft.treeNote = "";
+      if (slot === "leaf") {
+        // A radio only shows once a branch is open, and the page cannot be
+        // clicked through this window, so a branch is opened for the researcher.
+        if (!draft.tree.expander) { draft.error = "Pick a + button first (Step B)."; return render(); }
+        try {
+          const probe = { tree: { expander: draft.tree.expander } };
+          await ensureDialogOpen(probe);
+          if (!(await globalThis.SXRTS.workflows.treePicker.revealLeaf(probe))) throw new Error("No code with a radio button could be shown by opening the + buttons. Pick a different + button.");
+        } catch (error) {
+          draft.error = error.message;
+          return render();
+        }
+      }
+      const target = await pickElement(TREE_STEPS[slot], { actions: slot === "sectionSave" ? [] : treeActions() });
+      if (!target) return render();
+      let info;
+      if (slot === "expander" || slot === "leaf") {
+        const input = inputNear(target, slot === "expander" ? "checkbox" : "radio");
+        if (!input) {
+          draft.error = slot === "expander"
+            ? "That is not a + button. Click the + (or −) symbol itself."
+            : "That is not a radio button. Open a branch down to a code first, then click the round button beside the code.";
+          return render();
+        }
+        info = sb().inspectButton(input, { allowMultiple: true, preferStable: true });
+        info.selectors = sharedSelectors(info.selectors);
+      } else {
+        const button = target.closest(BUTTON_QUERY);
+        if (!button) {
+          draft.error = "That is not the button itself (you may have clicked the space beside it). Click directly on the button.";
+          return render();
+        }
+        info = sb().inspectButton(button, {});
+      }
+      if (!info.selectors.length && !info.text) {
+        draft.error = "Nothing on that element can identify it. Pick it again.";
+        return render();
+      }
+      if (slot === "sectionSave" && globalThis.SXRTS.workflows.treePicker.scopeFor(draft.openEl, info)?.save !== target.closest(BUTTON_QUERY)) {
+        draft.error = "That Save Changes button is not in the same section as the Add NAICS button. Click the one beside it.";
+        return render();
+      }
+      draft.tree[slot] = info;
+      render();
+    }
+
+    async function closeDialogMyself() {
+      const done = await waitForUser("Close the NAICS dialog yourself (press Cancel), then press Continue");
+      if (done) draft.treeNote = "Good. Now pick the section's Save Changes button.";
+      render();
+    }
+
+    function treeDef() {
+      const part = (b) => ({ selectors: b.selectors, text: b.text });
+      const t = draft.tree;
+      return {
+        key: draft.key, label: draft.bind.label, description: "", kind: "record",
+        fields: [{ key: "code", label: "NAICS code", description: "", kind: "tree", selectors: [] }],
+        saveButton: part(t.save), openButton: part(draft.openButton),
+        tree: { kind: "naics", expander: { selectors: t.expander.selectors }, leaf: { selectors: t.leaf.selectors }, sectionSave: part(t.sectionSave) },
+        binds: { path: draft.bind.path, map: { code: "code" } }
+      };
+    }
+
+    const treeReady = () => Boolean(draft.openButton && draft.tree.expander && draft.tree.leaf && draft.tree.save && draft.tree.sectionSave);
+
+    // Dry run: open the dialog, find the code and select it. Nothing is saved.
+    async function testTree() {
+      draft.error = "";
+      draft.treeNote = "";
+      const code = String(draft.treeCode).trim();
+      if (!/^\d{6}$/.test(code)) { draft.error = "Type a 6-digit NAICS code to try, for example 541511."; return render(); }
+      if (!treeReady()) { draft.error = "Pick all the parts above first."; return render(); }
+      const def = treeDef();
+      const tp = globalThis.SXRTS.workflows.treePicker;
+      try {
+        await ensureDialogOpen(def);
+        const radio = await tp.findRadio(def, code);
+        radio.click();
+        draft.treeNote = `Found ${code} and selected it in the dialog. Nothing was saved: press Cancel in the dialog.`;
+      } catch (error) {
+        draft.error = error.message;
+      }
+      render();
+    }
+
+    async function saveTree() {
+      if (!treeReady()) { draft.error = "Pick all the parts above first."; return render(); }
+      return commit(treeDef());
+    }
+
+    function treeControls() {
+      const section = el("div", { className: "teach-section" });
+      const part = (title, slot, buttonText, tip, info) => {
+        section.appendChild(el("h3", { className: "teach-step", text: title }));
+        const button = tipped(el("button", { className: info ? "teach-btn secondary" : "teach-btn", text: info ? `Re-pick` : buttonText, type: "button" }), tip);
+        button.addEventListener("click", () => (slot === "openButton" ? pickButton("openButton", "Click the Add NAICS button") : pickTreePart(slot)));
+        section.appendChild(el("div", { className: "teach-row" }, [button]));
+        if (info) section.appendChild(pickedBlock({ ...info, kind: null, label: info.text }));
+      };
+      part("Step A · The Add NAICS button", "openButton", "Pick the Add NAICS button", "Click this, then click the Add NAICS button itself. The extension then opens the dialog for you.", draft.openButton);
+      if (draft.openButton) {
+        const now = tipped(el("button", { className: "teach-btn secondary", text: "Open the dialog now", type: "button" }), "Opens the NAICS dialog. Use it any time the dialog has closed while you map.");
+        now.addEventListener("click", () => { draft.error = clickOpener() ? "" : "The Add NAICS button is no longer on the page. Pick it again."; draft.treeNote = draft.error ? "" : "Opened. Pick the parts of the dialog next."; render(); });
+        section.appendChild(el("div", { className: "teach-row" }, [now]));
+      }
+      part("Step B · A + button in the dialog", "expander", "Pick a + button", "Click this, then click any + in the NAICS dialog (the box with a plus sign beside a sector).", draft.tree.expander);
+      part("Step C · A code's radio button", "leaf", "Open a branch and pick a radio button", "The extension opens a branch in the dialog for you so a code with a round radio button shows. Then click the round button beside a code.", draft.tree.leaf);
+      part("Step D · The dialog's Save button", "save", "Pick the dialog's Save button", "Click this, then click Save at the bottom of the dialog. A greyed-out Save can still be picked.", draft.tree.save);
+      section.appendChild(el("h3", { className: "teach-step", text: "Step E · The section's Save Changes button" }));
+      section.appendChild(el("p", { className: "teach-muted", text: "Close the dialog first, then pick the Save Changes button beside Add NAICS." }));
+      const mine = tipped(el("button", { className: "teach-btn secondary", text: "I'll close the dialog myself", type: "button" }), "Hides this window so you can press Cancel in the dialog. Press Continue afterwards.");
+      mine.addEventListener("click", closeDialogMyself);
+      const pickSave = tipped(el("button", { className: draft.tree.sectionSave ? "teach-btn secondary" : "teach-btn", text: draft.tree.sectionSave ? "Re-pick" : "Pick Save Changes", type: "button" }), "Click this, then click the Save Changes button next to Add NAICS (not the one for another section).");
+      pickSave.addEventListener("click", () => pickTreePart("sectionSave"));
+      section.appendChild(el("div", { className: "teach-row" }, [mine, pickSave]));
+      if (draft.tree.sectionSave) section.appendChild(pickedBlock({ ...draft.tree.sectionSave, kind: null, label: draft.tree.sectionSave.text }));
+
+      if (treeReady()) {
+        section.appendChild(el("h3", { className: "teach-step", text: "Try it (nothing is saved)" }));
+        const code = el("input", { type: "text", value: draft.treeCode });
+        code.addEventListener("input", () => { draft.treeCode = code.value; });
+        const test = tipped(el("button", { className: "teach-btn secondary", text: "Find this code in the dialog", type: "button" }), "Opens the dialog, searches for the code and selects it, to prove the picks work. It does not press Save.");
+        test.addEventListener("click", testTree);
+        section.appendChild(el("div", { className: "teach-row" }, [code, test]));
+      }
+      if (draft.treeNote) section.appendChild(el("div", { className: "teach-note", text: draft.treeNote }));
+      return section;
+    }
+
     async function pickButton(slot, message) {
       draft.error = "";
       const target = await pickElement(message, { actions: slot === "openButton" ? [] : popupActions() });
       if (!target) return render();
       const button = sb().resolveButton(target);
+      if (slot === "openButton" && isTree() && !target.closest("button, [role=button], input[type=button], input[type=submit], a")) {
+        draft.error = "That is not the button itself (you may have clicked the space beside it). Click directly on the \"Add NAICS\" button.";
+        return render();
+      }
       // A button that exists once per row (a "New" button in every network
       // row) must be recognised in every row, not just the one clicked.
       const rows = slot === "openButton" && draft.window && draft.bind?.rowKey;
@@ -885,6 +1060,23 @@
         if (draft.samples?.length) {
           const shown = draft.samples.slice(0, 3).map((r) => draft.bind.keys.map((k) => r[k.key]).filter(Boolean).join(" / ")).join("  ·  ");
           card.appendChild(el("div", { className: "teach-found", text: `The agent found: ${shown}${draft.samples.length > 3 ? ` (+${draft.samples.length - 3} more)` : ""}` }));
+        }
+        if (isTree()) {
+          card.appendChild(guide([
+            { done: false, text: `In RTS, ${draft.bind.hint}` },
+            { done: Boolean(draft.openButton), text: "Pick the Add NAICS button. The extension then opens the dialog for you." },
+            { done: Boolean(draft.tree.expander && draft.tree.leaf && draft.tree.save), text: "In the dialog, pick one + button. The extension then opens a branch so you can pick a code's round radio button; then pick the dialog's Save button." },
+            { done: Boolean(draft.tree.sectionSave), text: "Close the dialog and pick the section's Save Changes button." },
+            { done: false, text: "Try it with a code, then save the mapping." }
+          ]));
+          card.appendChild(treeControls());
+          if (draft.error) card.appendChild(el("div", { className: "teach-error", text: draft.error }));
+          const saveMap = el("button", { className: "teach-btn", text: "Save mapping", type: "button" });
+          saveMap.addEventListener("click", saveTree);
+          const cancelMap = el("button", { className: "teach-btn secondary", text: "Cancel", type: "button" });
+          cancelMap.addEventListener("click", () => { view = "list"; render(); });
+          card.appendChild(el("div", { className: "teach-row" }, [saveMap, cancelMap]));
+          return;
         }
         card.appendChild(guide([
           { done: false, text: `In RTS, open the page or section where "${draft.bind.label}" is entered and keep it visible. ${draft.bind.hint}` },

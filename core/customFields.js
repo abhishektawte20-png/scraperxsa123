@@ -24,7 +24,7 @@
   const TEXT_PATTERN = /^[^<>&"'`\\]{1,120}$/;
   const ACTIONS = ["addIfMissing", "updateIfBlank", "replaceAfterConfirmation", "skip"];
   const KINDS = ["single", "record"];
-  const FIELD_KINDS = ["text", "select"];
+  const FIELD_KINDS = ["text", "select", "tree"];
 
   // What the extension works with is the team's shipped defaults (see
   // core/teamDefaults.js) plus this browser's own mappings. A local mapping
@@ -83,7 +83,8 @@
         if (seen.has(field.key)) errors.push(`Sub-field key "${field.key}" is used twice.`);
         seen.add(field.key);
         if (!FIELD_KINDS.includes(field.kind)) errors.push(`Sub-field "${field.key}" must be a text box or a native dropdown.`);
-        validateSelectors(`Sub-field "${field.key}"`, field.selectors, errors);
+        // A "tree" field is a code chosen in a tree dialog; it has no input of its own.
+        if (field.kind !== "tree") validateSelectors(`Sub-field "${field.key}"`, field.selectors, errors);
         if (field.kind === "select" && (!Array.isArray(field.options) || !field.options.length)) {
           errors.push(`Dropdown "${field.key}" has no options.`);
         }
@@ -91,12 +92,12 @@
     }
     // A list in a separate window has no Add button: each row has its own
     // button that opens the window, and the row is found by rowBy.
-    if (def.kind === "record" && !def.window) {
+    if (def.kind === "record" && !def.window && !def.tree) {
       validateSelectors("The Add button", def.addButton?.selectors, errors);
     }
     validateSelectors("The Save button", def.saveButton?.selectors, errors);
     if (def.openButton !== undefined && def.openButton !== null) {
-      if (def.kind !== "single" && !def.window) errors.push("Only a single field can sit inside a popup.");
+      if (def.kind !== "single" && !def.window && !def.tree) errors.push("Only a single field can sit inside a popup.");
       validateOptionalButton("The button that opens the popup", def.openButton, errors);
       validateOptionalButton("The popup's Close button", def.closeButton, errors);
     } else if (def.closeButton) {
@@ -109,6 +110,18 @@
         errors.push("The rows of this list could not be recognised. Pick the opening button again.");
       }
       for (const button of def.window?.preSave ?? []) validateOptionalButton("A button pressed before Save", button, errors);
+    }
+    if (def.tree !== undefined && def.tree !== null) {
+      const t = def.tree;
+      if (!isPlainObject(t)) errors.push("The tree picker settings are invalid.");
+      else {
+        if (!def.openButton) errors.push("A tree picker needs the button that opens its dialog.");
+        if (def.kind !== "record" || def.fields?.length !== 1 || def.fields[0].kind !== "tree") errors.push("A tree picker must be a list with one code field.");
+        validateSelectors("The tree's + (expand) buttons", t.expander?.selectors, errors);
+        validateSelectors("The tree's choice buttons", t.leaf?.selectors, errors);
+        validateSelectors("The section's Save Changes button", t.sectionSave?.selectors, errors);
+        if (t.kind !== "naics") errors.push("This tree picker type is not supported.");
+      }
     }
     if (def.binds !== undefined) errors.push(...validateBinds(def));
     return errors;

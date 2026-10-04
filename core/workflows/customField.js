@@ -358,6 +358,7 @@
 
   async function applyCustomField(def, record) {
     if (record.action === "skip") return { status: "skipped", reason: "action=skip" };
+    if (def.tree) return globalThis.SXRTS.workflows.treePicker.apply(def, record);
     if (def.window) return applyWindowed(def, record);
     return def.kind === "single" ? applySingle(def, record) : applyRecord(def, record);
   }
