@@ -68,3 +68,7 @@ returned that day, tick two runs of the same company and press **Compare** to se
 which values changed, or **Export all** to save them to a file. **Erase all
 history** removes everything at once. Nothing leaves the browser unless you
 export or send it.
+
+## Take a break (Super Over)
+
+The **Take a break** button in the panel opens a small cricket batting game for the moments when RTS is slow. It runs entirely inside the extension: no network, and nothing is read from or written to RTS. Only the chosen timing level and the best score are kept on the user's own browser (`chrome.storage.local`, key `sxrts_game`). **Esc** or **Back to work** closes it. The three timing levels (Relaxed, Normal, Pro) change how forgiving the swing window is.

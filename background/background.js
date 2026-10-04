@@ -41,6 +41,7 @@ const ASSISTANT_FILES = [
   "content/rules.js",
   "content/history.js",
   "content/feedback.js",
+  "content/game.js",
   "content/panel.js",
   "content/bootstrap.js"
 ];

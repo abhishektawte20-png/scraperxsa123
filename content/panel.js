@@ -346,10 +346,13 @@
     historyButton.addEventListener("click", () => historyUi?.open());
     const feedbackButton = element("button", { className: "btn secondary", text: "Feedback", type: "button", tip: "Sends the issue report to the person who maintains this tool, in one click." });
     feedbackButton.addEventListener("click", () => feedbackUi?.open());
+    const gameUi = globalThis.SXRTS.gameUi?.mount(shadow);
+    const gameButton = element("button", { className: "btn secondary", text: "Take a break", type: "button", tip: "A small cricket game for when RTS is slow. It runs inside the extension only and never touches RTS." });
+    gameButton.addEventListener("click", () => gameUi?.open());
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, feedbackButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
