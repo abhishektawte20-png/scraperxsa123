@@ -50,6 +50,7 @@
         scrollbar-width: thin;
       }
       .head {
+        cursor: grab; user-select: none;
         position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px;
         padding: 14px 16px 14px 18px; color: #fff; border-radius: 15px 15px 0 0;
         background: radial-gradient(120% 160% at 0% 0%, #1b6aa8 0%, #124a80 45%, #0b2f52 100%);
@@ -70,6 +71,23 @@
         color: #fff; font-size: 19px; line-height: 1; cursor: pointer; flex-shrink: 0; transition: background .12s;
       }
       .close:hover { background: rgba(255,255,255,.28); }
+      .minimize { font-size: 17px; font-weight: 700; padding-bottom: 3px; }
+      .panel { resize: both; min-width: 340px; min-height: 120px; }
+      .panel.dragging { cursor: grabbing; opacity: .96; }
+      .panel.dragging .head { cursor: grabbing; }
+      .panel.min { resize: none; width: 330px; min-height: 0; height: auto !important; overflow: hidden; }
+      .panel.min .steps, .panel.min .body, .panel.min .foot { display: none; }
+      .panel.min .head { border-radius: 15px; position: static; }
+      .card > h2.fold { cursor: pointer; user-select: none; }
+      .card > h2.fold::after { content: "▾"; margin-left: auto; color: var(--muted); font-size: 12px; }
+      .card.collapsed > h2.fold::after { content: "▸"; }
+      .card.collapsed > *:not(h2) { display: none !important; }
+      #sxrts-report { min-height: 190px; background: #f8fafc; white-space: pre; overflow: auto; }
+      .report-count { font-weight: 650; font-size: 11.5px; padding: 2px 9px; border-radius: 100px; background: var(--bad-soft); color: var(--bad); margin-left: 8px; text-transform: none; letter-spacing: 0; }
+      .report-note { margin-top: 10px; font-size: 12px; border-radius: 8px; }
+      .report-note.success { padding: 8px 10px; background: var(--ok-soft); color: var(--ok); }
+      .report-note.error { padding: 8px 10px; background: var(--bad-soft); color: var(--bad); }
+      .report-count.clean { background: var(--ok-soft); color: var(--ok); }
 
       .steps { display: flex; gap: 6px; padding: 14px 18px 4px; }
       .step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #8993a4; font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .3px; text-align: center; position: relative; }
@@ -214,7 +232,8 @@
     // ---------- Header ----------
     const panel = element("div", { className: "panel" });
     const closeButton = element("button", { className: "close", text: "×", type: "button", title: "Close" });
-    panel.appendChild(element("div", { className: "head" }, [
+    const minimizeButton = element("button", { className: "close minimize", text: "–", type: "button", title: "Minimize (double-click the title bar to put the window back where it started)" });
+    const headBar = element("div", { className: "head", title: "Drag to move. Double-click to reset." }, [
       element("div", { className: "brand" }, [
         element("div", { className: "brand-mark", text: "SX" }),
         element("div", { className: "brand-text" }, [
@@ -224,8 +243,10 @@
         ])
       ]),
       ...(globalThis.SXRTS.ui?.version() ? [element("span", { className: "ver", text: `v${globalThis.SXRTS.ui.version()}` })] : []),
+      minimizeButton,
       closeButton
-    ]));
+    ]);
+    panel.appendChild(headBar);
 
     const stepBar = element("div", { className: "steps" });
     const steps = ["Identify", "Research", "Validate", "Preview & publish"];
@@ -349,6 +370,61 @@
     const publishStatus = element("div", { className: "status" });
     previewCard.appendChild(publishStatus);
     body.appendChild(previewCard);
+
+    // ---------- Card 4: everything that went wrong, in one box ----------
+    const reportCard = element("div", { className: "card hidden" });
+    const reportCount = element("span", { className: "report-count clean", text: "" });
+    const reportTitle = element("h2", { text: "5 · All issues in one place" }, [reportCount]);
+    reportCard.appendChild(reportTitle);
+    reportCard.appendChild(element("p", { className: "helptext", text: "Every error, warning, skipped row and unmapped field from this run, with the exact message, the value and a likely cause. Copy it and send it to the developer; it is the baseline for the next update." }));
+    const reportBox = element("textarea", { id: "sxrts-report" });
+    reportBox.readOnly = true;
+    reportBox.wrap = "off";
+    reportCard.appendChild(element("div", { className: "field" }, [reportBox]));
+    const copyReportButton = element("button", { className: "btn", text: "Copy report", type: "button", tip: "Copies the whole report to the clipboard." });
+    reportCard.appendChild(element("div", { className: "buttons" }, [copyReportButton]));
+    const reportStatus = element("div", { className: "report-note" });
+    reportCard.appendChild(reportStatus);
+    body.appendChild(reportCard);
+
+    let lastValidationView = null;
+    function setReportNote(text, type) {
+      reportStatus.textContent = text;
+      reportStatus.className = `report-note ${type}`;
+    }
+    function refreshReport() {
+      const issueReport = globalThis.SXRTS.issueReport;
+      if (!issueReport) return;
+      let pbid = "";
+      try { pbid = globalThis.SXRTS.identityLock.readRtsIdentityFromPage().pbId || ""; } catch { /* not on a profile page */ }
+      const built = issueReport.build({
+        version: globalThis.SXRTS.ui?.version?.() || "",
+        now: new Date(),
+        pageUrl: `${window.location.origin}${window.location.pathname}`,
+        domain: domainInput.value.trim(),
+        companyName: companyNameInput.value.trim(),
+        pbid,
+        validation: lastValidationView,
+        actions: lastActions,
+        definitions: globalThis.SXRTS.customFields?.getCached?.() ?? [],
+        team: globalThis.SXRTS.teamShare?.teamInfo?.() ?? null
+      });
+      reportBox.value = built.text;
+      const problems = built.counts.failed + built.counts.errors;
+      reportCount.textContent = problems ? `${problems} to look at` : "no failures";
+      reportCount.className = `report-count${problems ? "" : " clean"}`;
+      reportCard.classList.toggle("hidden", !lastValidationView && !lastActions.length);
+    }
+    copyReportButton.addEventListener("click", async () => {
+      refreshReport();
+      try {
+        await navigator.clipboard.writeText(reportBox.value);
+        setReportNote("Report copied. Paste it to the developer.", "success");
+      } catch {
+        reportBox.select();
+        setReportNote("Copy was blocked by the browser; the report is selected above, press Ctrl+C.", "error");
+      }
+    });
 
     let lastValidated = null;
     let lastActions = [];
@@ -580,6 +656,7 @@
       const entry = rowsByActionId.get(actionId);
       if (!entry) return;
       entry.action.executionStatus = statusText;
+      entry.action.resultMessage = reasonText || "";
       entry.statusBadge.textContent = statusText;
       entry.statusBadge.className = `badge badge-${statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "failed" : "skipped"}`;
       entry.card.querySelector(".map-row")?.remove();
@@ -625,6 +702,7 @@
       publishButton.disabled = runnable === 0;
       setStep(3);
       persistToCache();
+      refreshReport();
     }
 
     let lastIssues = [];
@@ -633,6 +711,7 @@
     // Structured validation result: a verdict banner, then one line per finding
     // (errors red, warnings amber, notes blue), each with its rule code.
     function renderValidation(ok, lines, headline) {
+      lastValidationView = { ok, lines, headline };
       validateStatus.className = `status ${ok ? "success" : "error"}`;
       validateStatus.replaceChildren();
       const errors = lines.filter((l) => l.kind === "err").length;
@@ -717,7 +796,9 @@
           renderValidation(false, [...error.errors.map((text) => ({ kind: "err", text })), ...extra], halted ? "The agent halted this extraction" : "The output broke the rules below");
         } else {
           setStatus(validateStatus, String(error), "error");
+          lastValidationView = { ok: false, headline: "The output could not be read", lines: [{ kind: "err", text: String(error) }] };
         }
+        refreshReport();
       }
     });
 
@@ -957,9 +1038,79 @@
       publishButton.disabled = false;
       clearCacheButton.disabled = false;
       persistToCache();
+      refreshReport();
     });
 
     closeButton.addEventListener("click", () => document.getElementById("sxrts-assistant-root")?.remove());
+
+    // ---------- floating window: drag, minimize, resize, fold the cards ----------
+    // The window can be dragged by its title bar, minimized to the title bar,
+    // resized from its bottom-right corner, and each card can be folded. Where
+    // it sits and whether it is minimized is remembered in this browser.
+    const UI_KEY = "sxrts_panel_ui";
+    const view = { left: null, top: null, min: false };
+    const saveView = () => { try { globalThis.chrome?.storage?.local?.set({ [UI_KEY]: view }); } catch { /* not remembered */ } };
+
+    // Keep at least part of the title bar on screen, so it can always be grabbed.
+    function clampIntoView() {
+      if (view.left === null) return;
+      const width = panel.offsetWidth || 340;
+      view.left = Math.min(Math.max(view.left, 100 - width), Math.max(0, (window.innerWidth || 1024) - 100));
+      view.top = Math.min(Math.max(view.top, 0), Math.max(0, (window.innerHeight || 768) - 44));
+      panel.style.left = `${view.left}px`;
+      panel.style.top = `${view.top}px`;
+      panel.style.right = "auto";
+      // Moved down, the window gets shorter instead of running off the screen.
+      panel.style.maxHeight = `${Math.max(160, (window.innerHeight || 768) - view.top - 18)}px`;
+    }
+
+    function applyView() {
+      panel.classList.toggle("min", view.min);
+      minimizeButton.textContent = view.min ? "▢" : "–";
+      minimizeButton.title = view.min ? "Restore" : "Minimize (double-click the title bar to put the window back where it started)";
+      clampIntoView();
+    }
+
+    headBar.addEventListener("mousedown", (event) => {
+      if (event.button !== 0 || event.target.closest?.("button")) return;
+      const rect = panel.getBoundingClientRect();
+      const dx = event.clientX - rect.left;
+      const dy = event.clientY - rect.top;
+      panel.classList.add("dragging");
+      const move = (e) => {
+        view.left = Math.round(e.clientX - dx);
+        view.top = Math.round(e.clientY - dy);
+        clampIntoView();
+      };
+      const up = () => {
+        window.removeEventListener("mousemove", move, true);
+        window.removeEventListener("mouseup", up, true);
+        panel.classList.remove("dragging");
+        saveView();
+      };
+      window.addEventListener("mousemove", move, true);
+      window.addEventListener("mouseup", up, true);
+      event.preventDefault();
+    });
+
+    headBar.addEventListener("dblclick", (event) => {
+      if (event.target.closest?.("button")) return;
+      view.left = null;
+      view.top = null;
+      view.min = false;
+      for (const property of ["left", "top", "right", "width", "height", "maxHeight"]) panel.style[property] = "";
+      applyView();
+      saveView();
+    });
+
+    minimizeButton.addEventListener("click", () => {
+      view.min = !view.min;
+      applyView();
+      saveView();
+    });
+
+    window.addEventListener("resize", clampIntoView);
+
 
     // HTML Capture Modal
     const htmlCaptureModal = element("div", { className: "html-capture-modal", id: "sxrts-html-capture-modal" });
@@ -1064,6 +1215,20 @@
       element("strong", { text: creditName })
     ]));
     shadow.appendChild(panel);
+
+    for (const heading of panel.querySelectorAll(".card > h2")) {
+      heading.classList.add("fold");
+      heading.title = "Click to fold or unfold";
+      heading.addEventListener("click", () => heading.parentElement.classList.toggle("collapsed"));
+    }
+
+
+    try {
+      Promise.resolve(globalThis.chrome?.storage?.local?.get(UI_KEY)).then((stored) => {
+        Object.assign(view, stored?.[UI_KEY] ?? {});
+        applyView();
+      }).catch(() => {});
+    } catch { /* storage not available */ }
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};

@@ -44,6 +44,7 @@
     controlKind: "repeatableRecord",
     navigation: {
       expandToggleText: "View All Name Variations",
+      sectionTitles: ["Name"],
       candidates: []
     },
     addButton: { candidates: ["#addNameVariation"] },

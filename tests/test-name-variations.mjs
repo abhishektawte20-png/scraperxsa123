@@ -16,6 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtureHtml = readFileSync(path.join(here, "../fixtures/business-entity-name-variations.html"), "utf8");
 
 import "../core/identityLock.js";
+import "../core/navigation.js";
 import "../core/duplicates.js";
 import "../core/adapters/textField.js";
 import "../core/adapters/nativeSelect.js";
@@ -141,4 +142,40 @@ test("throws rather than reporting success when the saved-value signal never app
     () => globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation({ name: "No Signal Co", type: "Other Name" }),
     /Save did not complete/
   );
+});
+
+test("a name variation that is already on the page is skipped even when no Add or View All control is showing", async () => {
+  setupDom();
+  document.getElementById("addNameVariation").remove();
+  const result = await globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation({ name: "Protocol DMC Spain", type: "Familiar Name" });
+  assert.equal(result.status, "skipped");
+  assert.equal(result.reason, "duplicate");
+});
+
+test("with a new name and no way to add it, the error says which section to open", async () => {
+  setupDom();
+  document.getElementById("addNameVariation").remove();
+  await assert.rejects(
+    () => globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation({ name: "Brand New Name", type: "Other Name" }),
+    /Open the section that holds Name Variations \(Business Entity > Entity\)/
+  );
+});
+
+test("a closed Name section is opened only when the Add button is missing, then the name is added", async () => {
+  setupDom();
+  const add = document.getElementById("addNameVariation");
+  add.hidden = true;
+  const bar = document.createElement("div");
+  bar.textContent = "Name";
+  let clicks = 0;
+  bar.addEventListener("click", () => { clicks++; add.hidden = false; });
+  document.body.prepend(bar);
+  // Reading is fine while hidden; the add flow needs the button, so the bar is clicked once.
+  const nv = globalThis.SXRTS.workflows.businessEntityNameVariations;
+  // jsdom has no layout, so "hidden" is only the attribute; make the lookup honest about it.
+  const original = document.querySelector.bind(document);
+  document.querySelector = (selector) => { const node = original(selector); return node?.hidden ? null : node; };
+  const result = await nv.applyNameVariation({ name: "Brand New Name", type: "Other Name" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(clicks, 1);
 });

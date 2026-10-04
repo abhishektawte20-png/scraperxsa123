@@ -111,3 +111,19 @@ test("throws rather than reporting success when Save never returns to disabled",
     /never returned to a disabled/
   );
 });
+
+test("a closed Industries and Verticals section is opened when the Add button is missing, then the code is added", async () => {
+  setupDom();
+  const addButton = document.querySelector('[onclick="companySic.add()"]');
+  addButton.hidden = true;
+  const bar = document.createElement("div");
+  bar.textContent = "Industries and Verticals";
+  let clicks = 0;
+  bar.addEventListener("click", () => { clicks++; addButton.hidden = false; });
+  document.body.prepend(bar);
+  const original = document.querySelector.bind(document);
+  document.querySelector = (selector) => { const node = original(selector); return node?.hidden ? null : node; };
+  const result = await globalThis.SXRTS.workflows.companySic.applySicCode({ code: "7389", classificationSource: "PitchBook", action: "addIfMissing" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(clicks, 1);
+});

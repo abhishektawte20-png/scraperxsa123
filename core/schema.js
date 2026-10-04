@@ -507,7 +507,7 @@
       warnings.push(`[OUTPUT_RULE] "${rule}" changed ${items.length} value(s), e.g. "${items[0].before}" → "${items[0].after}".`);
     }
 
-    const knownTopLevel = new Set(["schemaVersion", "meta", "profileIdentity", "businessEntity", "company", "custom"]);
+    const knownTopLevel = new Set(["schemaVersion", "meta", "profileIdentity", "businessEntity", "company", "custom", "extras"]);
     // "anc" is a content-provenance tag (accepted_used/rejected_not_used)
     // the Rovo agent's own configuration appends on every response — real,
     // expected, and already known to be harmless (unknown top-level keys

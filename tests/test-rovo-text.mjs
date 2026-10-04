@@ -278,3 +278,9 @@ test("other labels for a source ('URL:', 'Source page:', 'Reference:', 'Found on
     assert.deepEqual(rt.analyze(raw).issues.filter((i) => i.severity === "error"), [], label);
   }
 });
+
+test("the extension's own 'extras' section is never reported to the researcher as an unknown field", () => {
+  const validated = globalThis.SXRTS.schema.validate(TEXT_SAMPLE);
+  assert.ok(validated.extras, "the report produced extras");
+  assert.equal(validated.warnings.some((w) => /extras is not a recognized/.test(w)), false);
+});

@@ -38,7 +38,7 @@
   async function applyWebsiteAddressValue(record) {
     const field = entry("businessEntity.websiteAddresses");
     const input = document.querySelector(field.form.input.candidates[0]);
-    if (!input) throw new Error("Website Address field was not found.");
+    if (!input) throw new Error("Website Address field was not found. Open the Business Entity tab and its Entity section so the Website Address box is visible, then publish again.");
     if (record.action === "skip") return { status: "skipped", reason: "action=skip" };
 
     const current = input.value.trim();

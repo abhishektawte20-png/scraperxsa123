@@ -145,3 +145,21 @@ test("an unsupported dropdown value throws before touching the page", async () =
   await assert.rejects(() => run(select, { value: "Bronze", action: "addIfMissing" }), /not a supported value/);
   assert.equal(doc.getElementById("tier").value, "");
 });
+
+test("when RTS keeps only part of a long value, the error shows how much and where it differs", async () => {
+  const doc = setup();
+  const long = "A".repeat(40) + " the end of a long description";
+  // RTS cuts the text at 25 characters when it saves.
+  doc.getElementById("saveCompany").addEventListener("click", () => setTimeout(() => { doc.getElementById("foundedYear").value = long.slice(0, 25); }, 5));
+  await assert.rejects(
+    () => run(single, { value: long, action: "addIfMissing" }),
+    /saved value no longer matches\. Typed 70 characters; the page now has 25\. They first differ at character 26/
+  );
+});
+
+test("a Keywords-style Add that never produces a row mentions tag boxes", async () => {
+  setup();
+  globalThis.SXRTS.workflows.customField.TIMEOUTS.open = 50;
+  document.getElementById("addAward").replaceWith(document.getElementById("addAward").cloneNode(true)); // the Add button now does nothing
+  await assert.rejects(() => run(record, { title: "x", level: "Gold", action: "addIfMissing" }), /tag box \(you type a word and press Enter\)/);
+});

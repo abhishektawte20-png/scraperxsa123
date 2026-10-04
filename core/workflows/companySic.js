@@ -98,8 +98,9 @@
 
     const sourceOption = resolveSourceOption(entry, candidate.classificationSource);
 
+    await globalThis.SXRTS.navigation.ensureSectionOpen(() => queryFirst(entry.addButton.candidates), ["Industries and Verticals"]);
     const addButton = queryFirst(entry.addButton.candidates);
-    if (!addButton) throw new Error("Add New Sic Industry Path button was not found.");
+    if (!addButton) throw new Error("Add New Sic Industry Path button was not found. Open the \"Industries and Verticals\" section on the Company tab so its Add button is visible, then publish again.");
     const beforeCount = document.querySelectorAll(entry.form.codeInput.candidates[0]).length;
     addButton.click();
 

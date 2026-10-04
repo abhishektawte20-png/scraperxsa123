@@ -44,6 +44,17 @@
     return globalThis.SXRTS.identityLock.normalizeText(value) || "";
   }
 
+  // What RTS kept compared with what was typed: lengths and the first place
+  // they differ, so a truncated or rewritten value can be seen at a glance.
+  function mismatchDetail(typed, now) {
+    const a = String(typed ?? "").replace(/\s+/g, " ").trim();
+    const b = String(now ?? "").replace(/\s+/g, " ").trim();
+    let index = 0;
+    while (index < a.length && index < b.length && a[index].toLowerCase() === b[index].toLowerCase()) index++;
+    const clip = (text) => JSON.stringify(text.slice(Math.max(0, index - 15), index + 25));
+    return `Typed ${a.length} characters; the page now has ${b.length}. They first differ at character ${index + 1}: typed ${clip(a)}, page ${clip(b)}.`;
+  }
+
   function readField(field, control) {
     // A placeholder option ("--", "Select...") has an empty value and means "not set".
     if (field.kind === "select") return control.value === "" ? "" : globalThis.SXRTS.adapters.nativeSelect.readSelectedOption(control);
@@ -163,7 +174,7 @@
       if (def.openButton && !shownControls(def, field).length) weOpened = (await reopenForReadBack(def)) || weOpened;
       const after = findControl(def, field);
       if (normalize(readField(field, after)) !== normalize(value)) {
-        throw new Error(`Save did not complete for ${def.label}: the saved value no longer matches.`);
+        throw new Error(`Save did not complete for ${def.label}: the saved value no longer matches. ${mismatchDetail(value, readField(field, after))}`);
       }
       return { status: "savedValueVerified", name: def.key };
     } finally {
@@ -208,7 +219,9 @@
       () => def.fields.every((field) => globalThis.SXRTS.selectorBuilder.resolveAll(field.selectors).length > before),
       2000
     );
-    if (!appeared) throw new Error(`A new ${def.label} row did not appear after clicking Add.`);
+    if (!appeared) {
+      throw new Error(`A new ${def.label} row did not appear after clicking Add. If this field is a tag box (you type a word and press Enter), it is not supported yet: send the HTML of the box with one tag in it.`);
+    }
 
     for (const field of fields) {
       const control = globalThis.SXRTS.selectorBuilder.resolveAll(field.selectors)[before];
@@ -248,7 +261,7 @@
 
   function findRow(def, label) {
     const rows = shownIn([def.rowBy.rowSelector]).filter((row) => globalThis.SXRTS.selectorBuilder.textHasWord(row.textContent, label));
-    if (!rows.length) throw new Error(`No row labelled "${label}" was found in this section of RTS. Open the right tab/section.`);
+    if (!rows.length) throw new Error(`No row labelled "${label}" was found in the ${def.label} section. Open that section on the page so its rows are visible, then publish again.`);
     return rows.sort((a, b) => a.textContent.length - b.textContent.length)[0];
   }
 

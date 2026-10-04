@@ -27,17 +27,34 @@
     return null;
   }
 
+  const findToggle = (entry) => Array.from(document.querySelectorAll("a, button, span, div"))
+    .find((node) => node.textContent.trim() === entry.navigation.expandToggleText);
+
   async function ensureExpanded(entry) {
     if (queryFirst(entry.addButton.candidates)) return;
-    const toggle = Array.from(document.querySelectorAll("a, button, span, div"))
-      .find((node) => node.textContent.trim() === entry.navigation.expandToggleText);
+    // The section itself may be closed: open it only because it is needed.
+    const nav = globalThis.SXRTS.navigation;
+    await nav?.ensureSectionOpen(() => queryFirst(entry.addButton.candidates) || findToggle(entry), entry.navigation.sectionTitles);
+    if (queryFirst(entry.addButton.candidates)) return;
+    const toggle = findToggle(entry);
     if (!toggle) {
-      throw new Error(`Could not find the "${entry.navigation.expandToggleText}" control, and the Add button is not already visible.`);
+      throw new Error(`Could not find the "${entry.navigation.expandToggleText}" control or the Add New Name Variation button. Open the section that holds Name Variations (Business Entity > Entity) so one of them is visible, then publish again.`);
     }
     toggle.click();
     await wait(150);
     if (!queryFirst(entry.addButton.candidates)) {
       throw new Error("Name variations did not expand after clicking the toggle.");
+    }
+  }
+
+  // What is on the page right now, without clicking anything. Null when the
+  // rows cannot be read reliably (not shown yet, or the counts disagree).
+  function peekExistingRecords(entry) {
+    try {
+      const records = readExistingRecords(entry);
+      return records.length ? records : null;
+    } catch {
+      return null;
     }
   }
 
@@ -128,18 +145,23 @@
   // TYPE_OPTIONS labels or codes exactly (normalized).
   async function applyNameVariation(candidate) {
     const entry = getEntry();
-    await ensureExpanded(entry);
-
     const typeOption = resolveTypeOption(entry, candidate.type);
-    const existing = readExistingRecords(entry);
-    const isDuplicate = globalThis.SXRTS.duplicates.isDuplicateRecord(
-      existing.map((record) => ({ name: record.name, type: record.type })),
+    const isKnown = (records) => globalThis.SXRTS.duplicates.isDuplicateRecord(
+      records.map((record) => ({ name: record.name, type: record.type })),
       { name: candidate.name, type: typeOption.label },
       entry.duplicateRule.matchOn
     );
-    if (isDuplicate) {
-      return { status: "skipped", reason: "duplicate", detail: `"${candidate.name}" (${typeOption.label}) already exists.` };
-    }
+    const duplicate = () => ({ status: "skipped", reason: "duplicate", detail: `"${candidate.name}" (${typeOption.label}) already exists.` });
+
+    // 1. Look at what is already on the page. If the same name variation is
+    //    there, nothing needs clicking and nothing is overwritten.
+    const visible = peekExistingRecords(entry);
+    if (visible && isKnown(visible)) return duplicate();
+
+    // 2. Not seen: open the list (only now) and look again before adding.
+    await ensureExpanded(entry);
+    const existing = readExistingRecords(entry);
+    if (isKnown(existing)) return duplicate();
 
     const addButton = queryFirst(entry.addButton.candidates);
     if (!addButton) throw new Error("Add New Name Variation button was not found.");
