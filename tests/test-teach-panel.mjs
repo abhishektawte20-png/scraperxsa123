@@ -184,3 +184,15 @@ test("the last pasted JSON can be restored for the same profile after reopening 
   assert.equal(shadow2.querySelector("#sxrts-response").value, '{"restored":true}');
   assert.ok(store);
 });
+
+test("clicking outside the mapping window, or dragging a selection out of it, does not close it", async () => {
+  const { shadow } = setup();
+  await tick();
+  buttonByText(shadow.querySelector(".card"), "Teach new field").click();
+  const modal = shadow.querySelector(".teach-modal");
+  assert.ok(modal.classList.contains("open"));
+  for (const type of ["mousedown", "mouseup", "click"]) modal.dispatchEvent(new window.MouseEvent(type, { bubbles: true }));
+  assert.ok(modal.classList.contains("open"), "the backdrop click is ignored");
+  shadow.querySelector(".teach-x").click();
+  assert.ok(!modal.classList.contains("open"), "the × still closes it");
+});

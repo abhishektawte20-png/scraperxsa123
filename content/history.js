@@ -54,7 +54,9 @@
     const modal = el("div", { className: "hx-modal" });
     const card = el("div", { className: "hx-card" });
     modal.appendChild(card);
-    modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    let pressedOnBackdrop = false;
+    modal.addEventListener("mousedown", (event) => { pressedOnBackdrop = event.target === modal; });
+    modal.addEventListener("click", (event) => { if (event.target === modal && pressedOnBackdrop) close(); });
 
     let view = { name: "list" };
     let query = "";

@@ -34,6 +34,7 @@
     .teach-muted { color: #7a869c; font-size: 12px; }
     .teach-item { border: 1px solid #e2e6ed; border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
     .teach-overlay { position: fixed; inset: 0; z-index: 2147483646; cursor: crosshair; }
+    .teach-overlay.through { cursor: default; }
     .teach-hl { position: fixed; z-index: 2147483647; pointer-events: none; border: 2px solid #e8590c; background: rgba(232,89,12,.12); border-radius: 3px; display: none; }
     .teach-guide { background: #f2f7fd; border: 1px solid #d5e3f3; border-radius: 10px; padding: 10px 12px; margin: 4px 0 6px; }
     .teach-guide h4 { margin: 0 0 6px; font-size: 12px; color: #0b2f52; }
@@ -110,9 +111,8 @@
       modal.classList.remove("open");
     }
 
-    modal.addEventListener("click", (event) => {
-      if (event.target === modal) close();
-    });
+    // The mapping window is only closed with its × or Cancel: a stray click (or
+    // a drag that ends outside it) must never throw away a half-finished mapping.
 
     // ---------- on-page picker ----------
     // A transparent overlay (below the panel, above the page) receives every
@@ -128,7 +128,13 @@
       return new Promise((resolve) => {
         const overlay = el("div", { className: "teach-overlay" });
         const box = el("div", { className: "teach-hl" });
-        const bar = isolate(el("div", { className: "teach-bar" }, [el("span", { text: `${message} — press Esc to cancel` })]));
+        const label = el("span", { text: `${message} — press Esc to cancel` });
+        const bar = isolate(el("div", { className: "teach-bar" }, [label]));
+        // "Let me click first": the overlay lets every click through to the page
+        // (open a + button, switch a tab, open a dialog) until "Pick now".
+        let clickThrough = false;
+        const toggle = el("button", { text: "Let me click the page first", type: "button" });
+        bar.appendChild(toggle);
         for (const action of actions) {
           const button = el("button", { text: action.label, type: "button" });
           button.addEventListener("click", () => action.run());
@@ -143,9 +149,19 @@
         function targetAt(event) {
           overlay.style.pointerEvents = "none";
           const target = document.elementFromPoint?.(event.clientX, event.clientY) ?? null;
-          overlay.style.pointerEvents = "";
+          overlay.style.pointerEvents = clickThrough ? "none" : "";
           return target && target !== shadow.host ? target : null;
         }
+        toggle.addEventListener("click", () => {
+          clickThrough = !clickThrough;
+          overlay.style.pointerEvents = clickThrough ? "none" : "";
+          overlay.classList.toggle("through", clickThrough);
+          if (clickThrough) box.style.display = "none";
+          label.textContent = clickThrough
+            ? "Click the page as you normally would (open + buttons, tabs, dialogs). When the thing you want to pick is on screen, press Pick now."
+            : `${message} — press Esc to cancel`;
+          toggle.textContent = clickThrough ? "Pick now" : "Let me click the page first";
+        });
         function onMove(event) {
           const target = targetAt(event);
           if (!target) { box.style.display = "none"; return; }

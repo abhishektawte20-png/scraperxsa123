@@ -47,7 +47,9 @@
     const modal = el("div", { className: "fb-modal" });
     const card = el("div", { className: "fb-card" });
     modal.appendChild(card);
-    modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    let pressedOnBackdrop = false;
+    modal.addEventListener("mousedown", (event) => { pressedOnBackdrop = event.target === modal; });
+    modal.addEventListener("click", (event) => { if (event.target === modal && pressedOnBackdrop) close(); });
 
     let state = { comment: "", name: "", includeOutput: true, message: null, channel: "", checked: null };
 

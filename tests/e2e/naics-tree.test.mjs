@@ -138,6 +138,16 @@ async function drive(ctx, base, teamFile) {
     await click("Open a branch and pick a radio button");
     await waitFor(() => page.evaluate(() => !!document.querySelector(".teach-overlay") || [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".teach-overlay")].length), "the picker");
     await waitFor(() => page.evaluate(() => document.querySelectorAll("input[type=radio]").length > 0), "a branch to open");
+    // "Let me click the page first": a real click opens another branch by hand
+    // without being taken as a pick or an error, then "Pick now" resumes picking.
+    const overlayUp = () => inPanel(() => !!document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-overlay"));
+    const clicksBefore = await page.evaluate(() => window.__naics.expanderClicks);
+    await click("Let me click the page first", ".teach-bar");
+    await clickPage("#left > ul > li:nth-child(3) .plus");
+    assert.equal(await page.evaluate(() => window.__naics.expanderClicks), clicksBefore + 1, "the page received the click");
+    assert.equal(await overlayUp(), true, "still picking: nothing was picked or rejected");
+    assert.doesNotMatch(await cardText(), /not a radio|not a \+ button/);
+    await click("Pick now", ".teach-bar");
     await clickPage("input[type=radio] + .radio-button__caption .radio-button__pointer");
     // Step D: the dialog's Save (greyed out, still pickable).
     await click("Pick the dialog's Save button");

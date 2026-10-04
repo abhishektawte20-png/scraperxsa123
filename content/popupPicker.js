@@ -27,6 +27,7 @@
     .muted { color: #6b778c; font-size: 12px; }
     .overlay { position: fixed; inset: 0; z-index: 2147483646; cursor: crosshair; }
     .hl { position: fixed; z-index: 2147483647; pointer-events: none; border: 2px solid #e8590c; background: rgba(232,89,12,.12); border-radius: 3px; display: none; }
+    .bar-btn { margin-left: 10px; background: #fff; color: #0b2f52; border: 0; border-radius: 5px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
     .bar { position: fixed; z-index: 2147483647; left: 50%; top: 12px; transform: translateX(-50%); background: #0b2f52; color: #fff; padding: 8px 16px; border-radius: 8px; font: 13px -apple-system, "Segoe UI", sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
   `;
 
@@ -57,13 +58,28 @@
       return new Promise((resolve) => {
         const overlay = el("div", { className: "overlay" });
         const box = el("div", { className: "hl" });
-        const bar = el("div", { className: "bar", text: `${message}. Press Esc to cancel.` });
+        const label = el("span", { text: `${message}. Press Esc to cancel.` });
+        const bar = el("div", { className: "bar" }, [label]);
+        // "Let me click first": clicks go through to the page (open a + button,
+        // switch a tab) until "Pick now".
+        let clickThrough = false;
+        const toggle = el("button", { className: "bar-btn", text: "Let me click the page first", type: "button" });
+        toggle.addEventListener("click", () => {
+          clickThrough = !clickThrough;
+          overlay.style.pointerEvents = clickThrough ? "none" : "";
+          if (clickThrough) box.style.display = "none";
+          label.textContent = clickThrough
+            ? "Click the page as you normally would. When the thing you want to pick is on screen, press Pick now."
+            : `${message}. Press Esc to cancel.`;
+          toggle.textContent = clickThrough ? "Pick now" : "Let me click the page first";
+        });
+        bar.appendChild(toggle);
         shadow.append(overlay, box, bar);
         card.style.display = "none";
         const targetAt = (event) => {
           overlay.style.pointerEvents = "none";
           const target = document.elementFromPoint(event.clientX, event.clientY);
-          overlay.style.pointerEvents = "";
+          overlay.style.pointerEvents = clickThrough ? "none" : "";
           return target && target !== host ? target : null;
         };
         const stop = (event) => { event.preventDefault(); event.stopPropagation(); };

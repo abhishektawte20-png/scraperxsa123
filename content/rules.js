@@ -48,7 +48,9 @@
     const modal = el("div", { className: "rules-modal" });
     const card = el("div", { className: "rules-card" });
     modal.appendChild(card);
-    modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    let pressedOnBackdrop = false;
+    modal.addEventListener("mousedown", (event) => { pressedOnBackdrop = event.target === modal; });
+    modal.addEventListener("click", (event) => { if (event.target === modal && pressedOnBackdrop) close(); });
 
     let view = "list";
     let draft = null;
