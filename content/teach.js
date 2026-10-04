@@ -1063,7 +1063,7 @@
         }
         if (isTree()) {
           card.appendChild(guide([
-            { done: false, text: `In RTS, ${draft.bind.hint}` },
+            { done: false, text: `In RTS, ${draft.bind.hint.charAt(0).toLowerCase()}${draft.bind.hint.slice(1)}` },
             { done: Boolean(draft.openButton), text: "Pick the Add NAICS button. The extension then opens the dialog for you." },
             { done: Boolean(draft.tree.expander && draft.tree.leaf && draft.tree.save), text: "In the dialog, pick one + button. The extension then opens a branch so you can pick a code's round radio button; then pick the dialog's Save button." },
             { done: Boolean(draft.tree.sectionSave), text: "Close the dialog and pick the section's Save Changes button." },
