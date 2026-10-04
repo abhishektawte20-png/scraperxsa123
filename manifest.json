@@ -1,15 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "ScraperX RTS Profile Assistant",
-  "version": "0.17.0",
-  "description": "ScraperX RTS Profile Assistant, developed by Abhishek Tawte. Validates the ScraperX agent report against the output rules, previews every proposed change, and fills PitchBook RTS fields with profile identity locking and save verification. Any field can be mapped from the preview in seconds.",
+  "name": "ScraperX UI Automation Tool",
+  "version": "0.18.0",
+  "description": "ScraperX UI Automation Tool, developed by Abhishek Tawte. Validates the ScraperX agent report against the output rules, previews every proposed change, and fills PitchBook RTS fields with profile identity locking and save verification. Any field can be mapped from the preview in seconds.",
   "permissions": [
     "activeTab",
+    "alarms",
     "scripting",
     "storage"
   ],
   "host_permissions": [
-    "https://rts.pitchbook.com/*"
+    "https://rts.pitchbook.com/*",
+    "https://*.logic.azure.com/*",
+    "https://*.webhook.office.com/*",
+    "https://*.api.powerplatform.com/*",
+    "https://hooks.slack.com/*",
+    "https://chat.googleapis.com/*",
+    "https://discord.com/api/webhooks/*"
   ],
   "background": {
     "service_worker": "background/background.js"
@@ -21,7 +28,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "Open ScraperX RTS Profile Assistant",
+    "default_title": "Open ScraperX UI Automation Tool",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
@@ -30,6 +37,6 @@
     }
   },
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src 'none'; img-src 'self'; style-src 'self'"
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src https://*.logic.azure.com https://*.webhook.office.com https://*.api.powerplatform.com https://hooks.slack.com https://chat.googleapis.com https://discord.com; img-src 'self'; style-src 'self'"
   }
 }

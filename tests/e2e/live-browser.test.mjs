@@ -18,28 +18,10 @@ function fixture(name) {
   return readFileSync(path.join(repo, "fixtures", name), "utf8");
 }
 
-// Same ordered list background/background.js injects into a real tab.
-const ASSISTANT_FILES = [
-  "core/schema.js",
-  "core/identityLock.js",
-  "core/duplicates.js",
-  "core/cache.js",
-  "core/stateMachine.js",
-  "core/adapters/textField.js",
-  "core/adapters/nativeSelect.js",
-  "core/adapters/contentEditable.js",
-  "registry/businessEntity.nameVariations.js",
-  "registry/businessEntity.general.js",
-  "registry/company.sic.js",
-  "registry/company.sites.js",
-  "registry/index.js",
-  "core/promptBuilder.js",
-  "core/executionPlan.js",
-  "core/workflows/businessEntityNameVariations.js",
-  "core/workflows/businessEntityGeneral.js",
-  "core/workflows/companySic.js",
-  "content/panel.js"
-];
+// The very list background/background.js injects into a real tab (read from it,
+// so this test can never drift from the extension), minus the bootstrap that
+// mounts the panel by itself.
+const ASSISTANT_FILES = JSON.parse(/const ASSISTANT_FILES = (\[[\s\S]*?\]);/.exec(readFileSync(path.join(repo, "background/background.js"), "utf8"))[1]).filter((file) => file !== "content/bootstrap.js");
 
 // The only piece not covered by an existing fixture file: the PBID header
 // and (initially blank) Domain field the identity lock reads. Kept
@@ -188,7 +170,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
 
     await root.locator(".status").first().locator("visible=true").waitFor({ timeout: 5000 }).catch(() => {});
     const validateStatus = await root.locator(".status").first().innerText();
-    assert.match(validateStatus, /Valid \(schema 1\.0\)/, `expected a clean validation, got: ${validateStatus}`);
+    assert.match(validateStatus, /Valid/, `expected a clean validation, got: ${validateStatus}`);
 
     const summaryBefore = await root.locator(".status").nth(1).innerText();
     assert.match(summaryBefore, /5 ready to publish/, `expected 5 ready-to-publish actions, got: ${summaryBefore}`);

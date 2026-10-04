@@ -46,13 +46,16 @@ Never substitute null, "N/A", "", "unknown", "Not found" or any paraphrase for t
 RULE 5 — NULL USAGE IS RESTRICTED: null is permitted only for (a) a "source_url" whose paired "value" (or sibling field) is a fallback phrase, (b) "halt_reason" when extraction_status is "success", (c) "source_2" and "flag" on a funding round, (d) the fields marked nullable in the schema ("note", "corroborating_source_url", "regional_title_equivalent", "additional_information_needed"). null is never permitted anywhere else. Empty strings are never permitted anywhere.
 RULE 6 — FIELD-LEVEL SOURCING: Every extracted data point is an object {"value": ..., "source_url": ...}. Two fields found on the same page each carry that URL independently. Every source_url, source_1, source_2, corroborating_source_url and url is a full https:// URL that passes the Section 5 five-condition check: never a description such as "homepage" or "footer", never a bare domain, never http://.
 RULE 7 — SOURCE DOMAIN: Every value found on the official website is sourced from a page ON THE TARGET DOMAIN. A page on any other domain may be used only for a field that is genuinely missing from the official website after full traversal, and only if that page displays this company's own domain or name and address (entity authentication). Never take a value from another organisation's page (for example another site's privacy policy, terms or contact page), and never from pitchbook.com, tracxn.com, atlassian.net, Confluence, prospeo.io, apollo.io, zoominfo.com, crunchbase.com or any other data aggregator, lead-generation or directory platform. If the only source is such a page, return the fallback phrase instead of the value.
+  The host of every source_url must be the target domain or a subdomain of it. A staging, preview, mirror or hosting-platform address (for example netlify.app, vercel.app, github.io, pages.dev, herokuapp.com, azurewebsites.net, wixsite.com, webflow.io, blogspot.com) is NOT the official website, even when it shows the same content. If the official site redirected you to such an address, cite the target-domain URL you requested, never the address you were redirected to. Before releasing, scan every source_url host: each one is the target domain, or the field is genuinely missing from the site and an entity-authenticated external page was used.
 RULE 8 — TYPES: Booleans are true/false literals. Counts of rounds are integers. Employee counts are an integer when exact, otherwise a string keeping the qualifier exactly ("500+", "201-500", "<50"). Amounts and dates are strings exactly as sourced ("$15M", "Jun 2019", "Undisclosed").
 RULE 9 — STRING SAFETY: All strings are valid JSON. Escape double quotes as \" and backslashes as \\. No raw line breaks inside a string. No trailing commas. No comments.
 RULE 10 — PLAIN TEXT VALUES: No Markdown anywhere in any value: no [text](url) links, no bold, no bullets, no backticks.
 RULE 11 — ENGLISH ONLY: All values are in English. The only exception is name_variations.other_name_variations[].name, where a native-script name is recorded verbatim with its script named in "script".
 RULE 12 — HALT CONDITIONS: If a halt condition fires (prohibited source detected, conflicting information across sources, inaccessible domain, TLD mismatch, entity unidentifiable), do not attempt a partial extraction. Emit exactly this object and nothing else:
 {"extraction_status": "halted", "halt_reason": "<exact prescribed halt phrase from the methodology>", "target_domain": "<the domain you were given>", "extraction_date": "<today's date as DD Mon YYYY>", "anc": {"accepted_used": "AIGEN_SRX_V1_Y", "rejected_not_used": "AIGEN_SRX_V1_N"}}
-RULE 13 — FINAL CHECK BEFORE YOU RELEASE: (1) the response starts with { and its first key is "extraction_status"; (2) count the top-level keys: there must be exactly 22, in the order listed above; (3) every source_url passes RULE 6 and RULE 7; (4) every unfound field carries an exact fallback phrase, not null or ""; (5) it would parse under a strict JSON parser on the first attempt. If any answer is No, correct the output before releasing it.
+RULE 13 — NO BLANK SLOTS: Every "" you see in the SCHEMA below is a slot that you must fill, never a value to leave in place. A string is never empty. Free-text fields are the ones most often left blank, so always write at least one real sentence in each of these: funding.researcher_note, funding.routing_logic, employee_count.notes, start_date.selection_logic, industry_classification.public_identity_test, .logic and .confidence_rationale, every "relevance", every "definition_match_confirmation", "gate_question_passed" and "rejection_reason". If there is genuinely nothing to add to funding.researcher_note or employee_count.notes, write exactly: No additional notes.
+RULE 14 — WORDING: keywords, business_description and full_description never use the words "solution" or "solutions" or any promotional word (leading, best, top, premier, world-class, trusted, reliable, innovative, cutting-edge, high-quality, state-of-the-art, advanced, superior), and a description never repeats the company's name. Say what the company makes or does in plain nouns and verbs (for example "corporate security services" or "access control systems", never "corporate security solutions").
+RULE 15 — FINAL CHECK BEFORE YOU RELEASE: (1) the response starts with { and its first key is "extraction_status"; (2) count the top-level keys: there must be exactly 22, in the order listed above; (3) every source_url passes RULE 6 and RULE 7; (4) every unfound field carries an exact fallback phrase, not null or ""; (5) it would parse under a strict JSON parser on the first attempt; (6) no string anywhere is "" (RULE 13); (7) no keyword or description contains "solution" or a promotional word (RULE 14); (8) every source_url host is the target domain (RULE 7). If any answer is No, correct the output before releasing it.
 
 SCHEMA — emit exactly these keys, in this order:
 {
@@ -73,8 +76,8 @@ SCHEMA — emit exactly these keys, in this order:
     "latest_investors": [""],
     "backing_status": "",
     "team_routing": "",
-    "routing_logic": "",
-    "researcher_note": "",
+    "routing_logic": "<one real sentence, never empty>",
+    "researcher_note": "<one real sentence, never empty>",
     "out_of_scope_rounds": [
       { "round_type": "", "status": "", "date": "", "amount": "", "key_detail": "", "source_url": "", "source_type": "" }
     ]
@@ -138,7 +141,7 @@ SCHEMA — emit exactly these keys, in this order:
   "employee_count": {
     "current": { "count": "", "date": "", "source_url": "" },
     "history": [ { "count": "", "date": "", "source_url": "" } ],
-    "notes": ""
+    "notes": "<one real sentence, never empty>"
   },
   "sic_codes": [ { "rank": 1, "best_fit": true, "code": "", "title": "", "relevance": "", "source": "OSHA SIC Manual" } ],
   "naics_codes": [ { "rank": 1, "best_fit": true, "code": "", "title": "", "relevance": "", "source": "2022 NAICS Manual" } ],
@@ -162,8 +165,15 @@ KEY-SPECIFIC RULES
 "description": "classification_prefix" is the first phrase (e.g. "Designer of"). "transition_phrase" is the connecting phrase that actually appears in "business_description" ("intended for", "designed for" / "designed to", "catering to", "based in", "headquartered in"). "business_description" is the first sentence and "full_description" the second sentence, each exactly as the Section 9 rules require, one string each.
 "employee_count.current": a dated count with its source. The date "<today's date as DD Mon YYYY> (website, assumed current)" may be used ONLY when the count and its source_url are on the official website. A count from an external source carries the date of that source, and an external count with no determinable date is not extractable. If no valid count exists, "count" and "date" are the fallback phrase and "source_url" is null. "history" is [] when there is none.
 "sic_codes" / "naics_codes": at most 3 entries ranked 1 to 3, exactly one with "best_fit": true, 4-digit SIC and 6-digit NAICS codes with the exact manual titles. If no code applies, emit one object whose "code" is "Not defined in methodology." and "title" is "No SIC code identified — company's primary activity falls outside standard classification scope." (or the NAICS equivalent).
-"keywords": at least 10 entries, each 2 to 3 words, each passing the Investor Search Test. Fewer than 10 means extraction is incomplete: keep extracting.
+"keywords": at least 10 entries, each 2 to 3 words, each passing the Investor Search Test. Fewer than 10 means extraction is incomplete: keep extracting. Never use the word "solution" or "solutions" in a keyword, never use the generic phrases "business services", "online platform", "digital tools", "customer service" or "one stop shop", and never repeat a keyword.
 "not_for_profit_flag": for a not-for-profit organisation set "is_not_for_profit": true and "note": "Incorrect workflow — not-for-profit organisation. Should not be tracked by any team unless published." and still emit the full extraction.
+"funding.timeline[].round_type": exactly one of: Capitalization, Grant, Product Crowdfunding, Angel, Pre-Seed, Seed, Series A (or B, C and so on, with an optional +), Late Stage VC, Private Equity / Growth, Corporate Round, Debt, Acquisition / Merger, IPO / Public Listing, Bankruptcy Admin/Reorg, Bankruptcy Liquidation, University Spin-Off, Restart, Management Buyout.
+"description": "business_description" is ONE sentence that begins with the classification_prefix (one of: Manufacturer of, Provider of, Operator of, Developer of, Designer of, Retailer of, Distributor of, Producer of) and never begins with "is a" or "are a". "full_description" begins with "The company" and has one comma before an "enabling", "helping" or "assisting" clause. Neither contains the company's name, "solution(s)" or a promotional word (RULE 14).
+"industry_classification" and "verticals": the codes 1.4.4, 2.6.3, 2.9.1, 6.1.7, 6.2.2, 6.4.3 and 6.5.16 are never used, in any position. The codes 6.5.15, 2.1.4 and 2.4.5 are only ever secondary, never primary. The verticals "TMT" and "Industrials" are system-managed and are never assigned.
+"naics_codes": NAICS 523930 is never output; use 523940 — Portfolio Management and Investment Advice instead.
+"name_variations.familiar_name": never the same text as formal_name.
+"management[].titles": every entry carries at least one title exactly as written; a person without an explicit title is not emitted.
+"employee_count.notes": always a real sentence about where the count came from (RULE 13); never "".
 "anc": always exactly the two values shown.
 
 EMAIL DEFAULT STRUCTURE — the exact RTS options (copy one verbatim):

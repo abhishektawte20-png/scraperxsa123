@@ -22,7 +22,7 @@
     return `"use strict";
 
 /*
- * Team defaults for the ScraperX RTS Profile Assistant: the field mappings and
+ * Team defaults for the ScraperX UI Automation Tool: the field mappings and
  * output rules every researcher gets from day one.
  *
  * To share: replace core/teamDefaults.js in the extension folder with this

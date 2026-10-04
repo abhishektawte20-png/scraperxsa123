@@ -120,6 +120,8 @@
   // Only fields whose "nothing found" answer is a prescribed fallback phrase
   // are policed for near-miss wording ("N/A", "Not found", ...).
   const FALLBACK_KEYS = new Set(["value", "name", "full_name", "quote", "business_description", "full_description", "classification_prefix", "code", "title"]);
+  // Narrative fields that the extension never writes to RTS.
+  const INFORMATIONAL_ONLY = /^(employee_count\.notes|funding\.(researcher_note|routing_logic))$/;
   const URL_KEYS = new Set(["source_url", "source_1", "source_2", "url", "corroborating_source_url", "url_accessed"]);
 
   function isPlainObject(value) {
@@ -227,7 +229,13 @@
       return;
     }
     if (value === "") {
-      issue(issues, "error", "EMPTY_STRING", path, "empty strings are never permitted; use the prescribed fallback phrase.");
+      // Free-text notes that nothing in RTS reads must not block a good report;
+      // they are still flagged, because the agent's own rule forbids empty strings.
+      if (INFORMATIONAL_ONLY.test(path)) {
+        issue(issues, "warning", "EMPTY_STRING", path, "is empty. Nothing from it is used in RTS, so the preview still builds; the agent's rules say empty strings are never permitted.");
+      } else {
+        issue(issues, "error", "EMPTY_STRING", path, "empty strings are never permitted; use the prescribed fallback phrase.");
+      }
       return;
     }
     if (FALLBACK_KEYS.has(key)) {

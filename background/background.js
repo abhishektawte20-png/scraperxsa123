@@ -18,6 +18,9 @@ const ASSISTANT_FILES = [
   "core/customFields.js",
   "core/outputRules.js",
   "core/teamShare.js",
+  "core/history.js",
+  "core/feedback.js",
+  "core/feedbackConfig.js",
   "core/outputFields.js",
   "core/selectorBuilder.js",
   "registry/businessEntity.nameVariations.js",
@@ -36,9 +39,31 @@ const ASSISTANT_FILES = [
   "content/ui.js",
   "content/teach.js",
   "content/rules.js",
+  "content/history.js",
+  "content/feedback.js",
   "content/panel.js",
   "content/bootstrap.js"
 ];
+
+importScripts("../core/history.js", "../core/feedback.js");
+
+/*
+ * Feedback and history housekeeping.
+ * - "Send feedback": the page hands the message to this worker, which is the
+ *   only place allowed to post (and only to the webhook hosts in the manifest).
+ * - History older than its retention period is erased when the browser starts,
+ *   when the extension is installed or updated, and every few hours.
+ */
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "sxrts-send-feedback" || sender.id !== chrome.runtime.id) return false;
+  globalThis.SXRTS.feedback.send(message.url, message.message).then(sendResponse, (error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+  return true;
+});
+
+const purgeHistory = () => globalThis.SXRTS.history.purge().catch(() => {});
+chrome.runtime.onInstalled.addListener(() => { chrome.alarms.create("sxrts-history-purge", { periodInMinutes: 360 }); purgeHistory(); });
+chrome.runtime.onStartup.addListener(purgeHistory);
+chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === "sxrts-history-purge") purgeHistory(); });
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
@@ -49,7 +74,7 @@ chrome.action.onClicked.addListener(async (tab) => {
       files: ASSISTANT_FILES
     });
   } catch (error) {
-    console.error("ScraperX RTS Profile Assistant could not open on this page.", error);
+    console.error("ScraperX UI Automation Tool could not open on this page.", error);
   }
 });
 

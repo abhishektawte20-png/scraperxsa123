@@ -46,17 +46,22 @@ function validJson(overrides = {}) {
 
 // ---- Manifest / CSP ----
 
-test("manifest requests only activeTab, scripting, and storage", () => {
+test("manifest requests only activeTab, alarms, scripting, and storage", () => {
   const manifest = JSON.parse(readFileSync(path.join(root, "manifest.json"), "utf8"));
-  assert.deepEqual(manifest.permissions.slice().sort(), ["activeTab", "scripting", "storage"]);
+  assert.deepEqual(manifest.permissions.slice().sort(), ["activeTab", "alarms", "scripting", "storage"]);
   assert.equal(manifest.manifest_version, 3);
 });
 
-test("CSP blocks remote script and network connections", () => {
+test("CSP blocks remote script, and connections are limited to the feedback channel hosts", () => {
   const manifest = JSON.parse(readFileSync(path.join(root, "manifest.json"), "utf8"));
   const csp = manifest.content_security_policy.extension_pages;
   assert.match(csp, /script-src 'self'/);
-  assert.match(csp, /connect-src 'none'/);
+  const connect = /connect-src ([^;]+)/.exec(csp)[1].split(/\s+/);
+  assert.deepEqual(connect.sort(), ["https://*.api.powerplatform.com", "https://*.logic.azure.com", "https://*.webhook.office.com", "https://chat.googleapis.com", "https://discord.com", "https://hooks.slack.com"]);
+  assert.ok(!connect.some((source) => source === "https:" || source === "*" || source === "'self'"), "no blanket network access");
+  // the manifest's host permissions are the same hosts, plus RTS
+  for (const source of connect) assert.ok(manifest.host_permissions.some((h) => h.startsWith(source)), `${source} needs a matching host permission`);
+  assert.ok(manifest.host_permissions.includes("https://rts.pitchbook.com/*"));
   assert.match(csp, /object-src 'none'/);
 });
 

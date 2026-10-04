@@ -1,7 +1,7 @@
 "use strict";
 
 /*
- * ScraperX RTS Profile Assistant panel: identify the profile, build a
+ * ScraperX UI Automation Tool panel: identify the profile, build a
  * Rovo prompt, validate the pasted response, preview every proposed
  * change (editable, selectable), then publish only after explicit
  * confirmation. Every publish is profile-scoped-cached so it can be
@@ -238,7 +238,7 @@
         element("div", { className: "brand-mark", text: "SX" }),
         element("div", { className: "brand-text" }, [
           element("h1", { text: "ScraperX" }),
-          element("p", { className: "sub", text: "RTS Profile Assistant" }),
+          element("p", { className: "sub", text: "UI Automation Tool" }),
           element("p", { className: "by", text: globalThis.SXRTS.ui?.CREDIT ?? "Developed by Abhishek Tawte" })
         ])
       ]),
@@ -334,9 +334,22 @@
     const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", tip: "Saved changes applied to the agent's output before it reaches RTS. Example: keep only the Facebook handle instead of the whole URL." });
     rulesButton.addEventListener("click", () => rulesUi?.open());
 
+    // Run history (kept 15 days, for quality checks) and one-click feedback.
+    const historyUi = globalThis.SXRTS.historyUi?.mount(shadow);
+    const feedbackUi = globalThis.SXRTS.feedbackUi?.mount(shadow, {
+      getContext: () => {
+        refreshReport();
+        return { report: reportBox.value, raw: textarea.value, meta: { company: companyNameInput.value.trim(), domain: domainInput.value.trim(), pbid: readPbid(), version: globalThis.SXRTS.ui?.version?.() || "", sentAt: new Date().toISOString() } };
+      }
+    });
+    const historyButton = element("button", { className: "btn secondary", text: "History", type: "button", tip: "Every report you validate is kept here for 15 days, then erased automatically. Open it to see what the agent returned on a given day, or to compare two runs of the same company." });
+    historyButton.addEventListener("click", () => historyUi?.open());
+    const feedbackButton = element("button", { className: "btn secondary", text: "Feedback", type: "button", tip: "Sends the issue report to the person who maintains this tool, in one click." });
+    feedbackButton.addEventListener("click", () => feedbackUi?.open());
+
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, feedbackButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -382,7 +395,9 @@
     reportBox.wrap = "off";
     reportCard.appendChild(element("div", { className: "field" }, [reportBox]));
     const copyReportButton = element("button", { className: "btn", text: "Copy report", type: "button", tip: "Copies the whole report to the clipboard." });
-    reportCard.appendChild(element("div", { className: "buttons" }, [copyReportButton]));
+    const sendReportButton = element("button", { className: "btn secondary", text: "Send to developer", type: "button", tip: "Posts this report to the team channel in one click (opens the Feedback window so you can add a comment first)." });
+    sendReportButton.addEventListener("click", () => feedbackUi?.open());
+    reportCard.appendChild(element("div", { className: "buttons" }, [copyReportButton, sendReportButton]));
     const reportStatus = element("div", { className: "report-note" });
     reportCard.appendChild(reportStatus);
     body.appendChild(reportCard);
@@ -392,11 +407,13 @@
       reportStatus.textContent = text;
       reportStatus.className = `report-note ${type}`;
     }
+    function readPbid() {
+      try { return globalThis.SXRTS.identityLock.readRtsIdentityFromPage().pbId || ""; } catch { return ""; /* not on a profile page */ }
+    }
     function refreshReport() {
       const issueReport = globalThis.SXRTS.issueReport;
       if (!issueReport) return;
-      let pbid = "";
-      try { pbid = globalThis.SXRTS.identityLock.readRtsIdentityFromPage().pbId || ""; } catch { /* not on a profile page */ }
+      const pbid = readPbid();
       const built = issueReport.build({
         version: globalThis.SXRTS.ui?.version?.() || "",
         now: new Date(),
@@ -763,6 +780,17 @@
       rovoRows.classList.remove("hidden");
     }
 
+    // Keeps this run in the 15-day history (for quality checks later).
+    let lastHistoryId = null;
+    function saveRun(outcome, format, issues, errors, validated) {
+      const history = globalThis.SXRTS.history;
+      if (!history || !textarea.value.trim()) return;
+      history.record({
+        domain: domainInput.value, company: companyNameInput.value, pbid: readPbid(), version: globalThis.SXRTS.ui?.version?.() || "",
+        outcome, format, issues, errors, warnings: Math.max(0, issues.length - errors), raw: textarea.value, validated
+      }).then((id) => { lastHistoryId = id; }).catch(() => {});
+    }
+
     validateButton.addEventListener("click", () => {
       lastIssues = [];
       copyFixButton.classList.add("hidden");
@@ -775,6 +803,7 @@
           lastValidated.warnings.push(...customResult.warnings);
         }
         globalThis.SXRTS.cache.setLastJson(lastJsonIdentity(), textarea.value).catch(() => {});
+        saveRun("valid", lastValidated.rovo?.format, lastValidated.warnings, 0, lastValidated);
         renderValidation(true, lastValidated.warnings.map((text) => ({ kind: lineKind(text), text })), "Valid — preview built below");
         setStep(2);
         buildPlan();
@@ -794,7 +823,9 @@
           const contract = globalThis.SXRTS.rovoContract;
           const extra = (error.issues ?? []).filter((item) => item.severity !== "error").map((item) => ({ kind: item.severity === "warning" ? "warn" : "info", text: contract.formatIssue(item) }));
           renderValidation(false, [...error.errors.map((text) => ({ kind: "err", text })), ...extra], halted ? "The agent halted this extraction" : "The output broke the rules below");
+          saveRun(halted ? "halted" : "invalid", error.format, [...error.errors, ...extra.map((line) => line.text)], error.errors.length, null);
         } else {
+          saveRun("invalid", "json", [String(error)], 1, null);
           setStatus(validateStatus, String(error), "error");
           lastValidationView = { ok: false, headline: "The output could not be read", lines: [{ kind: "err", text: String(error) }] };
         }
@@ -1037,6 +1068,17 @@
 
       publishButton.disabled = false;
       clearCacheButton.disabled = false;
+      globalThis.SXRTS.history?.attachPublish(lastHistoryId, {
+        saved: applied, skipped, failed,
+        rows: selected.map((entry) => {
+          const edited = entry.getEditedValue();
+          return {
+            field: `${entry.action.jsonPath}${entry.action.recordIndex !== null && entry.action.recordIndex !== undefined ? `[${entry.action.recordIndex}]` : ""}`,
+            status: entry.action.executionStatus, message: entry.action.resultMessage || "",
+            value: typeof edited === "string" ? edited : JSON.stringify(edited)
+          };
+        })
+      }).catch(() => {});
       persistToCache();
       refreshReport();
     });
@@ -1211,7 +1253,7 @@
     const creditName = credit.replace(/^Developed by\s+/i, "");
     panel.appendChild(element("div", { className: "foot" }, [
       element("strong", { text: "ScraperX" }),
-      element("span", { text: ` RTS Profile Assistant  ·  Developed by ` }),
+      element("span", { text: ` UI Automation Tool  ·  Developed by ` }),
       element("strong", { text: creditName })
     ]));
     shadow.appendChild(panel);

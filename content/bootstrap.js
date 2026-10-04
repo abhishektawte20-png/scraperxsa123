@@ -10,7 +10,7 @@
 
   const host = document.createElement("section");
   host.id = ROOT_ID;
-  host.setAttribute("aria-label", "ScraperX RTS Profile Assistant");
+  host.setAttribute("aria-label", "ScraperX UI Automation Tool");
   document.documentElement.appendChild(host);
 
   const shadow = host.attachShadow({ mode: "closed" });

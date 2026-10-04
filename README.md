@@ -1,4 +1,4 @@
-# ScraperX RTS Profile Assistant
+# ScraperX UI Automation Tool
 
 A Chrome/Edge Manifest V3 extension that maps structured JSON from a ScraperX Rovo research agent into PitchBook RTS Business Entity and Company fields, with profile identity locking, preview/conflict review, and profile-scoped caching.
 
@@ -19,7 +19,7 @@ The related [Conference ScraperX Field Assistant](https://github.com/abhishektaw
 1. Open `chrome://extensions` (or `edge://extensions`).
 2. Enable **Developer mode**.
 3. **Load unpacked** → select this folder.
-4. Pin **ScraperX RTS Profile Assistant** to the toolbar.
+4. Pin **ScraperX UI Automation Tool** to the toolbar.
 
 ## Researcher workflow (current)
 

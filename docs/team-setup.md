@@ -1,4 +1,4 @@
-# ScraperX RTS Profile Assistant: sharing it with the team
+# ScraperX UI Automation Tool: sharing it with the team
 
 ## For the person who sets up the mappings (the team lead)
 
@@ -39,3 +39,32 @@ If one field does not work for you, open **Teach new field**, press **Re-map**
 on it and pick the field again. Your change is saved in your browser only and
 replaces the team version for that field. **Reset to team defaults** (same
 window) removes your changes.
+
+## Feedback channel (for the person who maintains the tool)
+
+The **Feedback** button (and **Send to developer** under the issue report) posts
+the report to a channel in one click.
+
+1. In Microsoft Teams open the channel, press the three dots, choose
+   **Workflows**, and pick **Post to a channel when a webhook request is
+   received**. Finish the wizard and copy the web address it gives you.
+2. Open `core/feedbackConfig.js` in the extension folder, paste the address
+   between the quotes of `webhookUrl`, save, and reload the extension on
+   `chrome://extensions`. Send the folder to the researchers.
+   (Or, for yourself only: Feedback window, **Set up the channel**, paste, **Save
+   channel address**.)
+3. Slack, Google Chat and Discord webhook addresses work the same way. Any other
+   address is refused, and the extension is only allowed to contact those hosts.
+
+Anyone who has the address can post to the channel, so share the extension
+only inside the team. Without an address the Feedback window offers **Copy
+instead**.
+
+## Run history
+
+Every report you validate is kept in your browser for 15 days and erased
+automatically after that (**History** button). Open a run to see what the agent
+returned that day, tick two runs of the same company and press **Compare** to see
+which values changed, or **Export all** to save them to a file. **Erase all
+history** removes everything at once. Nothing leaves the browser unless you
+export or send it.
