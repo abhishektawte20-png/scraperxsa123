@@ -204,3 +204,46 @@ test("when validation fails, the warnings are shown in the same pass, and the co
   assert.match(copied[0], /\[EMPLOYEE_DATE\] employee_count\.current\.date/);
   assert.match(copied[0], /How to fix: Use a page on the official website/);
 });
+
+test("output that is not in the agent's format at all still gets a correction prompt, with the exact format resent", async () => {
+  const { shadow, copied } = setup();
+  shadow.querySelector("#sxrts-domain")?.setAttribute("value", "kpssecurity.com");
+  const fix = button(shadow, "Copy correction prompt");
+  for (const pasted of ["Here is what I found about the company: it sells locks.", '{"company": {"name": "x",}}', "[see report](https://example.com/report) {\"a\":1}"]) {
+    paste(shadow, pasted);
+    button(shadow, "Validate JSON").click();
+    assert.ok(!fix.classList.contains("hidden"), `button shown for: ${pasted}`);
+    copied.length = 0;
+    fix.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(copied[0], /could not be read because it was not in the required output format/);
+    assert.match(copied[0], /THIS RUN/);
+    assert.match(copied[0], /extraction_status/);
+    assert.match(copied[0], /Start a fresh session reset/);
+  }
+  // Nothing pasted yet is not a format problem.
+  paste(shadow, "");
+  button(shadow, "Validate JSON").click();
+  assert.ok(fix.classList.contains("hidden"));
+});
+
+test("a valid output that still breaks methodology rules can be sent back for a cleaner run", async () => {
+  const { shadow, copied } = setup();
+  const out = validOutput();
+  out.employee_count.source_1 = "https://www.linkedin.com/company/acme";
+  paste(shadow, out);
+  button(shadow, "Validate JSON").click();
+  assert.match(shadow.querySelector(".status").textContent, /Valid/);
+  const fix = button(shadow, "Copy correction prompt");
+  assert.ok(!fix.classList.contains("hidden"));
+  fix.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(copied[0], /Fix these \(the output could be read, but they broke your methodology\)/);
+  assert.match(copied[0], /EXTERNAL_SOURCE/);
+  assert.doesNotMatch(copied[0], /Fix exactly these problems/);
+
+  // A clean output offers nothing to correct.
+  paste(shadow, validOutput());
+  button(shadow, "Validate JSON").click();
+  assert.ok(fix.classList.contains("hidden"));
+});

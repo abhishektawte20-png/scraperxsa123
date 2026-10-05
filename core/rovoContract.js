@@ -740,22 +740,38 @@
   // A message for the researcher to send back to Rovo. It restates the
   // violations (with how to fix each) only; it never restates or alters the
   // methodology itself.
+  // Warnings that point at a real methodology problem are sent back too, so one
+  // correction pass fixes everything the extension noticed.
+  const REVIEW = ["EXTERNAL_SOURCE", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "HEADER_MISSING", "DESCRIPTION_RULE", "FIELD_MISSING", "LEGAL_NAME_SUFFIX"];
+  const reviewIssues = (issues) => issues.filter((i) => i.severity === "warning" && REVIEW.includes(i.code));
+
   function buildCorrectionPrompt(issues, domain, format = "json") {
     const errors = issues.filter((i) => i.severity === "error").slice(0, 40);
-    // Warnings that point at a real methodology problem are sent back too, so one
-    // correction pass fixes everything the extension noticed.
-    const REVIEW = ["EXTERNAL_SOURCE", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "HEADER_MISSING", "DESCRIPTION_RULE", "FIELD_MISSING", "LEGAL_NAME_SUFFIX"];
-    const review = issues.filter((i) => i.severity === "warning" && REVIEW.includes(i.code)).slice(0, 20);
+    const review = reviewIssues(issues).slice(0, 20);
     const shape = format === "text" ? "the corrected output in the same section format, with the same headings, labels and fallback phrases as always" : "only the corrected JSON object, with the same schema, keys and fallback phrases as always";
     return [
       `Your previous output for ${domain || "this domain"} broke the output rules and methodology. Start a fresh session reset, redo the extraction, and return ${shape}.`,
       "",
-      "Fix exactly these problems:",
+      ...(errors.length ? ["Fix exactly these problems:"] : []),
       ...errors.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`),
-      ...(review.length ? ["", "Also fix these (they broke your methodology even though they did not stop the output being read):", ...review.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`)] : [])
+      ...(review.length ? ["", errors.length ? "Also fix these (they broke your methodology even though they did not stop the output being read):" : "Fix these (the output could be read, but they broke your methodology):", ...review.map((item, index) => `${index + 1}. ${formatIssue(item)}${FIX_HINTS[item.code] ? `\n   How to fix: ${FIX_HINTS[item.code]}` : ""}`)] : [])
+    ].join("\n");
+  }
+
+  // For output that could not be read at all (no JSON or report found, broken JSON,
+  // markdown links, not the agent's format). The exact output format is resent in
+  // full, because the agent clearly did not follow it.
+  function buildFormatCorrectionPrompt(reasons, domain, runPrompt) {
+    return [
+      `Your previous output for ${domain || "this domain"} could not be read because it was not in the required output format:`,
+      ...reasons.slice(0, 5).map((reason) => `- ${reason}`),
+      "",
+      "Start a fresh session reset, redo the extraction, and return ONLY the answer in the exact output format below. Nothing before or after it, no markdown links, no commentary.",
+      "",
+      runPrompt
     ].join("\n");
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
+  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, buildFormatCorrectionPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
 })();

@@ -364,7 +364,7 @@
     const textarea = element("textarea", { id: "sxrts-response", placeholder: "Paste the agent output here: the whole report is fine, extra text before or after it is ignored. Nothing is read from your clipboard automatically." });
     jsonCard.appendChild(element("div", { className: "field" }, [responseLabel, textarea]));
     const validateButton = element("button", { className: "btn", text: "Validate JSON", type: "button", tip: "Checks the pasted report against the output rules and builds the preview. Nothing is written to RTS yet." });
-    const copyFixButton = element("button", { className: "btn secondary hidden", text: "Copy correction prompt", type: "button", tip: "Copies a message for the agent that lists exactly which rules were broken and how to fix each." });
+    const copyFixButton = element("button", { className: "btn secondary hidden", text: "Copy correction prompt", type: "button", tip: "Copies a message for the agent that lists exactly which rules were broken and how to fix each. If the output was not in the agent's format at all, it resends the exact format instead." });
     jsonCard.appendChild(element("div", { className: "buttons" }, [validateButton, copyFixButton]));
     const validateStatus = element("div", { className: "status" });
     jsonCard.appendChild(validateStatus);
@@ -727,6 +727,7 @@
 
     let lastIssues = [];
     let lastFormat = "json";
+    let lastUnreadable = null; // reasons, when the output was not in the agent's format at all
 
     // Structured validation result: a verdict banner, then one line per finding
     // (errors red, warnings amber, notes blue), each with its rule code.
@@ -761,7 +762,11 @@
     }
     const lineKind = (text) => (/^\[(NOISE_REMOVED|OUTPUT_RULE)\]/.test(text) ? "info" : "warn");
     copyFixButton.addEventListener("click", async () => {
-      const text = globalThis.SXRTS.rovoContract.buildCorrectionPrompt(lastIssues, domainInput.value.trim(), lastFormat);
+      const contract = globalThis.SXRTS.rovoContract;
+      const domain = domainInput.value.trim();
+      const text = lastUnreadable
+        ? contract.buildFormatCorrectionPrompt(lastUnreadable, domain, globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain }))
+        : contract.buildCorrectionPrompt(lastIssues, domain, lastFormat);
       try {
         await navigator.clipboard.writeText(text);
         setStatus(validateStatus, "Correction prompt copied. Send it to Rovo, then paste the corrected JSON here.", "success");
@@ -796,18 +801,25 @@
 
     validateButton.addEventListener("click", () => {
       lastIssues = [];
+      lastUnreadable = null;
       copyFixButton.classList.add("hidden");
       try {
         lastValidated = globalThis.SXRTS.schema.validate(textarea.value, { domain: domainInput.value });
         const customResult = globalThis.SXRTS.customFields?.validatePayload(lastValidated.custom);
         if (customResult) {
-          if (customResult.errors.length) throw new globalThis.SXRTS.schema.SchemaValidationError(customResult.errors);
+          if (customResult.errors.length) { const bad = new globalThis.SXRTS.schema.SchemaValidationError(customResult.errors); bad.fromCustom = true; throw bad; }
           lastValidated.custom = customResult.value;
           lastValidated.warnings.push(...customResult.warnings);
         }
         globalThis.SXRTS.cache.setLastJson(lastJsonIdentity(), textarea.value).catch(() => {});
         saveRun("valid", lastValidated.rovo?.format, lastValidated.warnings, 0, lastValidated);
         renderValidation(true, lastValidated.warnings.map((text) => ({ kind: lineKind(text), text })), "Valid — preview built below");
+        // Valid, but the methodology warnings can still be sent back for a cleaner run.
+        if (lastValidated.rovo && globalThis.SXRTS.rovoContract.reviewIssues(lastValidated.rovo.issues).length) {
+          lastIssues = lastValidated.rovo.issues;
+          lastFormat = lastValidated.rovo.format || "json";
+          copyFixButton.classList.remove("hidden");
+        }
         setStep(2);
         buildPlan();
       } catch (error) {
@@ -817,6 +829,10 @@
         if (error.issues?.some((item) => item.severity === "error" && item.code !== "HALTED")) {
           lastIssues = error.issues;
           lastFormat = error.format || "json";
+          copyFixButton.classList.remove("hidden");
+        } else if (!error.issues && !error.fromCustom && textarea.value.trim()) {
+          // Not the agent's format at all (no JSON/report found, broken JSON, wrong shape).
+          lastUnreadable = error.errors ?? [String(error.message || error)];
           copyFixButton.classList.remove("hidden");
         }
         if (error instanceof globalThis.SXRTS.schema.SchemaValidationError) {
