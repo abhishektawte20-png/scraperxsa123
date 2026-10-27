@@ -751,6 +751,9 @@ input[type=text] { font: inherit; border: 2.5px solid var(--line); border-radius
       diffKey = DIFF[prefs["so-diff"]] ? prefs["so-diff"] : "easy";
       setDiff(diffKey);
       R = null; G = null; show("sTitle");
+      // z-index is capped at the browser maximum, which the panel also uses, so the
+      // later sibling wins. Re-appending puts the game above the panel.
+      panelShadow.appendChild(host);
       host.hidden = false;
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("visibilitychange", onVisible);

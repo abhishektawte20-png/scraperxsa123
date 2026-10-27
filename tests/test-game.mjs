@@ -42,6 +42,18 @@ test("the game lives in its own shadow root, hidden until opened", async () => {
   assert.equal(root.hidden, true);
 });
 
+test("opening moves the game after everything else in the panel, so it is drawn above it", async () => {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: "open" });
+  const api = gameUi.mount(shadow);
+  const panel = document.createElement("div"); // the panel is appended after the game is mounted
+  shadow.appendChild(panel);
+  await api.open();
+  assert.equal(shadow.lastElementChild.className, "sx-game-host");
+  api.close();
+});
+
 test("Escape closes it and is not leaked to the page", async () => {
   const { api } = mounted();
   await api.open();
