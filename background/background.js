@@ -95,7 +95,7 @@ const WINDOW_RUN_FILES = [
   "core/selectorBuilder.js",
   "core/workflows/popupWindow.js"
 ];
-const WINDOW_PICK_FILES = ["core/selectorBuilder.js", "content/popupPicker.js"];
+const WINDOW_PICK_FILES = ["core/selectorBuilder.js", "core/pageCapture.js", "content/popupPicker.js"];
 const WINDOW_OPEN_TIMEOUT = 10000;
 const lastStage = new Map();
 

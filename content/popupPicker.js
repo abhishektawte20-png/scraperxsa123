@@ -42,6 +42,90 @@
     return node;
   }
 
+  // ---- automatic detection of a tree of checkboxes ----
+  const SYMBOLS = /^[\s+\-\u2212\u2013\u229E\u229F\u25B6\u25BC\u25BA\u25B8\u25BE]*$/;
+  const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const shown = (node) => {
+    for (let n = node; n && n.nodeType === 1; n = n.parentElement) {
+      if (n.hidden) return false;
+      const style = window.getComputedStyle(n);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+    }
+    return true;
+  };
+  const textOf = (node) => (node.textContent || node.value || "").trim().replace(/\s+/g, " ");
+
+  // Small clickable things with no words of their own: the + and - that open and close branches.
+  function expanderCandidates(host) {
+    const out = [];
+    for (const node of document.body.querySelectorAll("img, input[type=image], a, span, i, em, b, button, div, td")) {
+      if (host && (node === host || host.contains(node))) continue;
+      if (node.querySelector("input, select, textarea")) continue;
+      if (node.children.length > 1 && node.tagName !== "A") continue;
+      if (!shown(node)) continue;
+      const own = node.tagName === "INPUT" ? "" : textOf(node);
+      if (own && !SYMBOLS.test(own)) continue;
+      if (node.tagName === "A" && node.getAttribute("href") && !/^(#|javascript:)/i.test(node.getAttribute("href"))) continue;
+      const rect = node.getBoundingClientRect();
+      if (rect.width > 40 || rect.height > 40) continue;
+      const hint = `${node.className} ${node.getAttribute("alt") || ""} ${node.getAttribute("src") || ""} ${node.getAttribute("title") || ""}`;
+      const clickable = /^(IMG|BUTTON)$/.test(node.tagName) || node.tagName === "INPUT" || node.hasAttribute("onclick") || /plus|minus|expand|collapse|toggle|tree|node|arrow|caret|open|close/i.test(hint) || window.getComputedStyle(node).cursor === "pointer" || SYMBOLS.test(own) && own;
+      if (clickable) out.push(node);
+    }
+    return out;
+  }
+
+  // Finds the checkboxes, the + buttons and the Save button of a window by itself, and TESTS
+  // the + buttons by opening one to see whether more choices appear. Returns what it found
+  // and plain-language notes about what it could not.
+  async function detectTree(sb, host) {
+    const found = { leaf: null, expander: null, saveButton: null, notes: [], summary: [] };
+    const boxes = Array.from(document.querySelectorAll("input[type=checkbox]"));
+    if (!boxes.length) { found.notes.push("No checkboxes were found in this window."); return found; }
+
+    const info = sb.inspectButton(boxes[0], { allowMultiple: true, preferStable: true });
+    const covers = (selector) => { try { return sb.matchAll(selector).length >= Math.ceil(boxes.length * 0.9); } catch { return false; } };
+    const good = info.selectors.find(covers);
+    found.leaf = { ...info, selectors: good ? [good, ...info.selectors.filter((x) => x !== good)] : ['input[type="checkbox"]'] };
+    found.summary.push(`${boxes.length} checkbox${boxes.length === 1 ? "" : "es"}`);
+
+    const buttons = Array.from(document.querySelectorAll("button, input[type=button], input[type=submit], [role=button], a.btn")).filter((b) => shown(b) && !(host && host.contains(b)));
+    const saves = buttons.filter((b) => /^save\b/i.test(textOf(b)));
+    if (saves.length === 1) { found.saveButton = sb.inspectButton(saves[0], { allowMultiple: true, preferStable: true }); found.summary.push(`Save button "${textOf(saves[0])}"`); }
+    else found.notes.push(saves.length ? "More than one Save button was found. Pick the right one yourself (step 4)." : "No Save button was found. Pick it yourself (step 4).");
+
+    // The + buttons: group look-alikes, then open one of each group to see if more choices appear.
+    const groups = new Map();
+    for (const node of expanderCandidates(host)) {
+      const i = sb.inspectButton(node, { allowMultiple: true, preferStable: true });
+      const key = i.selectors[0];
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { info: i, nodes: [] });
+      groups.get(key).nodes.push(node);
+    }
+    const count = () => Array.from(document.querySelectorAll("input[type=checkbox]")).filter(shown).length + expanderCandidates(host).length;
+    const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
+    for (const [, group] of Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 6)) {
+      const node = group.nodes.find((n) => n.isConnected);
+      if (!node) continue;
+      const before = count();
+      node.click();
+      await settle();
+      const changed = count() !== before;
+      if (changed && node.isConnected && group.nodes.length) { /* put the branch back as it was */ node.click(); await settle(); }
+      if (changed) {
+        found.expander = group.info;
+        found.summary.push(`+ buttons (${group.nodes.length}; opening one revealed more choices)`);
+        break;
+      }
+    }
+    if (!found.expander) {
+      if (boxes.every(shown)) found.summary.push("every choice is already visible, so no + button is needed");
+      else found.notes.push("Some choices are hidden but no + button was found. Pick one + button yourself (step 1).");
+    }
+    return found;
+  }
+
   function start(token) {
     if (globalThis.SXRTS.popupPicker.active) return;
     globalThis.SXRTS.popupPicker.active = true;
@@ -51,7 +135,7 @@
     const shadow = host.attachShadow({ mode: "open" });
     shadow.appendChild(el("style", { text: CSS }));
 
-    const state = { mode: "form", fields: [], tree: { expander: null, leaf: null }, preSave: [], saveButton: null, error: "", sent: false };
+    const state = { mode: "form", fields: [], tree: { expander: null, leaf: null }, preSave: [], saveButton: null, error: "", note: "", sent: false };
     const card = el("div", { className: "card" });
     shadow.appendChild(card);
 
@@ -116,6 +200,20 @@
         else if (info.needsLabel) state.error = "Nothing about that box can identify it on this form. Pick a different box, or tell the developer which form this is.";
         else state.fields.push(info);
       }
+      render();
+    }
+
+    // One click: find the checkboxes, + buttons and Save by itself (and test the + buttons).
+    async function detect() {
+      state.error = "";
+      state.note = "Looking at this window…";
+      render();
+      const found = await detectTree(sb, host);
+      if (found.leaf) state.tree.leaf = found.leaf;
+      if (found.expander) state.tree.expander = found.expander;
+      if (found.saveButton) state.saveButton = found.saveButton;
+      state.note = found.summary.length ? `Found: ${found.summary.join("; ")}.` : "";
+      state.error = found.notes.join(" ");
       render();
     }
 
@@ -189,6 +287,20 @@
       body.appendChild(modes);
 
       if (state.mode === "tree") {
+        const auto = el("button", { className: "btn", text: "Detect automatically (one click)", type: "button" });
+        auto.addEventListener("click", detect);
+        body.appendChild(auto);
+        body.appendChild(el("div", { className: "muted", text: "Finds the checkboxes, the + buttons and Save by itself and tests the + buttons (it opens and closes one branch). Nothing is ticked or saved. Or pick each part yourself below." }));
+        if (state.note) body.appendChild(el("div", { className: "ok", text: state.note }));
+        const share = el("button", { className: "btn secondary", text: "Copy this window's structure (for the developer)", type: "button" });
+        share.addEventListener("click", async () => {
+          const capture = globalThis.SXRTS.pageCapture;
+          const text = capture ? capture.sanitize(document.body, { maxChars: 30000 }) : "";
+          try { await navigator.clipboard.writeText(`WINDOW STRUCTURE (${location.pathname}; typed values and free text left out)\n${text}`); state.note = "Copied. Paste it to the developer if detection did not work."; }
+          catch { state.error = "Copy was blocked by the browser."; }
+          render();
+        });
+        body.appendChild(share);
         body.appendChild(el("h4", { text: "1 · A + button (opens a branch)" }));
         if (state.tree.expander) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.tree.expander.tag} · ${state.tree.expander.selectors[0]}` })]));
         const addExpander = el("button", { className: "btn secondary", text: state.tree.expander ? "Re-pick the + button" : "Pick a + button", type: "button" });
@@ -232,5 +344,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.popupPicker = { start, STORAGE_KEY, active: false };
+  globalThis.SXRTS.popupPicker = { start, detectTree, STORAGE_KEY, active: false };
 })();

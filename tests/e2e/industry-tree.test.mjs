@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", teamFile) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -84,7 +84,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code);
+    return await drive(ctx, base, code, auto);
   } finally {
     await ctx.close();
     server.close();
@@ -92,7 +92,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code) {
+async function drive(ctx, base, code, auto) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -166,9 +166,19 @@ async function drive(ctx, base, code) {
     await popup.waitForTimeout(150);
   };
   await pickerClick("A tree of checkboxes");
-  await pickerClick("Pick a + button"); await clickAt(popup, "img.tg");
-  await pickerClick("Pick a checkbox"); await clickAt(popup, "input[data-vis]");
-  await pickerClick("Pick the Save button"); await clickAt(popup, "#save"); // greyed out, still pickable
+  if (auto) {
+    await pickerClick("Detect automatically");
+    await popup.waitForFunction(() => [...document.querySelectorAll("div")].some((d) => /^Found:/.test(d.shadowRoot?.querySelector(".ok")?.textContent || "")), null, { timeout: 15000 });
+    const note = await popup.evaluate(() => [...document.querySelectorAll("div")].map((d) => d.shadowRoot?.querySelector(".ok")?.textContent).find(Boolean));
+    assert.match(note, /checkboxes/);
+    assert.match(note, /Save button "Save"/);
+    assert.match(note, /opening one revealed more choices/);
+    assert.equal(await popup.evaluate(() => [...document.querySelectorAll("li > ul")].filter((u) => u.style.display === "none").length), 5, "the branch that was opened to test is closed again");
+  } else {
+    await pickerClick("Pick a + button"); await clickAt(popup, "img.tg");
+    await pickerClick("Pick a checkbox"); await clickAt(popup, "input[data-vis]");
+    await pickerClick("Pick the Save button"); await clickAt(popup, "#save"); // greyed out, still pickable
+  }
   await pickerClick("Done");
   await page.waitForTimeout(500);
   const card = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-card").textContent);
@@ -230,4 +240,11 @@ test("a name that is not in the tree publishes nothing", { timeout: 150000 }, as
   assert.match(result.summary, /Published 0, skipped 0, failed 1/);
   assert.deepEqual(result.industries, []);
   assert.equal(result.saves, 0);
+});
+
+test("one click detects the checkboxes, the + buttons and Save, and the mapping publishes the right choice", { timeout: 150000 }, async () => {
+  const result = await scenario("close", "2.1.2 — Clothing", { auto: true });
+  assert.equal(result.summary, "Published 1, skipped 0, failed 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  assert.equal(result.saves, 1);
 });
