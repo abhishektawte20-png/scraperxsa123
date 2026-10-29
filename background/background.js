@@ -15,6 +15,7 @@ const ASSISTANT_FILES = [
   "core/navigation.js",
   "core/resultsSummary.js",
   "core/issueReport.js",
+  "core/pageCapture.js",
   "core/teamDefaults.js",
   "core/customFields.js",
   "core/outputRules.js",

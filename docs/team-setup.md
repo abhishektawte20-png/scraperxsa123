@@ -72,3 +72,9 @@ export or send it.
 ## Take a break (Super Over)
 
 The **Take a break** button in the panel opens a small cricket batting game for the moments when RTS is slow. It runs entirely inside the extension: no network, and nothing is read from or written to RTS. Only the chosen timing level and the best score are kept on the user's own browser (`chrome.storage.local`, key `sxrts_game`). **Esc** or **Back to work** closes it. The three timing levels (Relaxed, Normal, Pro) change how forgiving the swing window is.
+
+## When something cannot be done
+
+- **JSON problems.** If the pasted JSON has a simple slip (a comma before a closing bracket, curly quotes, a raw line break inside a text value, comments, `True`/`False`), the extension fixes it, says what it changed, and validates the result. Anything that would need a guess is not touched: the panel shows the line, column and the text nearby in plain words, and **Generate Correct JSON Prompt** copies a message for the agent that asks for the same data again as valid JSON (nothing added or removed).
+- **Valid JSON is not the same as "can be written".** The banner turns amber and counts the fields that have no RTS mapping yet.
+- **Automatic page capture.** For every field that could not be written (not mapped yet, or a control not found) the report ends with the structure of the page area around that field, found by the field's own label. Typed values are never read, and text is kept only for labels and buttons, so company data on the page is not copied. **Copy report** includes it, and **Send to developer** sends it to the channel (a tick box in the Feedback window turns this off). Open the section where the field is entered before copying the report, otherwise the field is listed as "Not on screen".

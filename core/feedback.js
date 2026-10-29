@@ -14,7 +14,7 @@
  */
 (() => {
   const STORAGE_KEY = "sxrts_feedback";
-  const LIMITS = { note: 2000, report: 9000, raw: 9000, discord: 1900 };
+  const LIMITS = { note: 1500, report: 8000, raw: 6000, captures: 7000, discord: 1900 };
 
   const ALLOWED_HOSTS = [
     { kind: "teams", label: "Microsoft Teams", test: (h) => h.endsWith(".logic.azure.com") || h.endsWith(".webhook.office.com") || h.endsWith(".api.powerplatform.com") },
@@ -49,7 +49,14 @@
     return (cut >= 0 ? text.slice(0, cut) : text).trim();
   }
 
-  function build({ note, name, report, raw, includeOutput, meta = {} }) {
+  // The page structure the report carries after its JSON block (see core/pageCapture.js).
+  function capturesPart(report) {
+    const text = String(report ?? "");
+    const at = text.indexOf("\nPAGE CAPTURES");
+    return at >= 0 ? text.slice(at + 1).trim() : "";
+  }
+
+  function build({ note, name, report, raw, includeOutput, includeStructure = true, meta = {} }) {
     const where = [meta.company, meta.domain].filter(Boolean).join(" · ") || "no company";
     return {
       title: `ScraperX feedback · ${where}`,
@@ -63,6 +70,7 @@
       ],
       note: clip(String(note || "").trim() || "(no comment written)", LIMITS.note),
       report: clip(readablePart(report), LIMITS.report),
+      captures: includeStructure ? clip(capturesPart(report), LIMITS.captures) : "",
       output: includeOutput && raw ? clip(raw, LIMITS.raw) : ""
     };
   }
@@ -83,6 +91,7 @@
       "",
       "Issue report:",
       message.report,
+      ...(message.captures ? ["", "Page structure (typed values removed):", message.captures] : []),
       ...(message.output ? ["", "Agent output:", message.output] : [])
     ].join("\n");
   }
@@ -107,13 +116,14 @@
               { type: "TextBlock", text: message.note, wrap: true },
               { type: "TextBlock", text: "Issue report", weight: "Bolder", separator: true },
               ...chunks(message.report).map(blob),
+              ...(message.captures ? [{ type: "TextBlock", text: "Page structure (typed values removed)", weight: "Bolder", separator: true }, ...chunks(message.captures).map(blob)] : []),
               ...(message.output ? [{ type: "TextBlock", text: "Agent output", weight: "Bolder", separator: true }, ...chunks(message.output).map(blob)] : [])
             ]
           }
         }]
       };
     }
-    if (kind === "discord") return { content: clip(plainText({ ...message, report: "", output: "" }) + `\n${message.report}`, LIMITS.discord) };
+    if (kind === "discord") return { content: clip(plainText({ ...message, report: "", captures: "", output: "" }) + `\n${message.report}`, LIMITS.discord) };
     return { text: plainText(message) };
   }
 

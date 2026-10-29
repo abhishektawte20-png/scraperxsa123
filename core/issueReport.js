@@ -58,7 +58,7 @@
   // input: { version, now, pageUrl, domain, companyName, pbid, validation: { ok, headline, lines },
   //          actions, definitions, team }
   function build(input) {
-    const { version, now = new Date(), pageUrl = "", domain = "", companyName = "", pbid = "", validation = null, actions = [], definitions = [], team = null } = input;
+    const { version, now = new Date(), pageUrl = "", domain = "", companyName = "", pbid = "", validation = null, actions = [], definitions = [], team = null, captures = [] } = input;
     const lines = [];
     const items = [];
     const add = (...text) => lines.push(...text);
@@ -142,6 +142,15 @@
 
     add("JSON");
     add(JSON.stringify({ version: version || null, createdAt: now.toISOString(), domain, pbid, counts: { saved: saved.length, skipped: ranAndSkipped.length, failed: failed.length, notMapped: notMapped.length, notPublished: notPublished.length }, items }, null, 2));
+    // After the JSON block, so the short form sent to the team channel can carry it separately.
+    if (captures.length) {
+      add("");
+      add("PAGE CAPTURES (page structure only: typed values are never read; text is kept only for labels and buttons)");
+      captures.forEach((c, i) => {
+        add(`[${i + 1}] ${c.path}${c.label && c.label !== c.path ? ` (${c.label})` : ""}${c.found && c.term ? ` · found by "${c.term}"` : ""}${c.note ? ` · ${c.note}` : ""}`);
+        if (c.html) add(c.html);
+      });
+    }
     return { text: lines.join("\n"), counts: { failed: failed.length, skipped: ranAndSkipped.length, errors: errors.length, warnings: warnings.length, notMapped: notMapped.length } };
   }
 

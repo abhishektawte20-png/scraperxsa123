@@ -5,6 +5,8 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
 import "../core/jsonRepair.js";
+import "../core/pageCapture.js";
+import "../core/issueReport.js";
 import "../core/rovoContract.js";
 import "../core/rovoText.js";
 import "../core/schema.js";
@@ -291,4 +293,21 @@ test("a valid output that still breaks methodology rules can be sent back for a 
   paste(shadow, validOutput());
   button(shadow, "Validate JSON").click();
   assert.ok(fix.classList.contains("hidden"));
+});
+
+test("fields with no RTS mapping put the page area around them into the report automatically", () => {
+  const { shadow } = setup();
+  const area = document.createElement("div");
+  area.innerHTML = '<div><b>Keywords:</b></div><div class="tagbox"><span class="tag">private chip</span><input type="text" id="kwBox" value="zq-typed-9"></div>';
+  document.body.appendChild(area);
+  paste(shadow, validOutput());
+  button(shadow, "Validate JSON").click();
+  const report = Array.from(shadow.querySelectorAll("textarea")).map((t) => t.value).find((v) => v.startsWith("ScraperX issue report"));
+  assert.ok(report, "the report is built");
+  assert.match(report, /PAGE CAPTURES/);
+  assert.match(report, /company\.keywords \(Keywords\) · found by "Keywords"/);
+  assert.match(report, /id="kwBox"/);
+  assert.doesNotMatch(report, /zq-typed-9|private chip/);
+  assert.match(report, /businessEntity\.socialMediaIdentifiers[^\n]*Not on screen/);
+  area.remove();
 });

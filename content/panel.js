@@ -414,6 +414,31 @@
     function readPbid() {
       try { return globalThis.SXRTS.identityLock.readRtsIdentityFromPage().pbId || ""; } catch { return ""; /* not on a profile page */ }
     }
+    // Fields that could not be written: the page area around each is captured (structure
+    // only) so a mapping can be built from the report alone.
+    function reportCaptures() {
+      const capture = globalThis.SXRTS.pageCapture;
+      if (!capture) return [];
+      const outputFields = globalThis.SXRTS.outputFields;
+      const defs = globalThis.SXRTS.customFields?.getCached?.() ?? [];
+      const sb = globalThis.SXRTS.selectorBuilder;
+      const targets = [];
+      const seen = new Set();
+      for (const a of lastActions) {
+        const unwritten = a.executionStatus === "failed" || (a.executionStatus === "skipped" && !a.resultMessage);
+        const base = String(a.jsonPath || "").replace(/\[\d+\]/g, "");
+        if (!unwritten || !base || seen.has(base)) continue;
+        seen.add(base);
+        let anchor = null;
+        try {
+          const def = a.customKey ? defs.find((d) => d.key === a.customKey) : null;
+          const part = def?.openButton || def?.addButton;
+          anchor = (part && sb?.resolveButtonByDefinition?.(part)) || (def?.fields?.[0]?.selectors?.[0] ? document.querySelector(def.fields[0].selectors[0]) : null);
+        } catch { anchor = null; }
+        targets.push({ path: base, label: outputFields?.get?.(base)?.label || "", anchor });
+      }
+      try { return capture.capture(document, targets); } catch { return []; }
+    }
     function refreshReport() {
       const issueReport = globalThis.SXRTS.issueReport;
       if (!issueReport) return;
@@ -428,7 +453,8 @@
         validation: lastValidationView,
         actions: lastActions,
         definitions: globalThis.SXRTS.customFields?.getCached?.() ?? [],
-        team: globalThis.SXRTS.teamShare?.teamInfo?.() ?? null
+        team: globalThis.SXRTS.teamShare?.teamInfo?.() ?? null,
+        captures: reportCaptures()
       });
       reportBox.value = built.text;
       const problems = built.counts.failed + built.counts.errors;

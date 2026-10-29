@@ -51,14 +51,14 @@
     modal.addEventListener("mousedown", (event) => { pressedOnBackdrop = event.target === modal; });
     modal.addEventListener("click", (event) => { if (event.target === modal && pressedOnBackdrop) close(); });
 
-    let state = { comment: "", name: "", includeOutput: true, message: null, channel: "", checked: null };
+    let state = { comment: "", name: "", includeOutput: true, includeStructure: true, message: null, channel: "", checked: null };
 
     function close() { modal.classList.remove("open"); }
     const say = (text, kind) => { state.message = text ? { text, kind } : null; render(); };
 
     function buildMessage() {
       const context = getContext?.() ?? {};
-      return fb().build({ note: state.comment, name: state.name, report: context.report, raw: context.raw, includeOutput: state.includeOutput, meta: context.meta });
+      return fb().build({ note: state.comment, name: state.name, report: context.report, raw: context.raw, includeOutput: state.includeOutput, includeStructure: state.includeStructure, meta: context.meta });
     }
 
     async function send() {
@@ -107,6 +107,11 @@
       output.checked = state.includeOutput;
       output.addEventListener("change", () => { state.includeOutput = output.checked; });
       card.appendChild(el("label", { className: "fb-check" }, [output, el("span", { text: "Include the agent's output (cut to a size the channel accepts). It helps to reproduce the problem." })]));
+
+      const structure = el("input", { type: "checkbox" });
+      structure.checked = state.includeStructure;
+      structure.addEventListener("change", () => { state.includeStructure = structure.checked; });
+      card.appendChild(el("label", { className: "fb-check" }, [structure, el("span", { text: "Include the structure of the page area for any field that could not be written (typed values and free text are left out). It lets the developer build the mapping." })]));
 
       if (state.message) card.appendChild(el("div", { className: `fb-msg fb-${state.message.kind}`, text: state.message.text }));
 
