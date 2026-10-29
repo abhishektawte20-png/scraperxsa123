@@ -776,6 +776,14 @@
 
     function applyWindowPick(pick) {
       draft.openNote = "";
+      if (pick.tree) {
+        // A tree of checkboxes: one choice, found by name when it is published.
+        const out = windowOutKeys()[0]?.key;
+        const label = draft.bind?.label || draft.label || "Choice";
+        draft.windowPick = { ...pick, fields: [{ key: "value", label, description: "", kind: "tree", selectors: [], out: out ?? "value" }] };
+        if (!draft.bind && !draft.label) draft.label = "Choice in a tree";
+        return render();
+      }
       const outs = windowOutKeys().map((k) => k.key);
       const taken = new Set();
       const fields = pick.fields.map((info, i) => {
@@ -873,7 +881,7 @@
     async function saveWindow() {
       const pick = draft.windowPick;
       if (!draft.openButton) draft.error = "Pick the button that opens the window first.";
-      else if (!pick?.fields.length || !pick.saveButton) draft.error = "Open the window and pick its text box and Save button first.";
+      else if (!pick?.fields.length || !pick.saveButton) draft.error = "Open the window and pick its text box (or a checkbox, for a tree) and the Save button first.";
       else if (draft.kind === "single" && pick.fields.length !== 1) draft.error = "A single field fills one box. Remove the extra boxes you picked in the window.";
       else if (draft.kind === "record" && !draft.rowBy) draft.error = "The rows were not recognised. Pick the opening button again.";
       if (draft.error) return render();
@@ -890,7 +898,7 @@
         })),
         saveButton: button(pick.saveButton),
         openButton: button(draft.openButton),
-        window: { path: pick.path, preSave: pick.preSave.map(button) },
+        window: { path: pick.path, preSave: pick.preSave.map(button), ...(pick.tree ? { tree: { leaf: button(pick.tree.leaf), ...(pick.tree.expander ? { expander: button(pick.tree.expander) } : {}) } } : {}) },
         ...(draft.kind === "record" ? { rowBy: draft.rowBy } : {}),
         ...(draft.bind ? { binds: { path: draft.bind.path, map: Object.fromEntries(pick.fields.map((f) => [f.key, f.out])) } } : {})
       };
@@ -995,7 +1003,11 @@
       const pick = draft.windowPick;
       if (!pick) return section;
       const outs = windowOutKeys();
-      for (const [index, field] of pick.fields.entries()) {
+      if (pick.tree) {
+        section.appendChild(pickedBlock({ ...pick.tree.leaf, kind: null, label: "A tree of checkboxes: the choice is found by its name" }));
+        if (pick.tree.expander) section.appendChild(pickedBlock({ ...pick.tree.expander, kind: null, label: "The + buttons that open the branches" }));
+      }
+      for (const [index, field] of (pick.tree ? [] : pick.fields).entries()) {
         const extra = [];
         if (draft.bind && draft.kind === "record") {
           const select = el("select");

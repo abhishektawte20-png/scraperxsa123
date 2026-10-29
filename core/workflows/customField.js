@@ -332,7 +332,13 @@
     }
     if (opener.disabled) throw new Error(`The button that opens the popup window for ${def.label} is disabled right now.`);
 
-    const job = {
+    const tree = def.window.tree;
+    const job = tree ? {
+      tree: { expander: tree.expander || null, leaf: tree.leaf },
+      value: String(record.value),
+      preSave: def.window.preSave || [],
+      saveButton: def.saveButton
+    } : {
       replace: record.action === "replaceAfterConfirmation",
       fields: fields.map((field) => ({
         selectors: field.selectors,
@@ -345,6 +351,17 @@
     const name = label ? `${def.label} (${label})` : def.label;
     const result = await runInWindow(opener, job);
     if (result.status === "skipped") return { status: "skipped", reason: result.reason };
+
+    if (tree) {
+      if (result.fieldRetained === true) return { status: "savedValueVerified", name: def.key };
+      // The window closed itself (or could not be read): open it again and read the tick back.
+      if (result.status !== "saved" && result.status !== "windowClosedAfterSave") throw new Error(`${name}: the window ended unexpectedly (${result.status}).`);
+      const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+      if (!again || again.disabled) return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };
+      const check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true });
+      if (check.status === "verified" && check.checked) return { status: "savedValueVerified", name: def.key };
+      throw new Error(`${name}: Save was clicked, but when the window was opened again the choice is not ticked. Please check it in RTS.`);
+    }
 
     if (!def.rowBy) {
       if (result.fieldRetained) return { status: "savedValueVerified", name: def.key };

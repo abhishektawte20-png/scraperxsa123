@@ -25,6 +25,7 @@
     .ok { background: #eef7f1; color: #166f4c; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
     h4 { margin: 2px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #124a80; }
     .muted { color: #6b778c; font-size: 12px; }
+    .modes { display: flex; gap: 6px; flex-wrap: wrap; }
     .overlay { position: fixed; inset: 0; z-index: 2147483646; cursor: crosshair; }
     .hl { position: fixed; z-index: 2147483647; pointer-events: none; border: 2px solid #e8590c; background: rgba(232,89,12,.12); border-radius: 3px; display: none; }
     .bar-btn { margin-left: 10px; background: #fff; color: #0b2f52; border: 0; border-radius: 5px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -50,7 +51,7 @@
     const shadow = host.attachShadow({ mode: "open" });
     shadow.appendChild(el("style", { text: CSS }));
 
-    const state = { fields: [], preSave: [], saveButton: null, error: "", sent: false };
+    const state = { mode: "form", fields: [], tree: { expander: null, leaf: null }, preSave: [], saveButton: null, error: "", sent: false };
     const card = el("div", { className: "card" });
     shadow.appendChild(card);
 
@@ -118,6 +119,25 @@
       render();
     }
 
+    // Tree mode: a window that is a tree of checkboxes (for example Industry tagging).
+    async function pickTreePart(slot) {
+      state.error = "";
+      const target = await pickElement(slot === "leaf" ? "Click one checkbox (a choice in the list)" : "Click one + button that opens a branch");
+      if (target) {
+        let picked = target;
+        if (slot === "leaf") {
+          picked = target.matches?.("input[type=checkbox]") ? target : (target.closest("label")?.querySelector("input[type=checkbox]") || target.closest("li, div")?.querySelector(":scope > input[type=checkbox]") || target);
+          if (!(picked.matches?.("input[type=checkbox]"))) { state.error = "That is not a checkbox. Click directly on the box you tick."; return render(); }
+        } else {
+          picked = sb.resolveButton(target);
+        }
+        const info = sb.inspectButton(picked, { allowMultiple: true, preferStable: true });
+        if (!info.selectors.length) state.error = "No reliable way to find that could be read. Pick a different one.";
+        else state.tree[slot] = info;
+      }
+      render();
+    }
+
     async function pickButton(slot, message) {
       state.error = "";
       const target = await pickElement(message);
@@ -131,7 +151,9 @@
     }
 
     function send() {
-      const pick = { path: location.pathname, fields: state.fields, preSave: state.preSave, saveButton: state.saveButton };
+      const pick = state.mode === "tree"
+        ? { path: location.pathname, fields: [], tree: { expander: state.tree.expander, leaf: state.tree.leaf }, preSave: state.preSave, saveButton: state.saveButton }
+        : { path: location.pathname, fields: state.fields, preSave: state.preSave, saveButton: state.saveButton };
       chrome.storage.local.set({ [STORAGE_KEY]: { token, at: Date.now(), pick } }).then(() => {
         state.sent = true;
         render();
@@ -157,26 +179,51 @@
       }
       body.appendChild(el("div", { className: "muted", text: "Click each part of this form in the order you would use it. Nothing is typed or saved while mapping." }));
 
-      body.appendChild(el("h4", { text: "1 · Text box(es) to fill" }));
-      body.append(...list(state.fields, (i) => state.fields.splice(i, 1), (f) => `${f.label || f.tag} · ${f.selectors[0]}`));
-      const addField = el("button", { className: "btn", text: state.fields.length ? "Pick another box" : "Pick the text box", type: "button" });
-      addField.addEventListener("click", pickField);
-      body.appendChild(addField);
+      body.appendChild(el("h4", { text: "What is in this window?" }));
+      const modes = el("div", { className: "modes" });
+      for (const [mode, text] of [["form", "A text box"], ["tree", "A tree of checkboxes"]]) {
+        const choose = el("button", { className: `btn${state.mode === mode ? "" : " secondary"}`, text, type: "button" });
+        choose.addEventListener("click", () => { state.mode = mode; state.error = ""; render(); });
+        modes.appendChild(choose);
+      }
+      body.appendChild(modes);
 
-      body.appendChild(el("h4", { text: "2 · Press before Save (optional)" }));
+      if (state.mode === "tree") {
+        body.appendChild(el("h4", { text: "1 · A + button (opens a branch)" }));
+        if (state.tree.expander) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.tree.expander.tag} · ${state.tree.expander.selectors[0]}` })]));
+        const addExpander = el("button", { className: "btn secondary", text: state.tree.expander ? "Re-pick the + button" : "Pick a + button", type: "button" });
+        addExpander.addEventListener("click", () => pickTreePart("expander"));
+        body.appendChild(addExpander);
+        body.appendChild(el("div", { className: "muted", text: "Skip this if the whole list is already open." }));
+
+        body.appendChild(el("h4", { text: "2 · A checkbox (a choice)" }));
+        if (state.tree.leaf) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.tree.leaf.tag} · ${state.tree.leaf.selectors[0]}` })]));
+        const addLeaf = el("button", { className: "btn", text: state.tree.leaf ? "Re-pick the checkbox" : "Pick a checkbox", type: "button" });
+        addLeaf.addEventListener("click", () => pickTreePart("leaf"));
+        body.appendChild(addLeaf);
+        body.appendChild(el("div", { className: "muted", text: "Click any one checkbox. The extension finds the right one by the name printed next to it." }));
+      } else {
+        body.appendChild(el("h4", { text: "1 · Text box(es) to fill" }));
+        body.append(...list(state.fields, (i) => state.fields.splice(i, 1), (f) => `${f.label || f.tag} · ${f.selectors[0]}`));
+        const addField = el("button", { className: "btn", text: state.fields.length ? "Pick another box" : "Pick the text box", type: "button" });
+        addField.addEventListener("click", pickField);
+        body.appendChild(addField);
+      }
+
+      body.appendChild(el("h4", { text: `${state.mode === "tree" ? 3 : 2} · Press before Save (optional)` }));
       body.append(...list(state.preSave, (i) => state.preSave.splice(i, 1), (b) => `${b.text || b.tag} · ${b.selectors[0] || "by text"}`));
       const addPre = el("button", { className: "btn secondary", text: "Pick a button to press first", type: "button" });
       addPre.addEventListener("click", () => pickButton("preSave", "Click the button that must be pressed before Save (for example Show existing data)"));
       body.appendChild(addPre);
 
-      body.appendChild(el("h4", { text: "3 · Save button" }));
+      body.appendChild(el("h4", { text: `${state.mode === "tree" ? 4 : 3} · Save button` }));
       if (state.saveButton) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.saveButton.text || state.saveButton.tag} · ${state.saveButton.selectors[0] || "by text"}` })]));
       const addSave = el("button", { className: "btn secondary", text: state.saveButton ? "Re-pick Save" : "Pick the Save button", type: "button" });
       addSave.addEventListener("click", () => pickButton("save", "Click the Save button (a greyed-out one works too)"));
       body.appendChild(addSave);
 
       if (state.error) body.appendChild(el("div", { className: "err", text: state.error }));
-      const done = el("button", { className: "btn", text: "Done: send to ScraperX", type: "button", disabled: !(state.fields.length && state.saveButton) });
+      const done = el("button", { className: "btn", text: "Done: send to ScraperX", type: "button", disabled: !((state.mode === "tree" ? state.tree.leaf : state.fields.length) && state.saveButton) });
       done.addEventListener("click", send);
       body.appendChild(done);
     }

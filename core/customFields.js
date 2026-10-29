@@ -110,6 +110,15 @@
         errors.push("The rows of this list could not be recognised. Pick the opening button again.");
       }
       for (const button of def.window?.preSave ?? []) validateOptionalButton("A button pressed before Save", button, errors);
+      if (def.window?.tree !== undefined && def.window?.tree !== null) {
+        const t = def.window.tree;
+        if (!isPlainObject(t)) errors.push("The checkbox tree settings are invalid.");
+        else {
+          validateSelectors("The tree's checkboxes", t.leaf?.selectors, errors);
+          if (t.expander) validateSelectors("The tree's + buttons", t.expander.selectors, errors);
+          if (def.kind !== "single") errors.push("A tree of checkboxes in a window fills one choice, so it must be a single field.");
+        }
+      }
     }
     if (def.tree !== undefined && def.tree !== null) {
       const t = def.tree;

@@ -32,7 +32,7 @@
     { path: "extras.siteEmail", label: "Site email", area: "Site", kind: "single", keys: [{ key: "value", label: "Email address" }], hint: "Open the site/address form." },
     { path: "extras.startDate", label: "Start date", area: "Company", kind: "single", keys: [{ key: "value", label: "Start date / year" }], hint: "Open the Company tab where the start date is entered." },
     { path: "extras.industryCode", label: "Industry code", area: "Company", kind: "single", keys: [{ key: "value", label: "Code and name" }],
-      hint: "Only a plain text box or native dropdown is supported; the layered industry picker is not." },
+      hint: "Industry tagging: choose \"Separate window\", pick the button that opens it, then in the window choose \"A tree of checkboxes\" and click one + button, one checkbox and Save." },
     { path: "extras.employeeCount", label: "Employee count", area: "Company", kind: "single", keys: [{ key: "value", label: "Employee count" }], hint: "Open the employee count field." },
     { path: "extras.verticals", label: "Verticals", area: "Company", kind: "list", keys: [{ key: "value", label: "Vertical" }],
       hint: "Only plain text boxes or native dropdowns with an Add button are supported." },
