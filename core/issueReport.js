@@ -20,7 +20,7 @@
     [/already has a value/i, "Not an error: the RTS field already had a value and the action was addIfMissing, so nothing was overwritten."],
     [/No selector registry entry exists/i, "Not an error: this value has no RTS field mapped yet. Use Map this field on its row."],
     [/was not found on this page|button.*was not found/i, "A mapped control is not on screen. Open the right tab or section, or re-map the field."],
-    [/popup|window did not open|No popup window/i, "The popup or window did not open. If Chrome blocked it, allow pop-ups for rts.pitchbook.com."],
+    [/popup|window did not open|No popup window/i, "The popup or window did not open. Most often the picked opening button is greyed out or is the box around it (re-pick an enabled button); otherwise Chrome blocked it: allow pop-ups for rts.pitchbook.com."],
     [/NAICS code .* is not in RTS/i, "RTS's NAICS list does not contain that code."],
     [/Save button.*disabled|did not become active/i, "RTS did not register the change, so its Save button never woke up."],
     [/EXTERNAL_SOURCE|sourced from/i, "The agent used another site as a source. Check it is the company's own page."]

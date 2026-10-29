@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
+import "../core/jsonRepair.js";
 import "../core/rovoContract.js";
 import "../core/rovoText.js";
 import "../core/schema.js";
@@ -207,9 +208,8 @@ test("when validation fails, the warnings are shown in the same pass, and the co
 
 test("output that is not in the agent's format at all still gets a correction prompt, with the exact format resent", async () => {
   const { shadow, copied } = setup();
-  shadow.querySelector("#sxrts-domain")?.setAttribute("value", "kpssecurity.com");
   const fix = button(shadow, "Copy correction prompt");
-  for (const pasted of ["Here is what I found about the company: it sells locks.", '{"company": {"name": "x",}}', "[see report](https://example.com/report) {\"a\":1}"]) {
+  for (const pasted of ["Here is what I found about the company: it sells locks.", "[see report](https://example.com/report) {\"a\":1}", '{"company": {"name": "x"}}']) {
     paste(shadow, pasted);
     button(shadow, "Validate JSON").click();
     assert.ok(!fix.classList.contains("hidden"), `button shown for: ${pasted}`);
@@ -225,6 +225,51 @@ test("output that is not in the agent's format at all still gets a correction pr
   paste(shadow, "");
   button(shadow, "Validate JSON").click();
   assert.ok(fix.classList.contains("hidden"));
+});
+
+test("broken JSON that cannot be repaired is explained with its line and column, and a Generate Correct JSON Prompt is offered", async () => {
+  const { shadow, copied } = setup();
+  const broken = '{\n  "extraction_status": "complete",\n  "keywords": ["a" "b"]\n}';
+  paste(shadow, broken);
+  button(shadow, "Validate JSON").click();
+  const status = shadow.querySelector(".status").textContent;
+  assert.match(status, /The pasted text is not valid JSON/);
+  assert.match(status, /\[JSON_SYNTAX\] Line 3, column \d+:/);
+  assert.match(status, /Near: .*"a" "b"/);
+  assert.equal(shadow.querySelectorAll(".action-card").length, 0);
+  const fix = button(shadow, "Generate Correct JSON Prompt");
+  assert.ok(fix && !fix.classList.contains("hidden"));
+  assert.equal(button(shadow, "Copy correction prompt"), undefined, "the one button is relabelled");
+  fix.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(copied[0], /is not valid JSON, so it cannot be used/);
+  assert.match(copied[0], /Where it breaks: Line 3, column/);
+  assert.match(copied[0], /Do not add, invent, remove or reword/);
+  assert.match(copied[0], /Return ONLY the JSON object: no Markdown code fences/);
+  assert.ok(copied[0].includes(broken), "the invalid reply is included as context");
+  assert.match(copied[0], /THIS RUN/);
+  // The diagnostics report still carries the detail for the developer.
+  assert.match(shadow.textContent, /Copy report/);
+
+  // A fresh, valid paste puts the button back to its normal label and hides it.
+  paste(shadow, validOutput());
+  button(shadow, "Validate JSON").click();
+  assert.ok(button(shadow, "Copy correction prompt").classList.contains("hidden"));
+});
+
+test("simple JSON slips are repaired and said so; valid JSON with no field mappings is not reported as clean", () => {
+  const { shadow } = setup();
+  const slipped = JSON.stringify(validOutput(), null, 2).replace(/\n\}$/, ",\n}");
+  paste(shadow, slipped);
+  button(shadow, "Validate JSON").click();
+  const status = shadow.querySelector(".status").textContent;
+  assert.match(status, /Valid/);
+  assert.match(status, /JSON_REPAIRED/);
+  assert.match(status, /removed a comma before a closing bracket/);
+  // No mappings exist in this test, so the banner is amber and counts the unmapped fields.
+  assert.ok(shadow.querySelector(".verdict.warn"));
+  assert.match(status, /NO_MAPPING/);
+  assert.match(shadow.querySelector(".verdict .count").textContent, /\d+ unmapped/);
 });
 
 test("a valid output that still breaks methodology rules can be sent back for a cleaner run", async () => {

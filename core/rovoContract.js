@@ -772,6 +772,34 @@
     ].join("\n");
   }
 
+  // For JSON that cannot be read and could not be safely repaired. It carries the
+  // invalid reply, where it broke, and the output format the agent already has, and
+  // asks only for the same data re-sent as valid JSON: nothing new is invented.
+  const MAX_INVALID = 60000;
+  function buildJsonRepairPrompt({ domain, invalid, syntax, runPrompt }) {
+    const text = String(invalid ?? "");
+    const clipped = text.length > MAX_INVALID ? `${text.slice(0, MAX_INVALID)}\n[... the rest of the reply is cut here to fit; resend the complete data ...]` : text;
+    return [
+      `Your previous reply for ${domain || "this domain"} is not valid JSON, so it cannot be used.`,
+      syntax?.text ? `Where it breaks: ${syntax.text}` : "",
+      syntax?.near ? `Near: ${syntax.near}` : "",
+      "",
+      "Send the same research again as strictly valid JSON in the required output format below.",
+      "- Keep every original value and finding exactly as it is. Do not add, invent, remove or reword any information.",
+      "- Fix only the syntax: escape double quotation marks inside text as \\\", write line breaks and tabs inside text as \\n and \\t, remove any invalid or control characters, no comments, no trailing commas, every key and text value in straight double quotes.",
+      "- Use the same keys, structure and fallback phrases as the required output format.",
+      "- Return ONLY the JSON object: no Markdown code fences, no explanation, no text before or after it.",
+      "",
+      "Your previous (invalid) reply, for reference:",
+      "<<<",
+      clipped,
+      ">>>",
+      "",
+      "Required output format:",
+      runPrompt || ""
+    ].filter((line, index, all) => line !== "" || all[index - 1] !== "").join("\n");
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, buildFormatCorrectionPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
+  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
 })();

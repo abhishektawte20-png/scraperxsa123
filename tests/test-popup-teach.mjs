@@ -45,6 +45,7 @@ function setup() {
   const dom = new JSDOM(`<!doctype html><body>
     <span class="flat-button__caption-x1">PBID: PB-1</span>
     <button id="openDlg" type="button">Edit employees</button>
+    <div id="wrap" class="col_8"><button id="greyBtn" type="button" disabled>New</button></div>
     <div id="dlg" style="display:none">
       <input id="empInput" name="employees" placeholder="Employees" value="">
       <button id="dlgSave" disabled>Save</button>
@@ -178,4 +179,30 @@ test("a repeatable record has no popup option", async () => {
   buttonByText(card, "Teach new field").click();
   buttonByText(card, "Repeatable record").click();
   assert.equal(buttonByText(card, "Inside a popup"), undefined);
+});
+
+test("the opening button must be a real, enabled button, not the box around a greyed-out one", async () => {
+  const { doc, shadow, dlg } = setup();
+  await tick();
+  buttonByText(shadow.querySelector(".card"), "Teach new field").click();
+  const card = shadow.querySelector(".teach-card");
+  buttonByText(card, "Teach new field").click();
+  buttonByText(card, "Inside a popup").click();
+
+  buttonByText(card, "Pick the button that opens the popup").click();
+  clickOnPage(doc, "#greyBtn");
+  await tick(20);
+  assert.match(card.textContent, /greyed out/);
+
+  buttonByText(card, "Pick the button that opens the popup").click();
+  clickOnPage(doc, "#wrap");
+  await tick(20);
+  assert.match(card.textContent, /not a button/);
+  assert.notEqual(dlg.style.display, "block", "nothing was opened");
+
+  buttonByText(card, "Pick the button that opens the popup").click();
+  clickOnPage(doc, "#openDlg");
+  await tick(20);
+  assert.equal(dlg.style.display, "block");
+  assert.doesNotMatch(card.textContent, /greyed out|not a button/);
 });

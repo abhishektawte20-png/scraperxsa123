@@ -143,6 +143,7 @@
       .verdict { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; font-weight: 650; font-size: 12.5px; }
       .verdict.ok { background: var(--ok-soft); color: var(--ok); }
       .verdict.bad { background: var(--bad-soft); color: var(--bad); }
+      .verdict.warn { background: var(--warn-soft); color: #6b4700; }
       .verdict .count { margin-left: auto; font-weight: 600; font-size: 11.5px; opacity: .85; }
       .issues { display: grid; gap: 6px; margin-top: 8px; }
       .issue { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45; white-space: normal; }
@@ -728,20 +729,24 @@
     let lastIssues = [];
     let lastFormat = "json";
     let lastUnreadable = null; // reasons, when the output was not in the agent's format at all
+    let lastSyntax = null; // where the JSON broke, when it could not be repaired
 
     // Structured validation result: a verdict banner, then one line per finding
     // (errors red, warnings amber, notes blue), each with its rule code.
-    function renderValidation(ok, lines, headline) {
-      lastValidationView = { ok, lines, headline };
-      validateStatus.className = `status ${ok ? "success" : "error"}`;
+    // The JSON can be perfectly valid and still not be writable: `unmapped` is the
+    // number of fields with no RTS mapping, kept apart from the JSON's own problems.
+    function renderValidation(ok, lines, headline, unmapped = 0) {
+      lastValidationView = { ok, lines, headline, unmapped };
+      const incomplete = ok && unmapped > 0;
+      validateStatus.className = `status ${ok && !incomplete ? "success" : incomplete ? "" : "error"}`;
       validateStatus.replaceChildren();
       const errors = lines.filter((l) => l.kind === "err").length;
-      const warnings = lines.filter((l) => l.kind === "warn").length;
+      const warnings = lines.filter((l) => l.kind === "warn" && !/^\[NO_MAPPING\]/.test(l.text)).length;
       const counts = ok
-        ? `${warnings} warning${warnings === 1 ? "" : "s"}`
+        ? `${warnings} warning${warnings === 1 ? "" : "s"}${unmapped ? ` · ${unmapped} unmapped` : ""}`
         : `${errors} problem${errors === 1 ? "" : "s"} to fix`;
-      validateStatus.appendChild(element("div", { className: `verdict ${ok ? "ok" : "bad"}` }, [
-        element("span", { text: ok ? "✓" : "✕" }),
+      validateStatus.appendChild(element("div", { className: `verdict ${!ok ? "bad" : incomplete ? "warn" : "ok"}` }, [
+        element("span", { text: !ok ? "✕" : incomplete ? "!" : "✓" }),
         element("span", { text: headline }),
         element("span", { className: "count", text: counts })
       ]));
@@ -760,11 +765,13 @@
       }
       validateStatus.appendChild(list);
     }
-    const lineKind = (text) => (/^\[(NOISE_REMOVED|OUTPUT_RULE)\]/.test(text) ? "info" : "warn");
+    const lineKind = (text) => (/^\[(NOISE_REMOVED|OUTPUT_RULE|JSON_REPAIRED)\]/.test(text) ? "info" : "warn");
     copyFixButton.addEventListener("click", async () => {
       const contract = globalThis.SXRTS.rovoContract;
       const domain = domainInput.value.trim();
-      const text = lastUnreadable
+      const text = lastSyntax
+        ? contract.buildJsonRepairPrompt({ domain, invalid: textarea.value, syntax: lastSyntax, runPrompt: globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain }) })
+        : lastUnreadable
         ? contract.buildFormatCorrectionPrompt(lastUnreadable, domain, globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain }))
         : contract.buildCorrectionPrompt(lastIssues, domain, lastFormat);
       try {
@@ -802,6 +809,8 @@
     validateButton.addEventListener("click", () => {
       lastIssues = [];
       lastUnreadable = null;
+      lastSyntax = null;
+      copyFixButton.textContent = "Copy correction prompt";
       copyFixButton.classList.add("hidden");
       try {
         lastValidated = globalThis.SXRTS.schema.validate(textarea.value, { domain: domainInput.value });
@@ -813,7 +822,7 @@
         }
         globalThis.SXRTS.cache.setLastJson(lastJsonIdentity(), textarea.value).catch(() => {});
         saveRun("valid", lastValidated.rovo?.format, lastValidated.warnings, 0, lastValidated);
-        renderValidation(true, lastValidated.warnings.map((text) => ({ kind: lineKind(text), text })), "Valid — preview built below");
+        const lines = lastValidated.warnings.map((text) => ({ kind: lineKind(text), text }));
         // Valid, but the methodology warnings can still be sent back for a cleaner run.
         if (lastValidated.rovo && globalThis.SXRTS.rovoContract.reviewIssues(lastValidated.rovo.issues).length) {
           lastIssues = lastValidated.rovo.issues;
@@ -822,6 +831,20 @@
         }
         setStep(2);
         buildPlan();
+        // Valid JSON is not the same as "can be written": say how many fields have no RTS mapping.
+        const total = lastActions.length;
+        const ready = lastActions.filter((a) => a.executionStatus === "pending").length;
+        const unmapped = lastActions.filter((a) => a.executionStatus !== "pending" && /registry entry|evidence for this field/i.test(a.skipReason || ""));
+        if (unmapped.length) {
+          const names = unmapped.slice(0, 6).map((a) => a.jsonPath).join(", ");
+          lines.unshift({ kind: "warn", text: `[NO_MAPPING] ${unmapped.length} of ${total} field(s) have no RTS mapping yet, so they cannot be written: ${names}${unmapped.length > 6 ? ", …" : ""}. Click "Map this field" on each row, or send this report to the developer.` });
+        }
+        const headline = !total ? "Valid JSON, but it contains nothing to apply to RTS"
+          : !ready ? "Valid JSON, but nothing can be published: no field has an RTS mapping"
+          : unmapped.length ? `Valid JSON — ${unmapped.length} of ${total} fields still need an RTS mapping`
+          : "Valid — preview built below";
+        renderValidation(true, lines, headline, unmapped.length);
+        refreshReport();
       } catch (error) {
         lastValidated = null;
         previewCard.classList.add("hidden");
@@ -833,6 +856,8 @@
         } else if (!error.issues && !error.fromCustom && textarea.value.trim()) {
           // Not the agent's format at all (no JSON/report found, broken JSON, wrong shape).
           lastUnreadable = error.errors ?? [String(error.message || error)];
+          lastSyntax = error.syntax?.kind === "invalid" ? error.syntax : null;
+          if (lastSyntax) copyFixButton.textContent = "Generate Correct JSON Prompt";
           copyFixButton.classList.remove("hidden");
         }
         if (error instanceof globalThis.SXRTS.schema.SchemaValidationError) {
@@ -841,7 +866,11 @@
           // warnings, so a re-run is never needed just to discover the rest.
           const contract = globalThis.SXRTS.rovoContract;
           const extra = (error.issues ?? []).filter((item) => item.severity !== "error").map((item) => ({ kind: item.severity === "warning" ? "warn" : "info", text: contract.formatIssue(item) }));
-          renderValidation(false, [...error.errors.map((text) => ({ kind: "err", text })), ...extra], halted ? "The agent halted this extraction" : "The output broke the rules below");
+          const syntax = error.syntax;
+          const errorLines = syntax
+            ? [{ kind: "err", text: `[JSON_SYNTAX] ${syntax.text}` }, ...(syntax.near ? [{ kind: "info", text: `Near: ${syntax.near}` }] : []), { kind: "info", text: "Simple mistakes (a comma before a closing bracket, curly quotes, raw line breaks in text) are fixed automatically. This one needs the agent to send the JSON again: press Generate Correct JSON Prompt." }]
+            : error.errors.map((text) => ({ kind: "err", text }));
+          renderValidation(false, [...errorLines, ...extra], halted ? "The agent halted this extraction" : syntax ? "The pasted text is not valid JSON" : "The output broke the rules below");
           saveRun(halted ? "halted" : "invalid", error.format, [...error.errors, ...extra.map((line) => line.text)], error.errors.length, null);
         } else {
           saveRun("invalid", "json", [String(error)], 1, null);

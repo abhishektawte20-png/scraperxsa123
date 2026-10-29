@@ -673,14 +673,31 @@
       return section;
     }
 
+    // The control that opens a window must be a real, enabled button. A greyed-out
+    // button hands the click to the box around it, which then looks "picked".
+    const BUTTONISH = "button, [role=button], input[type=button], input[type=submit], a[href], [onclick]";
+    function openerProblem(target) {
+      const hit = target.closest(BUTTONISH);
+      if (!hit) return target.ownerDocument.defaultView.getComputedStyle(target).cursor === "pointer" ? "" : "not-a-button";
+      if (hit.disabled || hit.getAttribute("aria-disabled") === "true" || /\bdisabled\b/.test(hit.className || "")) return "disabled";
+      return "";
+    }
+
     async function pickButton(slot, message) {
       draft.error = "";
       const target = await pickElement(message, { actions: slot === "openButton" ? [] : popupActions() });
       if (!target) return render();
       const button = sb().resolveButton(target);
-      if (slot === "openButton" && isTree() && !target.closest("button, [role=button], input[type=button], input[type=submit], a")) {
-        draft.error = "That is not the button itself (you may have clicked the space beside it). Click directly on the \"Add NAICS\" button.";
-        return render();
+      if (slot === "openButton") {
+        const problem = openerProblem(target);
+        if (problem) {
+          draft.error = problem === "disabled"
+            ? "That button is greyed out, so it cannot open anything. Pick an enabled one, for example a \"New\" button in a row that has no value yet."
+            : isTree()
+              ? "That is not the button itself (you may have clicked the space beside it). Click directly on the \"Add NAICS\" button."
+              : "That is not a button (you may have clicked the space beside it, or a greyed-out button). Click directly on an enabled button that opens the window.";
+          return render();
+        }
       }
       // A button that exists once per row (a "New" button in every network
       // row) must be recognised in every row, not just the one clicked.

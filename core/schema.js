@@ -321,6 +321,17 @@
     }
   }
 
+  // The reason a paste could not be read as JSON, with where it went wrong. The
+  // panel uses it for the plain-language message and the Generate Correct JSON
+  // Prompt button; `syntax` is attached to the thrown error.
+  function syntaxFailure(messages, syntax) {
+    const failure = new SchemaValidationError(messages);
+    failure.syntax = syntax;
+    return failure;
+  }
+
+  // { value, fixes }: the parsed object, and what was repaired to get it (empty
+  // when the paste was valid as it stood).
   function parseRawJson(raw) {
     if (typeof raw !== "string" || !raw.trim()) {
       throw new SchemaValidationError(["Paste the ScraperX Rovo JSON response first."]);
@@ -330,18 +341,27 @@
     const firstBrace = cleaned.indexOf("{");
     const lastBrace = cleaned.lastIndexOf("}");
     if (firstBrace === -1 || lastBrace <= firstBrace) {
-      throw new SchemaValidationError(["No JSON object was found in the pasted response."]);
+      const reason = "No JSON object was found in the pasted response: there is no { ... } in it.";
+      throw syntaxFailure([reason], { kind: "noObject", reason, text: reason, line: null, column: null, near: "", caret: "" });
     }
+    const body = cleaned.slice(firstBrace, lastBrace + 1);
     let parsed;
     try {
-      parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      parsed = JSON.parse(body);
     } catch (error) {
-      throw new SchemaValidationError([`The pasted response is not valid JSON: ${error.message}`]);
+      const repair = globalThis.SXRTS.jsonRepair?.repair(body);
+      if (repair?.ok) {
+        const value = JSON.parse(repair.text);
+        if (isPlainObject(value)) return { value, fixes: repair.fixes };
+      }
+      const detail = globalThis.SXRTS.jsonRepair?.explain(error, body) ?? { reason: error.message, text: error.message };
+      throw syntaxFailure([`The pasted response is not valid JSON. ${detail.text}`], { kind: "invalid", ...detail });
     }
     if (!isPlainObject(parsed)) {
-      throw new SchemaValidationError(["The response must be one JSON object."]);
+      const reason = "The response must be one JSON object.";
+      throw syntaxFailure([reason], { kind: "notObject", reason, text: reason, line: null, column: null, near: "", caret: "" });
     }
-    return parsed;
+    return { value: parsed, fixes: [] };
   }
 
   function validateProfileIdentity(value, errors) {
@@ -476,13 +496,17 @@
     // the paste with an exact list.
     let rovo = null;
     let parsed;
+    let repairs = [];
     let analysis = null;
     const contract = globalThis.SXRTS.rovoContract;
     const textReader = globalThis.SXRTS.rovoText;
     if (textReader?.isText(raw)) {
       analysis = textReader.analyze(raw);
     } else {
-      parsed = parseRawJson(raw);
+      const read = parseRawJson(raw);
+      parsed = read.value;
+      repairs = read.fixes;
+      if (repairs.length) warnings.push(`[JSON_REPAIRED] The pasted JSON had small syntax mistakes that were fixed automatically (meaning unchanged): ${globalThis.SXRTS.jsonRepair.summarize(repairs).join("; ")}.`);
       if (contract?.isContract(parsed)) analysis = contract.analyze(parsed, { domain: options.domain });
     }
     if (analysis) {

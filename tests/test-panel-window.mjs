@@ -226,7 +226,7 @@ test("after a publish, the report lists what failed, what was skipped and what i
   });
   shadow.querySelector("#sxrts-response").value = TEXT_SAMPLE;
   btn(shadow, "Validate JSON").click();
-  assert.ok(shadow.querySelector(".verdict.ok"), shadow.querySelector(".status.error")?.textContent);
+  assert.ok(shadow.querySelector(".verdict.ok, .verdict.warn"), shadow.querySelector(".status.error")?.textContent);
   await publishOnly(shadow, "company.briefDescription");
   const text = shadow.querySelector("#sxrts-report").value;
   assert.match(text, /FAILED \(1\)/);

@@ -230,7 +230,9 @@ test("validation result is structured: a verdict banner plus one coloured line p
   await tick();
   shadow.querySelector("#sxrts-response").value = TEXT_SAMPLE;
   btn(shadow, "Validate JSON").click();
-  assert.match(shadow.querySelector(".verdict.ok").textContent, /Valid/);
+  // Valid JSON, but with no RTS mappings in this test the banner is amber and says so.
+  assert.match(shadow.querySelector(".verdict.warn").textContent, /Valid JSON — \d+ of \d+ fields still need an RTS mapping/);
+  assert.match(shadow.querySelector(".issue.warn .chip").textContent, /NO_MAPPING/);
   assert.ok(shadow.querySelectorAll(".issue.warn").length >= 2);
   shadow.querySelector("#sxrts-response").value = TEXT_SAMPLE.replace("* Total Rounds Found: 0", "* Total Rounds Found: 2");
   btn(shadow, "Validate JSON").click();

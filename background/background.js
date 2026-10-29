@@ -1,6 +1,7 @@
 "use strict";
 
 const ASSISTANT_FILES = [
+  "core/jsonRepair.js",
   "core/rovoContract.js",
   "core/rovoText.js",
   "core/schema.js",
@@ -105,7 +106,7 @@ function watchForNewWindow(openerTabId, origin) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       chrome.tabs.onCreated.removeListener(onCreated);
-      reject(new Error("No popup window opened. If Chrome blocked it, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects), then try again."));
+      reject(new Error("No popup window opened. Check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects), then try again."));
     }, WINDOW_OPEN_TIMEOUT);
     // A script-opened window is created blank and may not name its opener
     // yet; only a tab that names a different opener is ruled out here. The
