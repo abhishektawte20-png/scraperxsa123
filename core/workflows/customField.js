@@ -201,9 +201,61 @@
     return fields.every((field) => normalize(a[field.key]) === normalize(b[field.key]));
   }
 
+  // ---- a tag box: type a word, pick or add it, press Enter (Keywords) ----
+  // The "Add button" the researcher picked is the box itself (or the list around it), the tags
+  // already there are plain elements, and Enter turns the typed word into a tag. Tags show their
+  // use count ("agentic ai (1185)"), which is ignored when comparing.
+  const tagWord = (text) => normalize(String(text ?? "").replace(/\(\s*\d+\s*\)/g, " ").replace(/[\u2715\u2716\u00D7\u2A2F\u2297]\s*$/, " "));
+
+  function isTagBox(def) {
+    if (def.fields.length !== 1 || def.fields[0].kind !== "text") return false;
+    const add = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.addButton);
+    const input = globalThis.SXRTS.selectorBuilder.resolveAll(def.fields[0].selectors)[0];
+    return Boolean(add && input && (add === input || add.contains(input)));
+  }
+
+  function tagsIn(container, input) {
+    const out = [];
+    for (const node of container.querySelectorAll("*")) {
+      if (node === input || node.contains(input) || node.children.length > 0 || node.tagName === "INPUT") continue;
+      const word = tagWord(node.textContent);
+      if (word && word.length > 1) out.push(word);
+    }
+    return out;
+  }
+
+  async function applyTagBox(def, record) {
+    const field = def.fields[0];
+    const value = String(record[field.key] ?? "").trim();
+    if (!value) return { status: "skipped", reason: "no values proposed" };
+    const add = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.addButton);
+    const input = globalThis.SXRTS.selectorBuilder.resolveAll(field.selectors).find(isShown);
+    if (!add || !input) throw new Error(`The ${def.label} box was not found on this page. Open the right tab/section, or re-map the field.`);
+    const container = add.contains(input) && add !== input ? add : (input.parentElement || input);
+    const want = tagWord(value);
+    if (tagsIn(container, input).includes(want)) return { status: "skipped", reason: "duplicate", detail: `${def.label}: "${value}" is already there.` };
+
+    input.focus();
+    await globalThis.SXRTS.adapters.textField.applyText(input, value);
+    await waitFor(() => false, 450); // let the suggestion list draw: the exact tag if it exists, otherwise "(new)"
+    for (const type of ["keydown", "keypress", "keyup"]) {
+      input.dispatchEvent(new window.KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+    }
+    const added = await waitFor(() => tagsIn(container, input).includes(want), 3000);
+    if (!added) throw new Error(`${def.label}: "${value}" was typed and Enter was pressed, but no tag appeared. The suggestion list may need a click: send the report so the box can be mapped.`);
+
+    // Some pages save on Enter; others enable Save Changes. Press it only if it is waiting.
+    const save = findButton(def, def.saveButton);
+    if (save && !save.disabled) await clickSave(def);
+    await waitFor(() => false, 250); // a page that re-draws the list after saving would drop an unsaved tag
+    if (!tagsIn(container, input).includes(want)) throw new Error(`Save did not complete for ${def.label}: the tag "${value}" is no longer there.`);
+    return { status: "savedValueVerified", name: def.key };
+  }
+
   async function applyRecord(def, record) {
     const fields = filled(def, record);
     if (!fields.length) return { status: "skipped", reason: "no values proposed" };
+    if (isTagBox(def)) return applyTagBox(def, record);
 
     const existing = rowsOf(def);
     if (existing.some((row) => sameRecord(def, row, record, fields))) {

@@ -977,6 +977,9 @@
         }
       }
 
+      // Open every section of the current tab once, so a field is not missed only because its section is collapsed.
+      try { await globalThis.SXRTS.navigation?.expandAll(); } catch { /* a page without the control simply carries on */ }
+
       let applied = 0, skipped = 0, failed = 0;
       const allResults = {};
       const valueFor = (a) => rowsByActionId.get(a.actionId).getEditedValue();

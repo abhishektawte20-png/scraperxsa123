@@ -99,8 +99,8 @@ test("size limits hold: per capture, in total and in the number of fields", () =
   const [one] = pc.capture(doc, [{ path: "company.keywords", label: "Keywords" }], { perCapture: 500 });
   assert.ok(one.html.length < 700);
   assert.match(one.html, /cut here/);
-  const many = pc.capture(doc, Array.from({ length: 12 }, (_, i) => ({ path: `p${i}`, label: `Nope${i}` })));
-  assert.equal(many.length, 9);
+  const many = pc.capture(doc, Array.from({ length: 16 }, (_, i) => ({ path: `p${i}`, label: `Nope${i}` })));
+  assert.equal(many.length, 13);
   assert.match(many.at(-1).note, /4 more field\(s\)/);
 });
 

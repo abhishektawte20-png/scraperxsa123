@@ -80,21 +80,13 @@
   // and plain-language notes about what it could not.
   async function detectTree(sb, host) {
     const found = { leaf: null, expander: null, saveButton: null, notes: [], summary: [] };
-    const boxes = Array.from(document.querySelectorAll("input[type=checkbox]"));
-    if (!boxes.length) { found.notes.push("No checkboxes were found in this window."); return found; }
+    const allBoxes = () => Array.from(document.querySelectorAll("input[type=checkbox]")).filter((b) => !(host && host.contains(b)));
+    const boxesShown = () => allBoxes().filter(shown);
+    const count = () => boxesShown().length + expanderCandidates(host).length;
+    const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
+    const hadBoxes = allBoxes().length > 0;
 
-    const info = sb.inspectButton(boxes[0], { allowMultiple: true, preferStable: true });
-    const covers = (selector) => { try { return sb.matchAll(selector).length >= Math.ceil(boxes.length * 0.9); } catch { return false; } };
-    const good = info.selectors.find(covers);
-    found.leaf = { ...info, selectors: good ? [good, ...info.selectors.filter((x) => x !== good)] : ['input[type="checkbox"]'] };
-    found.summary.push(`${boxes.length} checkbox${boxes.length === 1 ? "" : "es"}`);
-
-    const buttons = Array.from(document.querySelectorAll("button, input[type=button], input[type=submit], [role=button], a.btn")).filter((b) => shown(b) && !(host && host.contains(b)));
-    const saves = buttons.filter((b) => /^save\b/i.test(textOf(b)));
-    if (saves.length === 1) { found.saveButton = sb.inspectButton(saves[0], { allowMultiple: true, preferStable: true }); found.summary.push(`Save button "${textOf(saves[0])}"`); }
-    else found.notes.push(saves.length ? "More than one Save button was found. Pick the right one yourself (step 4)." : "No Save button was found. Pick it yourself (step 4).");
-
-    // The + buttons: group look-alikes, then open one of each group to see if more choices appear.
+    // The + buttons first: a tree that draws its choices only when a branch is opened has no checkboxes yet.
     const groups = new Map();
     for (const node of expanderCandidates(host)) {
       const i = sb.inspectButton(node, { allowMultiple: true, preferStable: true });
@@ -103,22 +95,45 @@
       if (!groups.has(key)) groups.set(key, { info: i, nodes: [] });
       groups.get(key).nodes.push(node);
     }
-    const count = () => Array.from(document.querySelectorAll("input[type=checkbox]")).filter(shown).length + expanderCandidates(host).length;
-    const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
-    for (const [, group] of Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 6)) {
+    const ordered = Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 6);
+    for (const [, group] of ordered) {
       const node = group.nodes.find((n) => n.isConnected);
       if (!node) continue;
       const before = count();
       node.click();
       await settle();
-      const changed = count() !== before;
-      if (changed && node.isConnected && group.nodes.length) { /* put the branch back as it was */ node.click(); await settle(); }
-      if (changed) {
-        found.expander = group.info;
-        found.summary.push(`+ buttons (${group.nodes.length}; opening one revealed more choices)`);
-        break;
-      }
+      if (count() === before) continue;
+      found.expander = group.info;
+      found.summary.push(`+ buttons (${group.nodes.length}; opening one revealed more choices)`);
+      if (hadBoxes) { node.click(); await settle(); } // put the branch back as it was
+      break;
     }
+
+    // Still no checkboxes: open the next + button down, a few levels deep, until choices appear.
+    if (found.expander && !allBoxes().length) {
+      for (let depth = 0; depth < 6 && !allBoxes().length; depth++) {
+        const next = expanderCandidates(host).find((n) => !n.dataset?.sxTried);
+        if (!next) break;
+        if (next.dataset) next.dataset.sxTried = "1";
+        next.click();
+        await settle();
+      }
+      if (allBoxes().length) found.summary.push("opened branches until the choices appeared");
+    }
+
+    const boxes = allBoxes();
+    if (!boxes.length) { found.notes.push("No checkboxes were found in this window, even after opening branches. Pick them yourself, or send this window's structure to the developer."); return found; }
+    const info = sb.inspectButton(boxes[0], { allowMultiple: true, preferStable: true });
+    const covers = (selector) => { try { return sb.matchAll(selector).length >= Math.ceil(boxes.length * 0.9); } catch { return false; } };
+    const good = info.selectors.find(covers);
+    found.leaf = { ...info, selectors: good ? [good, ...info.selectors.filter((x) => x !== good)] : ['input[type="checkbox"]'] };
+    found.summary.unshift(`${boxes.length} checkbox${boxes.length === 1 ? "" : "es"}`);
+
+    const buttons = Array.from(document.querySelectorAll("button, input[type=button], input[type=submit], [role=button], a.btn")).filter((b) => shown(b) && !(host && host.contains(b)));
+    const saves = buttons.filter((b) => /^save\b/i.test(textOf(b)));
+    if (saves.length === 1) { found.saveButton = sb.inspectButton(saves[0], { allowMultiple: true, preferStable: true }); found.summary.push(`Save button "${textOf(saves[0])}"`); }
+    else found.notes.push(saves.length ? "More than one Save button was found. Pick the right one yourself (step 4)." : "No Save button was found. Pick it yourself (step 4).");
+
     if (!found.expander) {
       if (boxes.every(shown)) found.summary.push("every choice is already visible, so no + button is needed");
       else found.notes.push("Some choices are hidden but no + button was found. Pick one + button yourself (step 1).");

@@ -19,6 +19,7 @@
 
     button.click();
     await wait(300);
+    await expandAll();
   }
 
   async function navigateToCompany() {
@@ -70,6 +71,22 @@
     return Boolean(isReady());
   }
 
+  // RTS has an "Expand" control at the top of a profile that opens every section of the tab.
+  // Pressing it once means a field is not missed only because its section was collapsed.
+  function findExpandControl() {
+    const candidates = Array.from(document.querySelectorAll("a, button, span, div, input[type=button]"))
+      .filter((node) => norm(node.textContent || node.value) === "expand" && isShown(node) && !node.closest("#sxrts-assistant-root"));
+    return candidates.sort((a, b) => (a.textContent || "").length - (b.textContent || "").length || (a.children.length - b.children.length))[0] || null;
+  }
+
+  async function expandAll() {
+    const control = findExpandControl();
+    if (!control) return false;
+    control.click();
+    await wait(500);
+    return true;
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.navigation = { navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
+  globalThis.SXRTS.navigation = { expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
 })();

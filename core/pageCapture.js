@@ -84,6 +84,10 @@
 
   // Words RTS uses on the page for each output field (besides the field's own label).
   const TERMS = {
+    "businessEntity.nameVariations": ["Name Variations", "View All Name Variations"],
+    "businessEntity.websiteAddresses": ["Website Address", "Website Addresses"],
+    "businessEntity.emailDefaultStructure": ["Email Default Structure"],
+    "company.sicCodes": ["SIC", "SIC Codes", "Industries and Verticals"],
     "company.keywords": ["Keywords"],
     "company.naicsCodes": ["NAICS", "Industries"],
     "businessEntity.socialMediaIdentifiers": ["Social Media Identifier", "SM Network"],
@@ -153,7 +157,7 @@
    * near the field (for example a mapped button); otherwise the field's label is
    * looked for on the page. Returns [{ path, label, found, term, html, note }].
    */
-  function capture(doc, targets, { perCapture = 6000, total = 24000, maxTargets = 8 } = {}) {
+  function capture(doc, targets, { perCapture = 6000, total = 30000, maxTargets = 12 } = {}) {
     const results = [];
     const seen = new Map();
     let used = 0;
@@ -162,7 +166,8 @@
       let area = null;
       let term = "";
       try {
-        if (target.anchor?.isConnected) { area = areaAround(target.anchor); term = "(the mapped button)"; }
+        // A mapped button that is not on screen may be a look-alike hidden elsewhere (a pop-up's "No" button): ignore it.
+        if (target.anchor?.isConnected && (!hasLayout(doc) || target.anchor.getClientRects().length > 0)) { area = areaAround(target.anchor); term = "(the mapped button)"; }
         else {
           const hit = findLabel(doc, termsFor(target.path, target.label));
           if (hit) { area = areaAround(hit.el); term = hit.term; }
