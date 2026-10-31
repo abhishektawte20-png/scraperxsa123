@@ -27,6 +27,10 @@
     { jsonPath: "company.management", kind: "array", get: (d) => d.company?.management }
   ];
 
+  // The report's address fields that go into ONE site form (Company > Site), and the form box each fills.
+  const SITE_EXTRAS = { "extras.address": "address1", "extras.city": "city", "extras.state": "state", "extras.country": "country", "extras.postcode": "zip", "extras.phone": "phone", "extras.fax": "fax", "extras.siteEmail": "email" };
+  const hasSiteWorkflow = () => Boolean(globalThis.SXRTS.workflows?.companySite);
+
   function buildExecutionPlan(validated) {
     const registry = globalThis.SXRTS.registry;
     const actions = [];
@@ -39,7 +43,7 @@
       const registryEntry = registry.getField(source.jsonPath);
       // A field the researcher mapped with "Map this field" becomes runnable
       // (native workflows always win over a mapping).
-      const bound = registryEntry?.evidenceStatus === "ready" ? null : globalThis.SXRTS.customFields?.getBoundDef(source.jsonPath);
+      const bound = (registryEntry?.evidenceStatus === "ready" || (source.jsonPath === "company.sites" && hasSiteWorkflow())) ? null : globalThis.SXRTS.customFields?.getBoundDef(source.jsonPath);
 
       records.forEach((record, index) => {
         if (!record) return;
@@ -51,7 +55,8 @@
         // proposed record can ever be written, so every subsequent one is
         // skipped here rather than silently reported as applied later.
         const isWebsiteAddressOverflow = source.jsonPath === "businessEntity.websiteAddresses" && index > 0;
-        const skipReason = bound ? null : isWebsiteAddressOverflow
+        const nativeSite = source.jsonPath === "company.sites" && hasSiteWorkflow();
+        const skipReason = (bound || nativeSite) ? null : isWebsiteAddressOverflow
           ? "RTS has only one Website Address field; only the first proposed value can ever be applied."
           : !registryEntry
             ? "No selector registry entry exists for this field yet."
@@ -89,11 +94,13 @@
     // Report fields with no native workflow (address, start date, ...): shown
     // as cards so each can be mapped, and runnable once it is.
     for (const field of (globalThis.SXRTS.outputFields?.FIELDS ?? []).filter((f) => f.path.startsWith("extras."))) {
-      const bound = globalThis.SXRTS.customFields?.getBoundDef(field.path);
+      const siteGroup = Boolean(SITE_EXTRAS[field.path]) && hasSiteWorkflow();
+      const bound = siteGroup ? null : globalThis.SXRTS.customFields?.getBoundDef(field.path);
       globalThis.SXRTS.outputFields.recordsFor(validated, field.path).forEach((record, index) => {
         if (record.action === "skip") return;
         counter += 1;
         actions.push({
+          siteGroup: siteGroup || undefined,
           actionId: `A${counter}`,
           profileIdentity: validated.profileIdentity,
           area: bound ? "Mapped field" : field.area,
@@ -108,8 +115,8 @@
           duplicateStatus: "unknown",
           conflictStatus: "unknown",
           saveScope: bound?.label ?? null,
-          executionStatus: bound ? "pending" : "skipped",
-          skipReason: bound ? null : "No selector registry entry exists for this field yet.",
+          executionStatus: (bound || siteGroup) ? "pending" : "skipped",
+          skipReason: (bound || siteGroup) ? null : "No selector registry entry exists for this field yet.",
           verificationResult: null
         });
       });
@@ -152,5 +159,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.executionPlan = { buildExecutionPlan, FIELD_SOURCES };
+  globalThis.SXRTS.executionPlan = { buildExecutionPlan, FIELD_SOURCES, SITE_EXTRAS };
 })();

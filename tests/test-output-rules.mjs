@@ -16,6 +16,7 @@ import "../core/adapters/nativeSelect.js";
 import "../core/adapters/contentEditable.js";
 import "../core/resultsSummary.js";
 import "../core/outputRules.js";
+import "../core/customFields.js";
 import "../registry/businessEntity.nameVariations.js";
 import "../registry/businessEntity.general.js";
 import "../registry/company.sic.js";
@@ -108,6 +109,49 @@ test("on the psypher.in report, a Facebook/Instagram rule changes the values tha
   assert.equal(schema.validate(TEXT_SAMPLE).businessEntity.socialMediaIdentifiers[0].handleOrUrl, "https://www.facebook.com/psyphergames");
 });
 
+// ---- dynamic targets: any field of the report, not a fixed list ----
+
+test("the 'Applies to' list is built from the report's own fields: employee count, address, industry code and more are there", () => {
+  const labels = or.targets().map((t) => t.label);
+  for (const wanted of ["Employee count", "Address", "City", "State / region", "Country", "Postcode", "Phone", "Start date", "Industry code", "NAICS codes", "Verticals", "Social media: Facebook", "Website Address", "Keywords"]) {
+    assert.ok(labels.includes(wanted) || labels.some((l) => l.startsWith(`${wanted} —`)), `"${wanted}" can carry a rule`);
+  }
+  assert.equal(new Set(or.targets().map((t) => t.id)).size, or.targets().length, "no field is listed twice");
+  assert.ok(or.targets().length > 20);
+});
+
+test("a new field appears in the list by itself (a taught field), and a rule for it is accepted", () => {
+  const before = or.targets().length;
+  const original = globalThis.SXRTS.customFields.getCached;
+  globalThis.SXRTS.customFields.getCached = () => [{ key: "headcountBand", label: "Headcount band", kind: "single", fields: [{ key: "value", label: "Headcount band" }] }];
+  try {
+    assert.equal(or.targets().length, before + 1);
+    assert.ok(or.targets().some((t) => t.id === "custom:headcountBand:value" && /Headcount band \(taught\)/.test(t.label)));
+    assert.deepEqual(or.validateRule({ label: "Band", target: "custom:headcountBand:value", steps: [{ type: "trim" }] }), []);
+  } finally { globalThis.SXRTS.customFields.getCached = original; }
+});
+
+test("a rule on a report field (state) changes the value that reaches the preview, and only that field", async () => {
+  const report = TEXT_SAMPLE.replace(/\* Address: Borivali[^\n]*\n[^\n]*\n/, "* Address: 1 Road\n   * Source: https://www.psypher.in/\n* City: Texas City\n   * Source: https://www.psypher.in/\n* State: TX\n   * Source: https://www.psypher.in/\n");
+  const rule = await or.saveRule({ label: "State in full", target: "field:extras.state:value", steps: [{ type: "replace", find: "TX", with: "Texas" }] });
+  const validated = schema.validate(report);
+  assert.equal(validated.extras.state.value, "Texas");
+  assert.equal(validated.extras.city.value, "Texas City", "another field is untouched");
+  assert.ok(validated.rulesApplied.some((r) => r.target === "field:extras.state:value" && r.before === "TX" && r.after === "Texas"));
+  await or.removeRule(rule.id);
+  assert.equal(schema.validate(report).extras.state.value, "TX");
+});
+
+test("a rule on a list field (keywords) changes every entry; ids that are not a field are refused; the old ids still work", () => {
+  const doc = { company: { keywords: [{ value: " a " }, { value: " b " }] } };
+  const applied = or.apply(doc, [{ id: "k", label: "Trim", target: "field:company.keywords:value", steps: [{ type: "trim" }] }]);
+  assert.equal(applied.length, 2);
+  assert.deepEqual(doc.company.keywords.map((k) => k.value), ["a", "b"]);
+  assert.ok(or.validateRule({ label: "x", target: "field:../../etc:value", steps: [{ type: "trim" }] }).length);
+  assert.ok(or.validateRule({ label: "x", target: "evil", steps: [{ type: "trim" }] }).length);
+  assert.deepEqual(or.validateRule({ label: "x", target: "keywords", steps: [{ type: "trim" }] }), []);
+});
+
 // ---- the dialog ----
 
 function setupPanel() {
@@ -168,4 +212,27 @@ test("dialog: an invalid rule is explained, not saved", async () => {
   await tick();
   assert.match(card.querySelector(".rules-error").textContent, /Give the rule a name/);
   assert.equal(or.getCached().length, 0);
+});
+
+test("dialog: the 'Applies to' box offers the report's other fields, and a rule on Employee count is saved and shown with its field name", async () => {
+  const shadow = setupPanel();
+  btn(shadow, "Output rules").click();
+  const card = shadow.querySelector(".rules-card");
+  btn(card, "Add rule").click();
+  const select = card.querySelector("select");
+  const options = Array.from(select.options).map((o) => o.textContent);
+  assert.ok(options.includes("Employee count") && options.includes("Address") && options.includes("Industry code"), options.join(" | "));
+  select.value = Array.from(select.options).find((o) => o.textContent === "Employee count").value;
+  select.dispatchEvent(new window.Event("change", { bubbles: true }));
+  const card2 = shadow.querySelector(".rules-card");
+  type(card2.querySelector("input[type=text]"), "Employee count tidy");
+  // the first step is "keep only the last part of the URL"; change it to a trim
+  const stepSelect = card2.querySelectorAll("select")[1];
+  stepSelect.value = "trim";
+  stepSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+  btn(shadow.querySelector(".rules-card"), "Save rule").click();
+  await tick(); await tick();
+  const list = shadow.querySelector(".rules-card").textContent;
+  assert.match(list, /Employee count tidy/);
+  assert.match(list, /Employee count: Trim spaces/);
 });

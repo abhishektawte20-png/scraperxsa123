@@ -59,7 +59,7 @@
     const newDraft = () => ({ label: "", target: "smi.facebook", steps: [{ type: "lastPathSegment" }], sample: null, error: "" });
 
     function sampleFor(target) {
-      return draft.sample ?? getSample?.(target) ?? or().TARGETS.find((t) => t.id === target)?.example ?? "";
+      return draft.sample ?? getSample?.(target) ?? or().targetFor(target)?.example ?? "";
     }
 
     function renderList() {
@@ -74,7 +74,7 @@
       const rules = or().getCached();
       if (!rules.length) card.appendChild(el("p", { className: "rules-muted", text: "No rules yet." }));
       for (const rule of rules) {
-        const target = or().TARGETS.find((t) => t.id === rule.target)?.label ?? rule.target;
+        const target = or().targetFor(rule.target)?.label ?? rule.target;
         const edit = el("button", { className: "rules-btn secondary", text: "Edit", type: "button" });
         edit.addEventListener("click", () => { draft = { ...rule, steps: rule.steps.map((s) => ({ ...s })), sample: null, error: "" }; view = "edit"; render(); });
         const fromTeam = or().isFromTeam(rule);
@@ -124,7 +124,9 @@
       const labelInput = el("input", { type: "text", value: draft.label, placeholder: "e.g. Facebook handle only" });
       labelInput.addEventListener("input", () => { draft.label = labelInput.value; });
       const targetSelect = el("select");
-      for (const target of or().TARGETS) targetSelect.appendChild(el("option", { value: target.id, text: target.label }));
+      for (const target of or().targets()) targetSelect.appendChild(el("option", { value: target.id, text: target.label }));
+      // A rule saved for a field that is not in the list right now (for example a taught field that was removed) stays selectable.
+      if (!or().targetFor(draft.target)) targetSelect.appendChild(el("option", { value: draft.target, text: draft.target }));
       targetSelect.value = draft.target;
       targetSelect.addEventListener("change", () => { draft.target = targetSelect.value; draft.sample = null; renderEdit(); });
       card.appendChild(el("div", { className: "rules-section" }, [

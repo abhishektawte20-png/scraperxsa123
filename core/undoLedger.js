@@ -30,7 +30,8 @@
     "company.naicsCodes": "Delete this NAICS code row.",
     "businessEntity.socialMediaIdentifiers": "Delete this social media identifier row.",
     "businessEntity.researchNotes": "Remove this text from the Research Notes box.",
-    "extras.management": "Remove this management entry."
+    "extras.management": "Remove this management entry.",
+    "company.sites": "Delete this site in Company > Site (use its Delete / remove control)."
   };
 
   // How an undo can be done for one published item. `before` is the value RTS held before the run.

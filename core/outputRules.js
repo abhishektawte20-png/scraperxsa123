@@ -77,13 +77,53 @@
 
   const isObject = (v) => v !== null && typeof v === "object";
 
+  // ---------- dynamic targets ----------
+  // Every field of the agent's report, every field mapped or taught, can carry a rule: the list is built
+  // from the fields themselves, so a new field appears here by itself. Ids: "field:<path>:<key>" and
+  // "custom:<key>:<fieldKey>". The older fixed ids above keep working.
+  const EXAMPLES = {
+    "extras.employeeCount": "250 employees", "extras.address": "12600 Crystal View Blvd., Texas City", "extras.city": "Texas City", "extras.state": "TX", "extras.country": "USA",
+    "extras.postcode": "77568", "extras.phone": "+1 (281) 941-6001", "extras.fax": "281-941-6002", "extras.siteEmail": "info@example.com", "extras.startDate": "2024",
+    "extras.industryCode": "2.1.2 — Clothing", "company.naicsCodes": "541511 – Custom Computer Programming Services", "extras.verticals": "Fashion Tech", "extras.management": "Jane Doe",
+    "businessEntity.emailDefaultStructure": "First.Last@domain.com", "company.searchKeywords": "streetwear apparel", "company.startDate": "2024"
+  };
+  const ID_PATTERN = /^(field:[A-Za-z0-9_.]+:[A-Za-z0-9_]+|custom:[A-Za-z0-9_]+:[A-Za-z0-9_]+)$/;
+
+  function dynamicTargets() {
+    const out = [];
+    const seen = new Set(TARGETS.map((t) => t.id));
+    const add = (id, label, example) => { if (!seen.has(id)) { seen.add(id); out.push({ id, label, example: example ?? "" }); } };
+    for (const field of globalThis.SXRTS?.outputFields?.FIELDS ?? []) {
+      for (const k of field.keys ?? []) add(`field:${field.path}:${k.key}`, field.keys.length > 1 ? `${field.label} — ${k.label}` : field.label, EXAMPLES[field.path]);
+    }
+    for (const source of globalThis.SXRTS?.executionPlan?.FIELD_SOURCES ?? []) {
+      if (source.kind !== "envelope") continue;
+      const name = source.jsonPath.split(".").pop().replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+      add(`field:${source.jsonPath}:value`, name, EXAMPLES[source.jsonPath]);
+    }
+    for (const def of globalThis.SXRTS?.customFields?.getCached?.() ?? []) {
+      if (def.binds) continue;
+      for (const f of def.fields ?? []) add(`custom:${def.key}:${f.key}`, `${def.label}${def.fields.length > 1 ? ` — ${f.label || f.key}` : ""} (taught)`, "");
+    }
+    return out;
+  }
+
+  // The fixed targets first, then everything else, in the report's own order.
+  const targets = () => [...TARGETS, ...dynamicTargets()];
+  const targetFor = (id) => targets().find((t) => t.id === id) ?? null;
+  const isTarget = (id) => TARGETS.some((t) => t.id === id) || ID_PATTERN.test(String(id ?? ""));
+
   function refsFor(doc, targetId) {
     const refs = [];
     const add = (path, holder, key) => { if (isObject(holder) && typeof holder[key] === "string") refs.push({ path, get: () => holder[key], set: (v) => { holder[key] = v; } }); };
     const list = (value) => (Array.isArray(value) ? value : []);
     const be = doc?.businessEntity;
     const co = doc?.company;
-    if (targetId.startsWith("smi.")) {
+    if (targetId.startsWith("field:") || targetId.startsWith("custom:")) {
+      const [kind, where, key] = targetId.split(":");
+      const node = kind === "field" ? where.split(".").reduce((n, part) => (isObject(n) ? n[part] : undefined), doc) : doc?.custom?.[where];
+      (Array.isArray(node) ? node : [node]).forEach((entry, i) => add(kind === "field" ? `${where}${Array.isArray(node) ? `[${i}]` : ""}.${key}` : `custom.${where}${Array.isArray(node) ? `[${i}]` : ""}.${key}`, entry, key));
+    } else if (targetId.startsWith("smi.")) {
       const wanted = targetId.slice(4);
       list(be?.socialMediaIdentifiers).forEach((entry, i) => {
         const network = NETWORKS[String(entry?.network ?? "").trim().toLowerCase()];
@@ -107,7 +147,7 @@
     const errors = [];
     if (!isObject(rule)) return ["The rule must be an object."];
     if (!LABEL_PATTERN.test(rule.label || "")) errors.push('Give the rule a name (no < > & quotes or backslashes).');
-    if (!TARGETS.some((t) => t.id === rule.target)) errors.push("Pick which field the rule applies to.");
+    if (!isTarget(rule.target)) errors.push("Pick which field the rule applies to.");
     if (!Array.isArray(rule.steps) || !rule.steps.length) errors.push("Add at least one step.");
     else if (rule.steps.length > MAX_STEPS) errors.push(`A rule can have at most ${MAX_STEPS} steps.`);
     else {
@@ -219,5 +259,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.outputRules = { STEPS, TARGETS, runSteps, refsFor, validateRule, load, getCached, saveRule, removeRule, apply, describeSteps, getTeam, isFromTeam, overridesTeam, resetToTeam, exportable, importRules };
+  globalThis.SXRTS.outputRules = { STEPS, TARGETS, targets, targetFor, isTarget, runSteps, refsFor, validateRule, load, getCached, saveRule, removeRule, apply, describeSteps, getTeam, isFromTeam, overridesTeam, resetToTeam, exportable, importRules };
 })();

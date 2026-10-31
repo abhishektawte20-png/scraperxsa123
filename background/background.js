@@ -38,6 +38,7 @@ const ASSISTANT_FILES = [
   "core/workflows/businessEntityNameVariations.js",
   "core/workflows/businessEntityGeneral.js",
   "core/workflows/companySic.js",
+  "core/workflows/companySite.js",
   "core/workflows/customField.js",
   "core/workflows/treePicker.js",
   "content/ui.js",

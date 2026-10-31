@@ -143,3 +143,13 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 - **NAICS one-click mapping.** In "Map NAICS codes", the new **Detect everything** button finds the Add NAICS button (if it is not picked), opens the dialog by itself, finds a + button, a code's radio button, the dialog's Save and the section's own Save Changes (never the look-alike GECS one), closes the dialog and fills Steps A to E. Nothing is chosen or saved while detecting. Picking each part by hand still works.
 - Industry tagging was not changed in this version.
+
+## 0.23.0
+
+- **Site, built in (no mapping needed).** The report's address fields (address, city, state, country, postcode, phone, fax, site email), or a `company.sites` record, are published as ONE site: the Site section is opened (and the Company tab if needed), **Add New Site** is pressed once, the whole form is filled, **SAVE** is pressed once, and the new site is read back from the section.
+  - Site type is always **Primary HQ**, status always **Current**, and the site name is the **city** (the report's own values for these are ignored).
+  - A site that is already listed (same address line; same city when the report has no address) is not added again: it shows as **Already in RTS**. Tick **Add the site even if one already exists** (shown under Publish when the report has a site) to add it anyway.
+  - If a value is not one of RTS's choices (for example a country), nothing is saved and the form is cancelled, so no half-filled form is left open.
+  - Updating an existing site is not included yet (it needs RTS's edit form).
+  - The 8 separate site mappings in earlier team defaults are no longer needed (they would have saved one site per field); they are removed from the shipped defaults, and a built-in Site always wins over a taught one.
+- **Output rules: "Applies to" is now built from the report's fields.** Employee count, address, city, state, country, postcode, phone, industry code, NAICS, verticals and every other field of the report (and any field you teach) can carry a rule, and a new field appears by itself. Existing rules keep working.

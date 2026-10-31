@@ -392,9 +392,16 @@
     const publishButton = element("button", { className: "btn primary-cta", text: "Publish and save", type: "button", tip: "Fills the ticked rows in the open RTS profile, clicks Save, then reads each value back to confirm it saved. The identity lock checks this is the right profile first." });
     const captureHtmlButton = element("button", { className: "btn secondary", text: "Capture field HTML", type: "button", tip: "Shows the real HTML of the form fields on this page so you can check they were populated." });
     const clearCacheButton = element("button", { className: "btn danger", text: "Clear cache for this profile", type: "button", tip: "Forgets the saved plan and the last pasted report for this profile." });
+    // Company > Site: a site that is already listed is not added again unless this is ticked.
+    const siteAnywayBox = element("input", { type: "checkbox" });
+    const siteAnywayRow = element("label", { className: "hidden" }, [siteAnywayBox, document.createTextNode(" Add the site even if one already exists")]);
+    siteAnywayRow.style.margin = "6px 0";
+    siteAnywayRow.style.fontSize = "12px";
+    siteAnywayRow.title = "Off: a site whose address (or city) is already listed is reported as Already in RTS and nothing is added. On: it is added anyway.";
     const undoButton = element("button", { className: "btn secondary", text: "Undo", type: "button", tip: "Takes back what a publish saved to RTS: unticks the industry choice, restores a replaced website or email structure, and lists exactly what to delete by hand for added rows." });
     undoButton.addEventListener("click", () => undoUi?.open());
     previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, undoButton, captureHtmlButton, clearCacheButton]));
+    previewCard.appendChild(siteAnywayRow);
     const publishStatus = element("div", { className: "status" });
     previewCard.appendChild(publishStatus);
     body.appendChild(previewCard);
@@ -739,6 +746,7 @@
 
     function buildPlan() {
       lastActions = globalThis.SXRTS.executionPlan.buildExecutionPlan(lastValidated);
+      siteAnywayRow.classList.toggle("hidden", !lastActions.some((a) => a.siteGroup || a.jsonPath === "company.sites"));
       rowsByActionId.clear();
       actionList.replaceChildren();
       const ready = lastActions.filter((a) => a.executionStatus === "pending");
@@ -1135,6 +1143,47 @@
           failed++; setRowStatus(entry.action.actionId, "failed", error.message);
           recordResult(entry.action.jsonPath, { status: "error", error: error.message });
         }
+      }
+
+      // The site: every address field of the report goes into ONE form and ONE save (Company > Site).
+      const siteExtras = selected.filter((entry) => entry.action.siteGroup);
+      const siteJson = selected.filter((entry) => entry.action.jsonPath === "company.sites" && !entry.action.customKey);
+      const addAnyway = Boolean(siteAnywayBox.checked);
+      async function publishSite(entries, record) {
+        const statusOf = (result) => (result.status === "failed" ? "failed" : result.status === "skipped" ? "skipped" : "savedValueVerified");
+        try {
+          const result = await globalThis.SXRTS.workflows.companySite.applySite(record, { addAnyway });
+          const message = result.reason || result.detail || "";
+          const kind = statusOf(result);
+          for (const entry of entries) {
+            recordResult(entry.action.jsonPath, kind === "failed" ? { status: "error", error: message } : result);
+            setRowStatus(entry.action.actionId, kind, kind === "savedValueVerified" ? (result.detail || "") : message);
+            if (kind === "savedValueVerified") applied++; else if (kind === "skipped") skipped++; else failed++;
+          }
+          keepForUndo({ action: { jsonPath: "company.sites" } }, result.name || record.city, result);
+        } catch (error) {
+          for (const entry of entries) {
+            failed++; setRowStatus(entry.action.actionId, "failed", error.message);
+            recordResult(entry.action.jsonPath, { status: "error", error: error.message });
+          }
+        }
+      }
+      if (siteExtras.length) {
+        const record = {};
+        const entries = [];
+        for (const entry of siteExtras) {
+          const value = validatedValueFor(entry);
+          if (value === undefined) continue;
+          record[globalThis.SXRTS.executionPlan.SITE_EXTRAS[entry.action.jsonPath]] = textOf(value);
+          entries.push(entry);
+        }
+        if (entries.length) await publishSite(entries, record);
+      }
+      for (const entry of siteJson) {
+        const value = validatedValueFor(entry);
+        if (value === undefined) continue;
+        const text = (key) => (typeof value?.[key] === "string" ? value[key] : "");
+        await publishSite([entry], { siteName: text("siteName"), address1: text("address1"), address2: text("address2"), city: text("city"), country: text("country"), state: text("state"), zip: text("zip"), phone: text("phone"), fax: text("fax"), email: text("email") });
       }
 
       const customEntries = selected.filter((entry) => entry.action.customKey);
