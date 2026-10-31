@@ -21,6 +21,8 @@ const ASSISTANT_FILES = [
   "core/outputRules.js",
   "core/teamShare.js",
   "core/history.js",
+  "core/fieldStats.js",
+  "core/undoLedger.js",
   "core/feedback.js",
   "core/feedbackConfig.js",
   "core/outputFields.js",
@@ -42,13 +44,15 @@ const ASSISTANT_FILES = [
   "content/teach.js",
   "content/rules.js",
   "content/history.js",
+  "content/health.js",
+  "content/undo.js",
   "content/feedback.js",
   "content/game.js",
   "content/panel.js",
   "content/bootstrap.js"
 ];
 
-importScripts("../core/history.js", "../core/feedback.js");
+importScripts("../core/history.js", "../core/feedback.js", "../core/resultsSummary.js", "../core/outputFields.js", "../core/fieldStats.js");
 
 /*
  * Feedback and history housekeeping.
@@ -58,15 +62,58 @@ importScripts("../core/history.js", "../core/feedback.js");
  *   when the extension is installed or updated, and every few hours.
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "sxrts-digest-now" && sender.id === chrome.runtime.id) {
+    // Sends the digest of the last 7 days right now (the "Send digest now" button).
+    (async () => {
+      const url = await globalThis.SXRTS.feedback.getUrl();
+      if (!url) return { ok: false, error: "No team channel is set. Add the webhook address in the Feedback window first." };
+      const { text, summary } = await globalThis.SXRTS.fieldStats.digest();
+      let name = "";
+      try { name = (await chrome.storage.local.get("sxrts_feedback_name"))?.sxrts_feedback_name || ""; } catch { /* optional */ }
+      return globalThis.SXRTS.feedback.send(url, {
+        title: "ScraperX digest (sent by hand)",
+        facts: [["From", name || "(no name given)"], ["Tool version", chrome.runtime.getManifest().version], ["Fields attempted", String(summary.total.tried)], ["Failed", String(summary.total.failed)], ["Success rate", globalThis.SXRTS.fieldStats.pct(summary.total.rate)]],
+        note: "Digest of the last 7 days, sent by hand.", report: text, captures: "", output: ""
+      });
+    })().then(sendResponse, (error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
+  }
   if (message?.type !== "sxrts-send-feedback" || sender.id !== chrome.runtime.id) return false;
   globalThis.SXRTS.feedback.send(message.url, message.message).then(sendResponse, (error) => sendResponse({ ok: false, error: String(error?.message || error) }));
   return true;
 });
 
 const purgeHistory = () => globalThis.SXRTS.history.purge().catch(() => {});
-chrome.runtime.onInstalled.addListener(() => { chrome.alarms.create("sxrts-history-purge", { periodInMinutes: 360 }); purgeHistory(); });
-chrome.runtime.onStartup.addListener(purgeHistory);
-chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === "sxrts-history-purge") purgeHistory(); });
+
+/*
+ * Weekly digest. Once a week the field-health numbers and the failure log of this browser are posted to the
+ * team channel (the same webhook as "Send feedback"). Without a channel nothing is sent and nothing is lost:
+ * the digest can be opened and copied from "Field health" at any time.
+ */
+async function maybeSendDigest(now = Date.now()) {
+  const { fieldStats, feedback } = globalThis.SXRTS;
+  const state = await fieldStats.getState();
+  if (!state.lastSentAt) { await fieldStats.setState({ ...state, lastSentAt: now }); return { sent: false, reason: "started counting" }; }
+  if (now - state.lastSentAt < 7 * fieldStats.DAY) return { sent: false, reason: "not due" };
+  const url = await feedback.getUrl();
+  if (!url) return { sent: false, reason: "no channel" };
+  const { text, summary } = await fieldStats.digestText(await fieldStats.readAll(), { since: state.lastSentAt, now });
+  if (!summary.total.tried && !summary.total.unmapped) { await fieldStats.setState({ ...state, lastSentAt: now }); return { sent: false, reason: "no runs" }; }
+  let name = "";
+  try { name = (await chrome.storage.local.get("sxrts_feedback_name"))?.sxrts_feedback_name || ""; } catch { /* optional */ }
+  const message = {
+    title: "ScraperX weekly digest",
+    facts: [["From", name || "(no name given)"], ["Tool version", chrome.runtime.getManifest().version], ["Fields attempted", String(summary.total.tried)], ["Failed", String(summary.total.failed)], ["Success rate", fieldStats.pct(summary.total.rate)]],
+    note: "Automatic weekly digest.", report: text, captures: "", output: ""
+  };
+  const result = await feedback.send(url, message);
+  if (result.ok) await fieldStats.setState({ ...state, lastSentAt: now });
+  return { sent: result.ok, reason: result.error || "" };
+}
+const housekeeping = () => { purgeHistory(); maybeSendDigest().catch(() => {}); };
+chrome.runtime.onInstalled.addListener(() => { chrome.alarms.create("sxrts-history-purge", { periodInMinutes: 360 }); housekeeping(); });
+chrome.runtime.onStartup.addListener(housekeeping);
+chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === "sxrts-history-purge") housekeeping(); });
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;

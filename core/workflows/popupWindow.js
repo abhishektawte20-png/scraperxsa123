@@ -72,9 +72,12 @@
     if (!adapters().textField.verifyText(control, value)) throw new Error("The popup did not keep the proposed value.");
   }
 
-  function report(stage) {
+  // Tells the background worker how far the job got. It is awaited before Save is clicked: a page that closes its
+  // own window the moment Save is pressed would otherwise take the note with it, and a successful save would be
+  // reported as "the window closed before it reported back". Never waits more than half a second.
+  async function report(stage) {
     try {
-      chrome.runtime.sendMessage({ type: "sx-window-stage", stage });
+      await Promise.race([chrome.runtime.sendMessage({ type: "sx-window-stage", stage }), new Promise((resolve) => setTimeout(resolve, 500))]);
     } catch {
       // Reporting is best effort; the result below does not depend on it.
     }
@@ -347,18 +350,20 @@
     if (hits.length > 1) throw new Error(`More than one choice in the tree is called "${choice.name}", so the right one cannot be told apart. Tick it by hand.`);
     const box = hits[0];
 
+    // Undo: the same job, but the choice is unticked instead of ticked.
+    const wantTick = !job.untick;
     if (job.verifyOnly) {
       const checked = isTicked(box, job.tree.leaf);
       window.setTimeout(() => window.close(), 150);
       return { status: "verified", checked };
     }
-    if (isTicked(box, job.tree.leaf)) {
+    if (isTicked(box, job.tree.leaf) === wantTick) {
       window.setTimeout(() => window.close(), 150);
-      return { status: "skipped", reason: `"${choice.name}" is already ticked in RTS.` };
+      return { status: "skipped", reason: `"${choice.name}" is already ${wantTick ? "ticked" : "not ticked"} in RTS.` };
     }
 
     box.click();
-    if (!(await waitFor(() => box.isConnected && isTicked(box, job.tree.leaf), TIMEOUTS.button))) throw new Error(`"${choice.name}" did not stay ticked when it was clicked.`);
+    if (!(await waitFor(() => box.isConnected && isTicked(box, job.tree.leaf) === wantTick, TIMEOUTS.button))) throw new Error(`"${choice.name}" did not stay ${wantTick ? "ticked" : "unticked"} when it was clicked.`);
 
     for (const button of job.preSave || []) {
       await waitFor(() => findButton(button), TIMEOUTS.button);
@@ -371,13 +376,13 @@
     if (!save) throw new Error("The Save button was not found in the window.");
     if (!(await waitFor(() => !save.disabled, TIMEOUTS.button))) throw new Error("The window's Save button stayed disabled after the box was ticked. RTS may be asking for something else (read the message in the window).");
 
-    report("saveClicked");
+    await report("saveClicked");
     save.click();
     const settled = await waitFor(() => save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
     if (!settled) throw new Error("Save did not complete in the window: the Save button stayed enabled.");
 
     // Still here? Then the tick can be read straight away; if the window closed itself, the page reopens it to check.
-    const retained = box.isConnected ? isTicked(box, job.tree.leaf) : null;
+    const retained = box.isConnected ? isTicked(box, job.tree.leaf) === wantTick : null;
     window.setTimeout(() => window.close(), 250);
     return { status: "saved", fieldRetained: retained };
   }
@@ -411,7 +416,7 @@
       throw new Error("The popup's Save button stayed disabled after the value was entered. RTS may be asking for something else on that form (read the message in the window).");
     }
 
-    report("saveClicked");
+    await report("saveClicked");
     save.click();
     const settled = await waitFor(() => save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
     if (!settled) throw new Error("Save did not complete in the popup window: the Save button stayed enabled.");

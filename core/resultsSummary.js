@@ -159,5 +159,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.resultsSummary = { buildSummary, formatResult, getSolution, isAlready };
+  globalThis.SXRTS.resultsSummary = { buildSummary, formatResult, getSolution, isAlready, friendly };
 })();

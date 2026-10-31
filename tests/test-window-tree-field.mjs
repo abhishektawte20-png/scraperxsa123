@@ -102,6 +102,21 @@ test("a window that keeps going away is an error after 3 tries, never a success"
   assert.equal(state.jobs.length, 3);
 });
 
+test("undo: the job asks for an untick, and success needs the read-back to show the box NOT ticked", async () => {
+  const state = setup((job) => (job.verifyOnly ? result({ status: "verified", checked: false }) : result({ status: "windowClosedAfterSave" })));
+  assert.equal((await run({ undo: true })).status, "savedValueVerified");
+  assert.equal(state.jobs[0].untick, true);
+  assert.equal(state.jobs[1].verifyOnly, true);
+  setup((job) => (job.verifyOnly ? result({ status: "verified", checked: true }) : result({ status: "windowClosedAfterSave" })));
+  await assert.rejects(run({ undo: true }), /still ticked/);
+});
+
+test("a normal publish never sends an untick", async () => {
+  const state = setup((job) => result({ status: "saved", fieldRetained: true }));
+  await run();
+  assert.equal(state.jobs[0].untick, undefined);
+});
+
 test("if the reopened window shows the choice unticked it is an error, never a success", async () => {
   setup((job) => (job.verifyOnly ? result({ status: "verified", checked: false }) : result({ status: "saved", fieldRetained: null })));
   await assert.rejects(run(), /the choice is not ticked/);

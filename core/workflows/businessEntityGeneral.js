@@ -50,7 +50,7 @@
     if (!globalThis.SXRTS.adapters.textField.verifyText(input, record.value)) {
       throw new Error("Website Address did not retain the proposed value.");
     }
-    return { status: "willSave", value: record.value };
+    return { status: "willSave", value: record.value, before: current };
   }
 
   async function applyEmailDefaultStructureValue(envelope) {
@@ -72,7 +72,7 @@
     }
 
     await globalThis.SXRTS.adapters.nativeSelect.selectNativeOption(select, match.label);
-    return { status: "willSave", value: match.label };
+    return { status: "willSave", value: match.label, before: current };
   }
 
   async function applyResearchNotesValue(notes) {

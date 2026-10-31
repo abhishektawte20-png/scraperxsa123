@@ -218,3 +218,41 @@ test("a tree with no + buttons picked still works when the choice is already vis
   setup();
   await assert.rejects(run({ ...job("6.5.1 — Application Software"), tree: { leaf: { selectors: ['input[type="checkbox"]'] } } }), /was not found in the tree/);
 });
+
+test("the 'Save clicked' note is acknowledged by the worker BEFORE Save is pressed (a window that closes at once cannot lose it)", async () => {
+  const { state } = setup();
+  const order = [];
+  global.chrome = { runtime: { sendMessage: (m) => new Promise((resolve) => setTimeout(() => { order.push("note acknowledged"); state.stages.push(m.stage); resolve(); }, 60)) } };
+  document.getElementById("save").addEventListener("click", () => order.push("save pressed"));
+  const result = await run(job());
+  assert.equal(result.status, "saved");
+  assert.deepEqual(order, ["note acknowledged", "save pressed"]);
+});
+
+test("a worker that never answers does not hold Save back for more than half a second", async () => {
+  setup();
+  global.chrome = { runtime: { sendMessage: () => new Promise(() => {}) } };
+  const started = Date.now();
+  const result = await run(job());
+  assert.equal(result.status, "saved");
+  assert.ok(Date.now() - started < 2500);
+});
+
+test("undo: a ticked choice is unticked and saved; one that is not ticked is left alone", async () => {
+  const { doc, state } = setup();
+  const result = await run(job("6.4.1 — IT Consulting and Outsourcing", { untick: true }));
+  assert.deepEqual(result, { status: "saved", fieldRetained: true });
+  assert.equal(state.saves, 1);
+  assert.deepEqual(ticked(doc), []);
+  const again = setup();
+  const skipped = await run(job("6.5.1 — Application Software", { untick: true }));
+  assert.equal(skipped.status, "skipped");
+  assert.match(skipped.reason, /already not ticked/);
+  assert.equal(again.state.saves, 0);
+});
+
+test("undo: read-back of an untick reports the box as not ticked", async () => {
+  setup();
+  const result = await run(job("6.4.1 — IT Consulting and Outsourcing", { verifyOnly: true, untick: true }));
+  assert.deepEqual(result, { status: "verified", checked: true }, "still ticked (nothing was undone yet)");
+});

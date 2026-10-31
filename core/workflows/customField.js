@@ -176,7 +176,7 @@
       if (normalize(readField(field, after)) !== normalize(value)) {
         throw new Error(`Save did not complete for ${def.label}: the saved value no longer matches. ${mismatchDetail(value, readField(field, after))}`);
       }
-      return { status: "savedValueVerified", name: def.key };
+      return { status: "savedValueVerified", name: def.key, before: current };
     } finally {
       if (weOpened) await closePopup(def);
     }
@@ -397,6 +397,7 @@
     const job = tree ? {
       tree: { expander: tree.expander || null, leaf: tree.leaf },
       value: String(record.value),
+      ...(record.undo === true ? { untick: true } : {}),
       preSave: def.window.preSave || [],
       saveButton: def.saveButton
     } : {
@@ -434,8 +435,9 @@
       const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
       if (!again || again.disabled) return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };
       const check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true });
-      if (check?.status === "verified" && check.checked) return { status: "savedValueVerified", name: def.key };
-      throw new Error(`${name}: Save was clicked, but when the window was opened again the choice is not ticked. Please check it in RTS.`);
+      const wanted = job.untick !== true;
+      if (check?.status === "verified" && check.checked === wanted) return { status: "savedValueVerified", name: def.key };
+      throw new Error(`${name}: Save was clicked, but when the window was opened again the choice is ${wanted ? "not ticked" : "still ticked"}. Please check it in RTS.`);
     }
 
     if (!def.rowBy) {

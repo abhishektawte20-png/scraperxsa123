@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false } = {}) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -91,7 +91,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code, auto, reuse);
+    return await drive(ctx, base, code, auto, reuse, undo);
   } finally {
     await ctx.close();
     server.close();
@@ -99,7 +99,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code, auto, reuse) {
+async function drive(ctx, base, code, auto, reuse, undo = false) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -233,7 +233,36 @@ async function drive(ctx, base, code, auto, reuse) {
     await page.waitForTimeout(500);
   }
   await page.waitForTimeout(1000);
+  let undone = null;
+  if (undo) {
+    const afterPublish = await inPanel(() => [...window.industries]);
+    const shadow = () => document.getElementById("sx-test-root").shadowRoot;
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll("button")].find((b) => b.textContent === "Undo").click());
+    await page.waitForTimeout(500);
+    const listed = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".hx-modal.open button")].find((b) => /^Undo \d+ change/.test(b.textContent)).click());
+    for (let i = 0; i < 60; i++) {
+      if (await inPanel(() => /undone/.test(document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "") || /could not undo/.test(document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || ""))) break;
+      await page.waitForTimeout(500);
+    }
+    const undoText = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
+    await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open .hx-x").click());
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll("button")].find((b) => b.textContent === "Field health").click());
+    await page.waitForTimeout(500);
+    const health = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".hx-modal.open button")].find((b) => b.textContent === "Send digest now").click());
+    await page.waitForTimeout(800);
+    const digestNow = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
+    undone = {
+      health, digestNow,
+      afterPublish, listed,
+      after: await inPanel(() => [...window.industries]),
+      text: undoText,
+      stats: await worker.evaluate(async () => (await chrome.storage.local.get("sxrts_field_stats")).sxrts_field_stats || [])
+    };
+  }
   return {
+    undone,
     summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Saved \d+ · Already in RTS \d+ · Needs attention \d+/)?.[0]),
     industries: await inPanel(() => window.industries),
     saves: await inPanel(() => window.saves),
@@ -304,3 +333,18 @@ test("a window that is reloaded under the script (Frame with ID 0 was removed) i
   assert.equal(result.saves, 1);
   assert.match(result.summary, /Needs attention 0/);
 });
+
+for (const mode of ["close", "stay"]) {
+  test(`Undo unticks the industry choice that was published and reads it back (window ${mode === "close" ? "closes itself" : "stays open"} on Save)`, { timeout: 200000 }, async () => {
+    const result = await scenario(mode, "2.1.2 — Clothing", { auto: true, undo: true });
+    assert.deepEqual(result.undone.afterPublish, ["Apparel and Accessories > Clothing"]);
+    assert.match(result.undone.listed, /Industry code/);
+    assert.match(result.undone.listed, /can undo/);
+    assert.deepEqual(result.undone.after, [], "the choice is no longer ticked in RTS");
+    assert.match(result.undone.text, /undone/);
+    assert.match(result.undone.health, /Field health/);
+    assert.match(result.undone.health, /Industry code[\s\S]*100%/, "the saved publish shows as a 100% field");
+    assert.match(result.undone.digestNow, /Not sent: No team channel is set/, "without a channel nothing is sent and the reason is shown");
+    assert.ok(result.undone.stats.some((e) => e.path === "extras.industryCode" && e.kind === "saved"), "the publish was counted in the field health numbers");
+  });
+}

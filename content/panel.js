@@ -342,6 +342,8 @@
 
     // Run history (kept 15 days, for quality checks) and one-click feedback.
     const historyUi = globalThis.SXRTS.historyUi?.mount(shadow);
+    const healthUi = globalThis.SXRTS.healthUi?.mount(shadow);
+    const undoUi = globalThis.SXRTS.undoUi?.mount(shadow);
     const feedbackUi = globalThis.SXRTS.feedbackUi?.mount(shadow, {
       getContext: () => {
         refreshReport();
@@ -350,6 +352,8 @@
     });
     const historyButton = element("button", { className: "btn secondary", text: "History", type: "button", tip: "Every report you validate is kept here for 15 days, then erased automatically. Open it to see what the agent returned on a given day, or to compare two runs of the same company." });
     historyButton.addEventListener("click", () => historyUi?.open());
+    const healthButton = element("button", { className: "btn secondary", text: "Field health", type: "button", tip: "How often each field is saved or fails, the most common errors, and the weekly digest that goes to the team channel." });
+    healthButton.addEventListener("click", () => healthUi?.open());
     const feedbackButton = element("button", { className: "btn secondary", text: "Feedback", type: "button", tip: "Sends the issue report to the person who maintains this tool, in one click." });
     feedbackButton.addEventListener("click", () => feedbackUi?.open());
     const gameUi = globalThis.SXRTS.gameUi?.mount(shadow);
@@ -358,7 +362,7 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, feedbackButton, gameButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, healthButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -388,7 +392,9 @@
     const publishButton = element("button", { className: "btn primary-cta", text: "Publish and save", type: "button", tip: "Fills the ticked rows in the open RTS profile, clicks Save, then reads each value back to confirm it saved. The identity lock checks this is the right profile first." });
     const captureHtmlButton = element("button", { className: "btn secondary", text: "Capture field HTML", type: "button", tip: "Shows the real HTML of the form fields on this page so you can check they were populated." });
     const clearCacheButton = element("button", { className: "btn danger", text: "Clear cache for this profile", type: "button", tip: "Forgets the saved plan and the last pasted report for this profile." });
-    previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, captureHtmlButton, clearCacheButton]));
+    const undoButton = element("button", { className: "btn secondary", text: "Undo", type: "button", tip: "Takes back what a publish saved to RTS: unticks the industry choice, restores a replaced website or email structure, and lists exactly what to delete by hand for added rows." });
+    undoButton.addEventListener("click", () => undoUi?.open());
+    previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, undoButton, captureHtmlButton, clearCacheButton]));
     const publishStatus = element("div", { className: "status" });
     previewCard.appendChild(publishStatus);
     body.appendChild(previewCard);
@@ -1041,6 +1047,18 @@
         allResults[jsonPath].push(result);
       }
 
+      // Every value that really reached RTS goes in the undo ledger (what, and what was there before).
+      const ledgerItems = [];
+      const textOf = (value) => (typeof value === "string" ? value : value?.value ?? value?.name ?? value?.handle ?? JSON.stringify(value));
+      function keepForUndo(entry, value, result, extra = {}) {
+        if (result?.status !== "savedValueVerified" && result?.status !== "savedStateVerified") return;
+        const path = entry.action.jsonPath;
+        ledgerItems.push({
+          path, label: globalThis.SXRTS.resultsSummary?.friendly?.(path) || path, value: textOf(value),
+          before: result.before, customKey: entry.action.customKey, ...extra
+        });
+      }
+
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {
         const value = validatedValueFor(entry);
@@ -1048,6 +1066,7 @@
         try {
           const result = await globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation(value);
           recordResult(entry.action.jsonPath, result);
+          keepForUndo(entry, value, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
@@ -1088,6 +1107,7 @@
               const reason = fieldResult?.reason ?? groupResult.reason ?? "";
               const result = { status, reason };
               recordResult(entry.action.jsonPath, result);
+              keepForUndo(entry, valueFor(entry.action), { status, before: fieldResult?.before });
               setRowStatus(entry.action.actionId, status, reason);
               if (status === "savedValueVerified") applied++; else if (status === "skipped") skipped++; else failed++;
             }
@@ -1108,6 +1128,7 @@
         try {
           const result = await globalThis.SXRTS.workflows.companySic.applySicCode(value);
           recordResult(entry.action.jsonPath, result);
+          keepForUndo(entry, value, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
@@ -1129,6 +1150,7 @@
         try {
           const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value));
           recordResult(entry.action.jsonPath, result);
+          keepForUndo(entry, value, result, { treeWindow: Boolean(def.window?.tree), single: def.kind === "single" && !def.window && !def.tree });
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
           else if (result.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", result.detail); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
@@ -1166,6 +1188,15 @@
           };
         })
       }).catch(() => {});
+      // Field health numbers (every field of the report, including the ones nothing is mapped for yet).
+      const chosen = new Set(selected.map((entry) => entry.action.actionId));
+      const statRows = selected.map((entry) => ({
+        field: entry.action.jsonPath, status: entry.action.executionStatus, message: entry.action.resultMessage || "", value: textOf(entry.getEditedValue())
+      }));
+      for (const a of lastActions) if (!chosen.has(a.actionId) && a.executionStatus === "skipped" && a.skipReason) statRows.push({ field: a.jsonPath, status: "skipped", message: a.skipReason, value: "" });
+      const meta = { domain: domainInput.value, version: globalThis.SXRTS.ui?.version?.() || "" };
+      globalThis.SXRTS.fieldStats?.record(statRows, meta).catch(() => {});
+      globalThis.SXRTS.undoLedger?.record({ domain: domainInput.value, company: companyNameInput.value, rtsIdentity, items: ledgerItems }).then(() => undoUi?.refresh?.()).catch(() => {});
       persistToCache();
       refreshReport();
     });
