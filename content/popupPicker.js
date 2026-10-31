@@ -310,7 +310,10 @@
         const share = el("button", { className: "btn secondary", text: "Copy this window's structure (for the developer)", type: "button" });
         share.addEventListener("click", async () => {
           const capture = globalThis.SXRTS.pageCapture;
-          const text = capture ? capture.sanitize(document.body, { maxChars: 30000 }) : "";
+          // Start from the area around the tree's + buttons (not the whole page), so it is the tree that is copied.
+          const plus = expanderCandidates(host)[0];
+          const root = plus ? capture.areaAround(plus, 5000, true) : document.body;
+          const text = capture ? capture.sanitize(root, { maxChars: 40000 }) : "";
           try { await navigator.clipboard.writeText(`WINDOW STRUCTURE (${location.pathname}; typed values and free text left out)\n${text}`); state.note = "Copied. Paste it to the developer if detection did not work."; }
           catch { state.error = "Copy was blocked by the browser."; }
           render();

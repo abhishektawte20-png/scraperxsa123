@@ -59,28 +59,59 @@
     return false;
   }
 
+  // Hidden parts of a page (a pop-up's lists, a closed branch) are never copied: they hold data the
+  // researcher cannot see, such as lists of staff. Rows that repeat exactly are kept twice and counted.
+  function isHidden(el) {
+    if (el.hidden) return true;
+    const view = el.ownerDocument.defaultView;
+    const style = view?.getComputedStyle?.(el);
+    return Boolean(style && (style.display === "none" || style.visibility === "hidden"));
+  }
+
+  function collapseRepeats(copy, doc) {
+    const kids = Array.from(copy.childNodes);
+    let i = 0;
+    while (i < kids.length) {
+      if (kids[i].nodeType !== 1) { i++; continue; }
+      const key = kids[i].outerHTML;
+      let j = i + 1;
+      while (j < kids.length && kids[j].nodeType === 1 && kids[j].outerHTML === key) j++;
+      if (j - i > 2) {
+        for (let k = i + 2; k < j; k++) kids[k].remove();
+        kids[i + 1].after(doc.createComment(` ${j - i - 2} more identical `));
+      }
+      i = j;
+    }
+  }
+
+  const MAX_OPTIONS = 12;
+
   function sanitizeNode(src, doc) {
     if (src.nodeType === 3) {
       const text = squash(src.nodeValue);
       if (!text) return null;
-      return doc.createTextNode(keepText(text, src.parentElement) ? cut(text, MAX_TEXT) : "…");
+      return doc.createTextNode(keepText(text, src.parentElement) ? cut(text, MAX_TEXT) : "\u2026");
     }
     if (src.nodeType !== 1 || SKIP.has(src.tagName)) return null;
+    if (isHidden(src)) return null;
     const tag = src.tagName.toLowerCase();
     const copy = doc.createElement(tag === "svg" || src.namespaceURI?.includes("svg") ? "svg" : tag);
     if (copy.tagName === "SVG") return copy;
     cleanAttributes(src, copy);
     if (tag === "input" || tag === "textarea" || tag === "img") return copy;
-    for (const child of Array.from(src.childNodes)) {
+    const kids = tag === "select" ? Array.from(src.childNodes).slice(0, MAX_OPTIONS) : Array.from(src.childNodes);
+    for (const child of kids) {
       const kept = sanitizeNode(child, doc);
       if (kept) copy.appendChild(kept);
     }
+    if (tag === "select" && src.childNodes.length > MAX_OPTIONS) copy.appendChild(doc.createComment(` ${src.childNodes.length - MAX_OPTIONS} more options `));
+    collapseRepeats(copy, doc);
     return copy;
   }
 
   // The structure of an element as readable text, one tag per line.
   function sanitize(el, { maxChars = 8000 } = {}) {
-    const copy = sanitizeNode(el, el.ownerDocument);
+    const copy = isHidden(el) ? null : sanitizeNode(el, el.ownerDocument);
     if (!copy) return "";
     const html = copy.outerHTML.replace(/></g, ">\n<");
     return html.length <= maxChars ? html : `${html.slice(0, maxChars)}\n<!-- cut here: ${html.length} characters in total -->`;
@@ -144,7 +175,7 @@
 
   // Climbs from the label to the area around it: up to the first level that holds a
   // control, then a little further, never past a size that would swamp the report.
-  function areaAround(el, maxElements = 400) {
+  function areaAround(el, maxElements = 400, full = false) {
     let node = el;
     let sawControl = false;
     let extra = 0;
@@ -152,6 +183,7 @@
       const parent = node.parentElement;
       if (parent.querySelectorAll("*").length > maxElements) break;
       node = parent;
+      if (full) continue; // the largest area that still fits: a whole tree, not just its first controls
       if (!sawControl) { if (node.querySelector("input, select, textarea, button, a[href], [onclick]")) sawControl = true; }
       else if (++extra >= 2) break;
     }

@@ -21,7 +21,7 @@ const PAGE = `
   <div id="header"><span>PBID: 999999-99</span></div>
   <div class="section" id="kw-section">
     <div class="row"><b>Keywords:</b> <a href="/help?token=SECRET#x" class="help">?</a></div>
-    <div class="tagbox" data-id="123456" data-clipboard-text="https://rts.pitchbook.com/ext/1166374-99?secret-link=1" data-tooltip="Copy link to this section" id="box9988776" style="color:red; display:none">
+    <div class="tagbox" data-id="123456" data-clipboard-text="https://rts.pitchbook.com/ext/1166374-99?secret-link=1" data-tooltip="Copy link to this section" id="box9988776" style="color:red">
       <span class="tag">secret keyword one</span><span class="tag">secret keyword two</span>
       <input type="text" name="kw" id="kwInput" value="typed secret value" placeholder="Add keyword">
     </div>
@@ -58,8 +58,7 @@ test("no typed or stored values, scripts or free text leave the page", () => {
   assert.doesNotMatch(hit.html, /1166374|ext\/#|secret-link|9988776/, "no attribute carries a link or an id");
   assert.match(hit.html, /href="\/help"/, "links keep the path, not the query");
   assert.match(hit.html, /<svg>\n<\/svg>/);
-  assert.match(hit.html, /style="display:none"/);
-  assert.doesNotMatch(hit.html, /color:red/);
+  assert.doesNotMatch(hit.html, /color:red/, "styles are dropped");
   assert.match(hit.html, /<option value="A" selected="">Alpha/);
   assert.match(hit.html, /type="checkbox"[^>]*value="True"/, "a checkbox's value is a label, not typed data");
   assert.doesNotMatch(hit.html, /very long paragraph|secret keyword/, "free text and chips are replaced");
@@ -122,4 +121,33 @@ test("the issue report carries the captures after its JSON block, and the feedba
   assert.equal(without.captures, "");
   assert.doesNotMatch(JSON.stringify(fb.body("teams", without)), /Page structure/);
   assert.ok(JSON.stringify(fb.body("teams", fb.build({ note: "x".repeat(5000), report: "r".repeat(30000) + "\nPAGE CAPTURES\n" + "h".repeat(30000), raw: "o".repeat(30000), includeOutput: true, meta: {} }))).length < 26000, "stays under the channel's size limit");
+});
+
+test("hidden parts of a page are never copied, and long option lists are cut short", () => {
+  const staff = Array.from({ length: 40 }, (_, i) => `<option value="${i}">staff.member${i} (Active)</option>`).join("");
+  const doc = page(`<div id="wrap"><b>Keywords:</b><input name="k">
+    <div style="display:none"><select id="adminsList">${staff}</select></div>
+    <select name="visible">${staff}</select><span hidden>secret hidden text</span></div>`);
+  const [hit] = pc.capture(doc, [{ path: "company.keywords", label: "Keywords" }]);
+  assert.doesNotMatch(hit.html, /adminsList|secret hidden/, "hidden elements are skipped");
+  assert.equal((hit.html.match(/<option/g) || []).length, 12, "a visible list keeps only its first options");
+  assert.match(hit.html, /28 more options/);
+});
+
+test("rows that repeat exactly are kept twice and counted, so a long tree stays readable", () => {
+  const rows = Array.from({ length: 30 }, () => '<li><div class="exp"></div><input type="checkbox"> some industry</li>').join("");
+  const ticked = '<li><div class="exp"></div><input type="checkbox" checked> another industry</li>';
+  const doc = page(`<div id="t"><b>Keywords:</b><ul>${rows}${ticked}${rows}</ul></div>`);
+  const [hit] = pc.capture(doc, [{ path: "company.keywords", label: "Keywords" }], { perCapture: 20000 });
+  assert.equal((hit.html.match(/<li>/g) || []).length, 5, "two of each run, plus the one that differs");
+  assert.match(hit.html, /28 more identical/);
+  assert.match(hit.html, /checked/);
+});
+
+test("areaAround with full climbs to the largest area that fits, not just the first controls", () => {
+  const doc = page(`<div id="all"><div><div><div><section><div class="deep"><div class="exp" id="x"></div></div><ul><li><input type="checkbox"></li></ul></section></div></div></div><p>sibling</p></div>`);
+  const small = pc.areaAround(doc.getElementById("x"), 400);
+  const full = pc.areaAround(doc.getElementById("x"), 400, true);
+  assert.equal(full.id, "all");
+  assert.notEqual(small.id, "all");
 });

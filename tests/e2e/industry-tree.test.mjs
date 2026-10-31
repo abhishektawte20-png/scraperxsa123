@@ -58,6 +58,7 @@ const GROUPS = [
 ];
 const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Industries</h3>
 <style>ul{list-style:none;margin:0;padding-left:22px} img.tg{width:14px;height:14px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle}</style>
+<div style="display:none"><select id="adminsList">${Array.from({ length: 30 }, (_, i) => `<option>staff.member${i}</option>`).join("")}</select></div>
 <ul id="root">${GROUPS.map((g) => `<li><img class="tg" alt="+"> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k) => `<li><img class="tg" alt="+"> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l) => `<li><input type="checkbox" name="industry"${k.open ? " data-vis" : ""}> ${l}</li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul>
 <input id="save" type="button" value="Save" disabled>
 <script>
@@ -174,6 +175,14 @@ async function drive(ctx, base, code, auto) {
     assert.match(note, /Save button "Save"/);
     assert.match(note, /opening one revealed more choices/);
     assert.equal(await popup.evaluate(() => [...document.querySelectorAll("li > ul")].filter((u) => u.style.display === "none").length), 5, "the branch that was opened to test is closed again");
+    // The developer copy starts at the tree, skips hidden lists, and counts repeated rows.
+    await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+    await pickerClick("Copy this window's structure");
+    const shared = await popup.evaluate(() => navigator.clipboard.readText());
+    assert.match(shared, /^WINDOW STRUCTURE/);
+    assert.match(shared, /sub-section|class="tg"|img/);
+    assert.doesNotMatch(shared, /adminsList|staff\.member/, "hidden lists are not copied");
+    assert.match(shared, /checkbox/);
   } else {
     await pickerClick("Pick a + button"); await clickAt(popup, "img.tg");
     await pickerClick("Pick a checkbox"); await clickAt(popup, "input[data-vis]");
