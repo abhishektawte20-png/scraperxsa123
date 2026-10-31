@@ -66,6 +66,8 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
 <input id="saveIndustryButton" type="button" value="Save Changes" class="btn buttonSave" disabled>
 <script>
   const q = new URLSearchParams(location.search);
+  // "reload": RTS reloads the window once, just after it opened, killing the script that is working in it.
+  if (q.get("mode") === "reload" && window.opener.reloadNow && !window.opener.reloadDone) { window.opener.reloadDone = true; setTimeout(() => location.reload(), 250); }
   const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.closest("li").querySelector(":scope > span").textContent;
   for (const box of document.querySelectorAll('[id^="industryControlCode"][id$="CheckBox"]')) { if ((window.opener.industries || []).includes(where(box))) box.className = "controls_checkBox_checked"; }
   document.getElementById("root").addEventListener("click", (e) => {
@@ -218,6 +220,7 @@ async function drive(ctx, base, code, auto, reuse) {
     assert.equal(ctx.pages().filter((p) => p.url().includes("/tree.html")).length, 1);
   }
   await inPanel(() => {
+    window.reloadNow = true;
     const root = document.getElementById("sx-test-root").shadowRoot;
     for (const c of root.querySelectorAll(".action-card")) {
       const box = c.querySelector("input[type=checkbox]");
@@ -293,4 +296,11 @@ test("a window that navigates away on Save (RTS submits the form) is reopened an
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
   assert.equal(result.saves, 1);
   assert.ok(result.opens >= 2, "the window was opened again to read the tick back");
+});
+
+test("a window that is reloaded under the script (Frame with ID 0 was removed) is opened again and the choice is still selected and saved", { timeout: 150000 }, async () => {
+  const result = await scenario("reload", "2.1.2 — Clothing", { auto: true });
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  assert.equal(result.saves, 1);
+  assert.match(result.summary, /Needs attention 0/);
 });

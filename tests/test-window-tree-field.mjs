@@ -85,21 +85,21 @@ test("a window that closes itself is reopened and the tick read back before succ
   assert.equal(state.opened, 2, "the opening button was pressed again");
 });
 
-test("a read-back window that closes itself once is reopened and the tick still confirmed", async () => {
-  let reads = 0;
+test("a window that goes away before reporting is opened again and the whole job repeated", async () => {
+  let first = true;
   const state = setup((job) => {
-    if (!job.verifyOnly) return result({ status: "windowClosedAfterSave" });
-    reads++;
-    return reads === 1 ? { type: "error", error: "The window closed before it could be read." } : result({ status: "verified", checked: true });
+    if (first) { first = false; return { type: "error", error: "Frame with ID 0 was removed." }; }
+    return result({ status: "saved", fieldRetained: true });
   });
   assert.equal((await run()).status, "savedValueVerified");
-  assert.equal(state.jobs.length, 3);
-  assert.equal(state.opened, 3);
+  assert.equal(state.jobs.length, 2);
+  assert.equal(state.jobs[1].verifyOnly, undefined, "the full job is repeated, nothing is assumed saved");
 });
 
-test("a read-back window that keeps closing is a plain 'check it in RTS' error, not a raw frame error", async () => {
-  setup((job) => (job.verifyOnly ? { type: "error", error: "Frame with ID 0 was removed." } : result({ status: "windowClosedAfterSave" })));
-  await assert.rejects(run(), /could not be confirmed. Please check it in RTS/);
+test("a window that keeps going away is an error after 3 tries, never a success", async () => {
+  const state = setup(() => ({ type: "error", error: "Frame with ID 0 was removed." }));
+  await assert.rejects(run(), /Frame with ID 0/);
+  assert.equal(state.jobs.length, 3);
 });
 
 test("if the reopened window shows the choice unticked it is an error, never a success", async () => {

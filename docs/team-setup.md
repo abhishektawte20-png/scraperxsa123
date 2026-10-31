@@ -126,4 +126,4 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 ## 0.21.5
 
-- Industry tagging no longer reports "Needs attention — Frame with ID 0 was removed." when the save worked. That message meant the industry window closed while the extension was still working in it. The extension now closes the window itself after it has reported, and if the window disappears while it is being read back, it reopens it (up to 3 times) before deciding. "Needs attention" appears only if the tick cannot be confirmed.
+- Industry tagging: if RTS closes or reloads the industry window while the extension is working in it (Chrome says "Frame with ID 0 was removed"), the extension now opens the window again and repeats the job, up to 3 tries. A choice that is already ticked is only reported, so repeating is safe. Everything else about the industry window works exactly as in 0.21.4. If all tries fail, the error is shown, never a success.
