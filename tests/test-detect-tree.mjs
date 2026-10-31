@@ -73,7 +73,7 @@ test("what could not be found is said plainly", async () => {
   page(`<p>Nothing here</p>`);
   const none = await detect();
   assert.equal(none.leaf, null);
-  assert.match(none.notes.join(" "), /No ordinary checkboxes were found/);
+  assert.match(none.notes.join(" "), /No choice boxes were found/);
 
   page(`<ul><li><input type="checkbox"> Oil</li></ul><button>Save</button><button>Save and close</button>`);
   const two = await detect();

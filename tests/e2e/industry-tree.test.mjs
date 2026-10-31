@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile } = {}) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -42,10 +42,12 @@ async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamF
 const MAIN = `<!doctype html><body style="font:14px sans-serif">
 <span class="flat-button__caption-x1">PBID: PB-1</span>
 <h3>Industry Tagging</h3>
-<input id="addIndustry" type="button" value="Add Industry" class="btn">
+<input id="addIndustry" type="button" value="Add/Edit Industry" class="btn btn_secondary" onclick="openIndustries('company', profile.getSection('CMP_IND'))">
 <script>
   window.opens = 0; window.industries = []; window.saves = 0;
-  document.getElementById("addIndustry").addEventListener("click", () => { window.opens++; window.open("/tree.html?mode=${mode}", "indPopup" + window.opens, "width=700,height=500"); });
+  window.profile = { getSection: (x) => x };
+  // RTS opens this window under a fixed name, so a second press reuses a window that is still open.
+  window.openIndustries = () => { window.opens++; window.open("/tree.html?mode=${mode}", "${reuse ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
   window.markIndustry = (names) => { window.industries = names; window.saves++; };
 <\/script></body>`;
 const GROUPS = [
@@ -56,22 +58,23 @@ const GROUPS = [
   ] },
   { n: "Information Technology", open: false, kids: [{ n: "Software", leaves: ["Application Software", "Other"] }] }
 ];
+// The markup RTS really uses: drawn tick boxes (div.controls_checkBox) and + buttons (div.sub-section__icon-expand).
 const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Industries</h3>
-<style>ul{list-style:none;margin:0;padding-left:22px} img.tg{width:14px;height:14px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle}</style>
+<style>ul{list-style:none;margin:0;padding-left:22px} .sub-section__icon-expand{width:11px;height:11px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle} .controls_checkBox{width:13px;height:13px;border:1px solid #333;display:inline-block;margin:4px 5px 0 0;vertical-align:middle} .controls_checkBox_on{background:#2a2}</style>
 <div style="display:none"><select id="adminsList">${Array.from({ length: 30 }, (_, i) => `<option>staff.member${i}</option>`).join("")}</select></div>
-<ul id="root">${GROUPS.map((g) => `<li><img class="tg" alt="+"> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k) => `<li><img class="tg" alt="+"> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l) => `<li><input type="checkbox" name="industry"${k.open ? " data-vis" : ""}> ${l}</li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul>
-<input id="save" type="button" value="Save" disabled>
+<div id="12848611Content"><ul id="root">${GROUPS.map((g, gi) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${16 + gi}12848611Expander"></div> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k, ki) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${170 + gi * 10 + ki}12848611Expander"></div> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l, li) => `<li><div class="controls_checkBox" id="industryControlCode${400 + gi * 100 + ki * 10 + li}12848611CheckBox"${k.open ? " data-vis" : ""}></div> <span>${l}</span></li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul></div>
+<input id="save" type="button" value="Save Changes" class="btn" disabled>
 <script>
   const q = new URLSearchParams(location.search);
-  const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.parentElement.textContent.trim();
-  for (const box of document.querySelectorAll("input[type=checkbox]")) { if ((window.opener.industries || []).includes(where(box))) box.checked = true; }
+  const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.parentElement.querySelector(":scope > span").textContent;
+  for (const box of document.querySelectorAll(".controls_checkBox")) { if ((window.opener.industries || []).includes(where(box))) box.classList.add("controls_checkBox_on"); }
   document.getElementById("root").addEventListener("click", (e) => {
-    if (e.target.matches("input[type=checkbox]")) { document.getElementById("save").disabled = false; return; }
-    const t = e.target.closest("img.tg"); if (!t) return;
+    if (e.target.classList.contains("controls_checkBox")) { e.target.classList.toggle("controls_checkBox_on"); document.getElementById("save").disabled = false; return; }
+    const t = e.target.closest(".sub-section__icon-expand"); if (!t) return;
     const list = t.parentElement.querySelector(":scope > ul"); list.style.display = list.style.display === "none" ? "block" : "none";
   });
   document.getElementById("save").addEventListener("click", () => {
-    window.opener.markIndustry([...document.querySelectorAll("input[type=checkbox]")].filter((b) => b.checked).map(where));
+    window.opener.markIndustry([...document.querySelectorAll(".controls_checkBox_on")].map(where));
     document.getElementById("save").disabled = true;
     if (q.get("mode") === "close") window.close();
   });
@@ -85,7 +88,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code, auto);
+    return await drive(ctx, base, code, auto, reuse);
   } finally {
     await ctx.close();
     server.close();
@@ -93,7 +96,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code, auto) {
+async function drive(ctx, base, code, auto, reuse) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -171,21 +174,22 @@ async function drive(ctx, base, code, auto) {
     await pickerClick("Detect automatically");
     await popup.waitForFunction(() => [...document.querySelectorAll("div")].some((d) => /^Found:/.test(d.shadowRoot?.querySelector(".ok")?.textContent || "")), null, { timeout: 15000 });
     const note = await popup.evaluate(() => [...document.querySelectorAll("div")].map((d) => d.shadowRoot?.querySelector(".ok")?.textContent).find(Boolean));
-    assert.match(note, /checkboxes/);
-    assert.match(note, /Save button "Save"/);
+    assert.match(note, /choice boxes|checkbox/);
+    assert.match(note, /Save button "Save Changes"/);
     assert.match(note, /opening one revealed more choices/);
     assert.equal(await popup.evaluate(() => [...document.querySelectorAll("li > ul")].filter((u) => u.style.display === "none").length), 5, "the branch that was opened to test is closed again");
+    assert.equal(await popup.evaluate(() => document.querySelectorAll(".controls_checkBox_on").length), 0, "nothing was ticked while detecting");
     // The developer copy starts at the tree, skips hidden lists, and counts repeated rows.
     await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
     await pickerClick("Copy this window's structure");
     const shared = await popup.evaluate(() => navigator.clipboard.readText());
     assert.match(shared, /^WINDOW STRUCTURE/);
-    assert.match(shared, /sub-section|class="tg"|img/);
+    assert.match(shared, /sub-section__icon-expand/);
     assert.doesNotMatch(shared, /adminsList|staff\.member/, "hidden lists are not copied");
-    assert.match(shared, /checkbox/);
+    assert.match(shared, /controls_checkBox/);
   } else {
-    await pickerClick("Pick a + button"); await clickAt(popup, "img.tg");
-    await pickerClick("Pick a checkbox"); await clickAt(popup, "input[data-vis]");
+    await pickerClick("Pick a + button"); await clickAt(popup, ".sub-section__icon-expand");
+    await pickerClick("Pick a checkbox"); await clickAt(popup, ".controls_checkBox[data-vis]");
     await pickerClick("Pick the Save button"); await clickAt(popup, "#save"); // greyed out, still pickable
   }
   await pickerClick("Done");
@@ -196,6 +200,12 @@ async function drive(ctx, base, code, auto) {
   await click("Save mapping");
   await page.waitForTimeout(300);
 
+  if (reuse) {
+    // A window for this form is already open (opened by hand); publishing must reuse it, not fail.
+    await clickAt(page, "#addIndustry");
+    await page.waitForTimeout(500);
+    assert.equal(ctx.pages().filter((p) => p.url().includes("/tree.html")).length, 1);
+  }
   await inPanel(() => {
     const root = document.getElementById("sx-test-root").shadowRoot;
     for (const c of root.querySelectorAll(".action-card")) {
@@ -253,6 +263,13 @@ test("a name that is not in the tree publishes nothing", { timeout: 150000 }, as
 
 test("one click detects the checkboxes, the + buttons and Save, and the mapping publishes the right choice", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.2 — Clothing", { auto: true });
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  assert.equal(result.saves, 1);
+});
+
+test("a window for the form that is already open is reused instead of failing with 'No popup window opened'", { timeout: 150000 }, async () => {
+  const result = await scenario("stay", "2.1.2 — Clothing", { auto: true, reuse: true });
   assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
   assert.equal(result.saves, 1);

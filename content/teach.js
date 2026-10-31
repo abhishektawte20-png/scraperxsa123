@@ -898,7 +898,7 @@
         })),
         saveButton: button(pick.saveButton),
         openButton: button(draft.openButton),
-        window: { path: pick.path, preSave: pick.preSave.map(button), ...(pick.tree ? { tree: { leaf: button(pick.tree.leaf), ...(pick.tree.expander ? { expander: button(pick.tree.expander) } : {}) } } : {}) },
+        window: { path: pick.path, preSave: pick.preSave.map(button), ...(pick.tree ? { tree: { leaf: { ...button(pick.tree.leaf), ...(pick.tree.leaf.baseKey ? { baseKey: pick.tree.leaf.baseKey } : {}) }, ...(pick.tree.expander ? { expander: button(pick.tree.expander) } : {}) } } : {}) },
         ...(draft.kind === "record" ? { rowBy: draft.rowBy } : {}),
         ...(draft.bind ? { binds: { path: draft.bind.path, map: Object.fromEntries(pick.fields.map((f) => [f.key, f.out])) } } : {})
       };

@@ -75,12 +75,30 @@
     return out;
   }
 
+  // A choice box: a real checkbox, or one the page draws itself (RTS: div.controls_checkBox).
+  const CHECKBOX_LIKE = "input[type=checkbox], [role=checkbox], [class*=checkbox i], [id*=checkbox i]";
+  function isCheckboxLike(node, host) {
+    if (!node || (host && (node === host || host.contains(node)))) return false;
+    if (node.matches?.("input[type=checkbox], [role=checkbox]")) return true;
+    if (!node.matches?.(CHECKBOX_LIKE)) return false;
+    if (node.querySelector?.("input, select, textarea") || textOf(node)) return false; // a drawn box has no words of its own
+    const rect = node.getBoundingClientRect();
+    return rect.width <= 40 && rect.height <= 40;
+  }
+  const classKey = (node) => `${node.tagName}|${Array.from(node.classList).sort().join(" ")}`;
+  // The usual look of the choices is "not ticked": the ticked ones are the odd ones out.
+  function baseKeyFor(nodes) {
+    const counts = new Map();
+    for (const node of nodes) counts.set(classKey(node), (counts.get(classKey(node)) || 0) + 1);
+    return Array.from(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  }
+
   // Finds the checkboxes, the + buttons and the Save button of a window by itself, and TESTS
   // the + buttons by opening one to see whether more choices appear. Returns what it found
   // and plain-language notes about what it could not.
   async function detectTree(sb, host) {
     const found = { leaf: null, expander: null, saveButton: null, notes: [], summary: [] };
-    const allBoxes = () => Array.from(document.querySelectorAll("input[type=checkbox]")).filter((b) => !(host && host.contains(b)));
+    const allBoxes = () => Array.from(document.querySelectorAll(CHECKBOX_LIKE)).filter((b) => isCheckboxLike(b, host));
     const boxesShown = () => allBoxes().filter(shown);
     const count = () => boxesShown().length + expanderCandidates(host).length;
     const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
@@ -122,11 +140,15 @@
     }
 
     const boxes = allBoxes();
-    if (!boxes.length) { found.notes.push("No ordinary checkboxes were found in this window, even after opening branches, so the choices are drawn some other way. Press \"Copy this window's structure (for the developer)\" and send it, so this window can be supported."); return found; }
+    if (!boxes.length) { found.notes.push("No choice boxes were found in this window, even after opening branches. Press \"Copy this window's structure (for the developer)\" and send it, so this window can be supported."); return found; }
     const info = sb.inspectButton(boxes[0], { allowMultiple: true, preferStable: true });
     const covers = (selector) => { try { return sb.matchAll(selector).length >= Math.ceil(boxes.length * 0.9); } catch { return false; } };
     const good = info.selectors.find(covers);
-    found.leaf = { ...info, selectors: good ? [good, ...info.selectors.filter((x) => x !== good)] : ['input[type="checkbox"]'] };
+    const native = boxes[0].matches("input[type=checkbox]");
+    const selectors = good ? [good, ...info.selectors.filter((x) => x !== good)] : native ? ['input[type="checkbox"]'] : info.selectors;
+    let matched = [];
+    try { matched = sb.matchAll(selectors[0]); } catch { matched = boxes; }
+    found.leaf = { ...info, selectors, ...(native ? {} : { baseKey: baseKeyFor(matched.length ? matched : boxes) }) };
     found.summary.unshift(`${boxes.length} checkbox${boxes.length === 1 ? "" : "es"}`);
 
     const buttons = Array.from(document.querySelectorAll("button, input[type=button], input[type=submit], [role=button], a.btn")).filter((b) => shown(b) && !(host && host.contains(b)));
@@ -239,14 +261,21 @@
       if (target) {
         let picked = target;
         if (slot === "leaf") {
-          picked = target.matches?.("input[type=checkbox]") ? target : (target.closest("label")?.querySelector("input[type=checkbox]") || target.closest("li, div")?.querySelector(":scope > input[type=checkbox]") || target);
-          if (!(picked.matches?.("input[type=checkbox]"))) { state.error = "That is not a checkbox. Click directly on the box you tick."; return render(); }
+          picked = isCheckboxLike(target, host) ? target : (target.closest("label, li, div")?.querySelector?.(CHECKBOX_LIKE) || target);
+          if (!isCheckboxLike(picked, host)) { state.error = "That does not look like a tick box. Click directly on the small box you tick."; return render(); }
         } else {
           picked = sb.resolveButton(target);
         }
         const info = sb.inspectButton(picked, { allowMultiple: true, preferStable: true });
         if (!info.selectors.length) state.error = "No reliable way to find that could be read. Pick a different one.";
-        else state.tree[slot] = info;
+        else {
+          if (slot === "leaf" && !picked.matches("input[type=checkbox]")) {
+            let matched = [];
+            try { matched = sb.matchAll(info.selectors[0]); } catch { matched = [picked]; }
+            info.baseKey = baseKeyFor(matched.length ? matched : [picked]);
+          }
+          state.tree[slot] = info;
+        }
       }
       render();
     }

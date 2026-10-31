@@ -105,20 +105,37 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
 function watchForNewWindow(openerTabId, origin) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const stop = () => {
+      clearTimeout(timer);
       chrome.tabs.onCreated.removeListener(onCreated);
-      reject(new Error("No popup window opened. Check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects), then try again."));
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+    };
+    const timer = setTimeout(() => {
+      stop();
+      reject(new Error("No popup window opened. If a window for this form is already open, close it and try again. Otherwise check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects), then try again."));
     }, WINDOW_OPEN_TIMEOUT);
     // A script-opened window is created blank and may not name its opener
     // yet; only a tab that names a different opener is ruled out here. The
     // address is checked once it has loaded (waitUntilLoaded).
     function onCreated(tab) {
       if (tab.openerTabId !== undefined && tab.openerTabId !== openerTabId) return;
-      clearTimeout(timer);
-      chrome.tabs.onCreated.removeListener(onCreated);
+      stop();
       resolve(tab.id);
     }
+    // RTS opens some windows under a fixed name, so a window that is already open is navigated
+    // instead of a new one being created. Treat a pop-up window of this site that starts loading as the one.
+    async function onUpdated(tabId, changeInfo, tab) {
+      if (tabId === openerTabId || (changeInfo.status !== "loading" && !changeInfo.url)) return;
+      if (!String(changeInfo.url || tab?.url || "").startsWith(origin)) return;
+      try {
+        const win = await chrome.windows.get(tab.windowId);
+        if (win.type !== "popup") return;
+      } catch { return; }
+      stop();
+      resolve(tabId);
+    }
     chrome.tabs.onCreated.addListener(onCreated);
+    chrome.tabs.onUpdated.addListener(onUpdated);
   });
 }
 

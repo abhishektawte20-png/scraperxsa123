@@ -113,6 +113,27 @@
     return [];
   }
 
+  // Is a choice ticked? A real checkbox says so itself. A drawn one (RTS draws div.controls_checkBox) changes
+  // its look: it is ticked when its classes differ from the usual, unticked, look of the others.
+  const classKey = (node) => `${node.tagName}|${Array.from(node.classList).sort().join(" ")}`;
+  function commonKey(selectors) {
+    for (const selector of selectors || []) {
+      const all = queryAll(selector);
+      if (!all.length) continue;
+      const counts = new Map();
+      for (const node of all) counts.set(classKey(node), (counts.get(classKey(node)) || 0) + 1);
+      return Array.from(counts).sort((a, b) => b[1] - a[1])[0][0];
+    }
+    return "";
+  }
+  function isTicked(box, leaf) {
+    if (box.matches?.("input[type=checkbox]")) return Boolean(box.checked);
+    const aria = box.getAttribute?.("aria-checked");
+    if (aria === "true" || aria === "false") return aria === "true";
+    const base = leaf?.baseKey || commonKey(leaf?.selectors);
+    return Boolean(base) && classKey(box) !== base;
+  }
+
   // "6.5.1 \u2014 Application Software" -> { code: "6.5.1", name: "Application Software" }
   function parseChoice(value) {
     const text = String(value ?? "").trim();
@@ -263,17 +284,17 @@
     const box = hits[0];
 
     if (job.verifyOnly) {
-      const checked = Boolean(box.checked);
+      const checked = isTicked(box, job.tree.leaf);
       window.setTimeout(() => window.close(), 150);
       return { status: "verified", checked };
     }
-    if (box.checked) {
+    if (isTicked(box, job.tree.leaf)) {
       window.setTimeout(() => window.close(), 150);
       return { status: "skipped", reason: `"${choice.name}" is already ticked in RTS.` };
     }
 
     box.click();
-    if (!(await waitFor(() => box.isConnected && box.checked, TIMEOUTS.button))) throw new Error(`"${choice.name}" did not stay ticked when it was clicked.`);
+    if (!(await waitFor(() => box.isConnected && isTicked(box, job.tree.leaf), TIMEOUTS.button))) throw new Error(`"${choice.name}" did not stay ticked when it was clicked.`);
 
     for (const button of job.preSave || []) {
       await waitFor(() => findButton(button), TIMEOUTS.button);
@@ -292,7 +313,7 @@
     if (!settled) throw new Error("Save did not complete in the window: the Save button stayed enabled.");
 
     // Still here? Then the tick can be read straight away; if the window closed itself, the page reopens it to check.
-    const retained = box.isConnected ? Boolean(box.checked) : null;
+    const retained = box.isConnected ? isTicked(box, job.tree.leaf) : null;
     window.setTimeout(() => window.close(), 250);
     return { status: "saved", fieldRetained: retained };
   }

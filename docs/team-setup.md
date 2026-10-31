@@ -105,3 +105,7 @@ After **Publish and save** each field ends in one of four states:
 Social media values are written as the bare handle on every network (`facebook.com/RelianceIndustriesLimited/` becomes `RelianceIndustriesLimited`; no address, no @, no trailing slash). The preview shows the handle and it stays editable. Page captures never copy attribute values that look like links or ids.
 
 **A fixed extension ID.** From this version the extension carries a fixed key, so Chrome gives it the same ID (`dojojjlelcjpebaekkgmpagfcolnfhig`) wherever the folder is loaded, and mappings made in the browser survive moving or re-loading the folder. Upgrading to this version from an older one starts with empty browser storage once (mappings that were only in the browser are lost; those shipped as team defaults are not). Export your mappings as team defaults first.
+
+## Industry tagging on RTS's real markup (v0.21.2)
+
+RTS draws the industry tick boxes itself (`div.controls_checkBox`) and the + buttons are `div.sub-section__icon-expand`. **Detect automatically** recognises both, remembers what an *unticked* box looks like, and tests the + buttons. A choice counts as ticked when its look differs from that usual look (a real checkbox is read directly). If a window for the form is already open (RTS opens the industry window under a fixed name), publishing now reuses it instead of failing with "No popup window opened".
