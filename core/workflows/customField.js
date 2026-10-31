@@ -353,7 +353,7 @@
 
   // Click the opener once the background worker is watching, then wait for
   // the worker to report what happened inside the window.
-  function runInWindow(opener, job) {
+  function runInWindowOnce(opener, job, fresh) {
     return new Promise((resolve, reject) => {
       const port = chrome.runtime.connect({ name: "sx-window" });
       let settled = false;
@@ -368,11 +368,22 @@
       port.onMessage.addListener((message) => {
         if (message.type === "armed") opener.click();
         else if (message.type === "result") finish(resolve, message.result);
-        else if (message.type === "error") finish(reject, new Error(message.error));
+        else if (message.type === "error") finish(reject, Object.assign(new Error(message.error), { stale: message.stale === true }));
       });
       port.onDisconnect.addListener(() => finish(reject, new Error("The extension connection closed before the popup window finished. Reload the extension and try again.")));
-      port.postMessage({ type: "start", mode: "run", job, origin: window.location.origin });
+      port.postMessage({ type: "start", mode: "run", job, origin: window.location.origin, ...(fresh ? { fresh: true } : {}) });
     });
+  }
+
+  // If the window that was already open (RTS brings it to the front instead of opening a new one) turns out
+  // to hold an old page, it is closed and the button is pressed once more to get a clean window.
+  async function runInWindow(opener, job) {
+    try {
+      return await runInWindowOnce(opener, job, false);
+    } catch (error) {
+      if (error?.stale !== true) throw error;
+      return runInWindowOnce(opener, job, true);
+    }
   }
 
   async function applyWindowed(def, record) {

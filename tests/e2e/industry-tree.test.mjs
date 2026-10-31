@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false } = {}) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "" } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -47,7 +47,8 @@ const MAIN = `<!doctype html><body style="font:14px sans-serif">
   window.opens = 0; window.industries = []; window.saves = 0;
   window.profile = { getSection: (x) => x };
   // RTS opens this window under a fixed name, so a second press reuses a window that is still open.
-  window.openIndustries = () => { window.opens++; window.open("/tree.html?mode=${mode}", "${reuse ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
+  // With focus on: a window that is still open is only brought to the front (no navigation, no new window), like RTS can do.
+  window.openIndustries = () => { window.opens++; if (${focus ? "true" : "false"} && window.w && !window.w.closed) { window.w.focus(); return; } window.w = window.open("/tree.html?mode=${mode}", "${reuse || focus ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
   window.markIndustry = (names) => { window.industries = names; window.saves++; };
 <\/script></body>`;
 const GROUPS = [
@@ -91,7 +92,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code, auto, reuse, undo);
+    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus);
   } finally {
     await ctx.close();
     server.close();
@@ -99,7 +100,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code, auto, reuse, undo = false) {
+async function drive(ctx, base, code, auto, reuse, undo = false, focus = "") {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -218,6 +219,11 @@ async function drive(ctx, base, code, auto, reuse, undo = false) {
     await clickAt(page, "#addIndustry");
     await page.waitForTimeout(500);
     assert.equal(ctx.pages().filter((p) => p.url().includes("/tree.html")).length, 1);
+    if (focus === "stale") {
+      // The window left open holds a page that is not the tree (what is left after a save).
+      await page.evaluate(() => { window.w.location.href = "/after.html"; });
+      await page.waitForTimeout(500);
+    }
   }
   await inPanel(() => {
     window.reloadNow = true;
@@ -348,3 +354,17 @@ for (const mode of ["close", "stay"]) {
     assert.ok(result.undone.stats.some((e) => e.path === "extras.industryCode" && e.kind === "saved"), "the publish was counted in the field health numbers");
   });
 }
+
+test("a window for the form is already open and the button only brings it to the front: that window is used, not an error", { timeout: 200000 }, async () => {
+  const result = await scenario("stay", "2.1.2 — Clothing", { auto: true, focus: "tree" });
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  assert.equal(result.saves, 1);
+});
+
+test("the open window holds an old page (not the tree): it is closed and a clean window is opened, never 'No popup window opened'", { timeout: 200000 }, async () => {
+  const result = await scenario("stay", "2.1.2 — Clothing", { auto: true, focus: "stale" });
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  assert.equal(result.saves, 1);
+});

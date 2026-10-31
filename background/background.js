@@ -150,24 +150,44 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === "sx-window-stage" && sender.tab) lastStage.set(sender.tab.id, message.stage);
 });
 
-function watchForNewWindow(openerTabId, origin) {
+// Pop-up windows of the RTS site other than the one the opener tab lives in (newest-used first).
+async function popupTabs(openerTabId, origin) {
+  const opener = await chrome.tabs.get(openerTabId).catch(() => null);
+  const tabs = await chrome.tabs.query({ url: `${origin}/*` }).catch(() => []);
+  const found = [];
+  for (const tab of tabs) {
+    if (tab.id === openerTabId || tab.windowId === opener?.windowId) continue;
+    const win = await chrome.windows.get(tab.windowId).catch(() => null);
+    if (win?.type === "popup") found.push(tab);
+  }
+  return found.sort((a, b) => (Number(b.openerTabId === openerTabId) - Number(a.openerTabId === openerTabId)) || ((b.lastAccessed ?? 0) - (a.lastAccessed ?? 0)) || b.id - a.id);
+}
+
+// If pressing the button opens nothing new, a window for the form is probably already open (RTS reuses it
+// and only brings it to the front). After this long the worker uses that window instead of giving up.
+const ADOPT_AFTER = 2500;
+const NO_WINDOW = "No popup window opened. Close any window of this form that is open and try again. If none is open, check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects).";
+
+// Resolves { tabId, adopted }. `known` = ids of the pop-up windows that were already open.
+function watchForNewWindow(openerTabId, origin, known = new Set()) {
   return new Promise((resolve, reject) => {
+    let done = false;
+    const timers = [];
     const stop = () => {
-      clearTimeout(timer);
+      done = true;
+      timers.forEach(clearTimeout);
+      clearInterval(poll);
       chrome.tabs.onCreated.removeListener(onCreated);
       chrome.tabs.onUpdated.removeListener(onUpdated);
     };
-    const timer = setTimeout(() => {
-      stop();
-      reject(new Error("No popup window opened. If a window for this form is already open, close it and try again. Otherwise check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects), then try again."));
-    }, WINDOW_OPEN_TIMEOUT);
+    const found = (tabId, adopted = false) => { if (done) return; stop(); resolve({ tabId, adopted }); };
+    timers.push(setTimeout(() => { if (done) return; stop(); reject(new Error(NO_WINDOW)); }, WINDOW_OPEN_TIMEOUT));
     // A script-opened window is created blank and may not name its opener
     // yet; only a tab that names a different opener is ruled out here. The
     // address is checked once it has loaded (waitUntilLoaded).
     function onCreated(tab) {
       if (tab.openerTabId !== undefined && tab.openerTabId !== openerTabId) return;
-      stop();
-      resolve(tab.id);
+      found(tab.id);
     }
     // RTS opens some windows under a fixed name, so a window that is already open is navigated
     // instead of a new one being created. Treat a pop-up window of this site that starts loading as the one.
@@ -178,11 +198,25 @@ function watchForNewWindow(openerTabId, origin) {
         const win = await chrome.windows.get(tab.windowId);
         if (win.type !== "popup") return;
       } catch { return; }
-      stop();
-      resolve(tabId);
+      found(tabId);
     }
     chrome.tabs.onCreated.addListener(onCreated);
     chrome.tabs.onUpdated.addListener(onUpdated);
+    // Safety net: a pop-up that was not there before, even if no event named it.
+    const poll = setInterval(async () => {
+      const now = await popupTabs(openerTabId, origin);
+      const fresh = now.find((tab) => !known.has(tab.id));
+      if (fresh) found(fresh.id);
+    }, 300);
+    // Nothing new appeared: use the window that is already open.
+    timers.push(setTimeout(async () => {
+      if (done) return;
+      const open = await popupTabs(openerTabId, origin);
+      if (open.length && !done) {
+        chrome.windows.update(open[0].windowId, { focused: true }).catch(() => {});
+        found(open[0].id, true);
+      }
+    }, ADOPT_AFTER));
   });
 }
 
@@ -235,11 +269,21 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener(async (message) => {
     if (message?.type !== "start" || openerTabId === undefined) return;
+    let adopted = false;
     try {
-      const opened = watchForNewWindow(openerTabId, message.origin);
+      let already = await popupTabs(openerTabId, message.origin);
+      if (message.fresh && already.length) {
+        // The window that was in use did not work (an old page in it): close it so the button opens a clean one.
+        await chrome.tabs.remove(already.map((tab) => tab.id)).catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        already = await popupTabs(openerTabId, message.origin);
+      }
+      const opened = watchForNewWindow(openerTabId, message.origin, new Set(already.map((tab) => tab.id)));
       opened.catch(() => {});
       say({ type: "armed" });
-      const tabId = await opened;
+      const found = await opened;
+      adopted = found.adopted;
+      const tabId = found.tabId;
       await waitUntilLoaded(tabId, message.origin);
       if (message.mode === "pick") {
         await startPicker(tabId, message.token);
@@ -248,7 +292,8 @@ chrome.runtime.onConnect.addListener((port) => {
         say({ type: "result", result: await runInWindow(tabId, message.job) });
       }
     } catch (error) {
-      say({ type: "error", error: error.message });
+      // `stale`: the worker used a window that was already open and it did not work; the page may try once more with a clean one.
+      say({ type: "error", error: error.message, stale: adopted && !message.fresh });
     }
   });
 });
