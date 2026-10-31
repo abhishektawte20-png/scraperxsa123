@@ -634,8 +634,45 @@
       return commit(treeDef());
     }
 
+    // One click: finds the Add NAICS button (unless it was picked), opens the dialog, and finds the + button,
+    // a code's radio button, the dialog's Save and the section's Save Changes. Nothing is chosen or saved.
+    async function detectTreeAll() {
+      draft.error = "";
+      draft.treeNote = "Detecting… the dialog opens and closes by itself. Nothing is chosen or saved.";
+      render();
+      try {
+        if (!draft.openEl?.isConnected) {
+          const found = Array.from(document.querySelectorAll(BUTTON_QUERY)).filter((b) => (typeof b.checkVisibility === "function" ? b.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true }) : true) && /^add\s+naics\b/i.test((b.textContent || b.value || "").trim()));
+          if (found.length !== 1) throw new Error(found.length ? "More than one Add NAICS button is on the page. Pick the right one in Step A, then press Detect again." : "The Add NAICS button was not found. Open the Industry Classification section, or pick the button in Step A.");
+          const info = sb().inspectButton(found[0], {});
+          if (!info.selectors.length && !info.text) throw new Error("No reliable selector or visible text could be read from the Add NAICS button. Pick it in Step A.");
+          draft.openButton = info;
+          draft.openEl = found[0];
+        }
+        const parts = await globalThis.SXRTS.workflows.treePicker.detect(draft.openEl);
+        draft.tree.expander = parts.expander;
+        draft.tree.leaf = parts.leaf;
+        draft.tree.save = parts.save;
+        if (parts.sectionSave) draft.tree.sectionSave = parts.sectionSave;
+        draft.treeNote = parts.sectionSave
+          ? "Found everything. Type a code below and press \"Find this code in the dialog\" to try it, then Save mapping."
+          : parts.closed
+            ? "Found the + button, the radio button and the dialog's Save, but not the section's Save Changes beside Add NAICS. Pick it in Step E."
+            : "Found the + button, the radio button and the dialog's Save. Close the dialog yourself (Cancel), then pick the section's Save Changes in Step E.";
+      } catch (error) {
+        draft.treeNote = "";
+        draft.error = error.message;
+      }
+      render();
+    }
+
     function treeControls() {
       const section = el("div", { className: "teach-section" });
+      section.appendChild(el("h3", { className: "teach-step", text: "One click" }));
+      const detectAll = tipped(el("button", { className: "teach-btn", text: "Detect everything", type: "button" }), "Opens the NAICS dialog by itself and finds the Add button, the + buttons, the code radio buttons, the dialog's Save and the section's Save Changes. Nothing is chosen or saved.");
+      detectAll.addEventListener("click", detectTreeAll);
+      section.appendChild(el("div", { className: "teach-row" }, [detectAll]));
+      section.appendChild(el("p", { className: "teach-muted", text: "Or pick each part by hand below." }));
       const part = (title, slot, buttonText, tip, info) => {
         section.appendChild(el("h3", { className: "teach-step", text: title }));
         const button = tipped(el("button", { className: info ? "teach-btn secondary" : "teach-btn", text: info ? `Re-pick` : buttonText, type: "button" }), tip);

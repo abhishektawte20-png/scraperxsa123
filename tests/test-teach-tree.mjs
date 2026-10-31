@@ -113,3 +113,31 @@ test("Save mapping is refused until every part is picked", async () => {
   await tick();
   assert.match(card.textContent, /Pick all the parts above first/);
 });
+
+test("one click: 'Detect everything' finds the Add button and every part, the mapping saves and publishes a code", async () => {
+  const { doc, card, state, dlg, mapped } = mountWizard();
+  buttonByText(card, "Detect everything").click();
+  assert.ok(await until(() => /Found everything/.test(card.textContent)), card.textContent.slice(-500));
+  assert.equal(dlg.style.display, "none", "the dialog was closed again");
+  assert.equal(state.saves + state.sectionSaves, 0, "nothing was saved while detecting");
+  assert.equal(card.querySelectorAll(".teach-guide li.done").length, 3, "steps 2, 3 and 4 are ticked");
+
+  buttonByText(card, "Save mapping").click();
+  await tick(50);
+  const def = globalThis.SXRTS.customFields.getBoundDef("company.naicsCodes");
+  assert.ok(def, "the mapping is stored");
+  assert.equal(def.openButton.text, "Add NAICS");
+  assert.equal(mapped(), "NAICS codes");
+  const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, { action: "addIfMissing", code: "541512" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.deepEqual(state.listed, ["541512"]);
+  assert.equal(state.gecsSaves, 0);
+  assert.equal(doc.getElementById("gecsSave").disabled, true);
+});
+
+test("one click with no Add NAICS button on the page says so plainly", async () => {
+  const { doc, card } = mountWizard();
+  doc.getElementById("addNaics").remove();
+  buttonByText(card, "Detect everything").click();
+  assert.ok(await until(() => /Add NAICS button was not found/.test(card.textContent)), card.textContent.slice(-400));
+});

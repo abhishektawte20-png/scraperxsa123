@@ -36,7 +36,7 @@ const MAIN = `<!doctype html><body style="font:14px sans-serif">
 <h3>Industry Classification</h3>
 <script src="/naics-page.js"></script><script>installNaicsPage({ delay: 30 });</script></body>`;
 
-async function scenario(teamFile) {
+async function scenario(teamFile, oneClick = false) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-naics-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -53,7 +53,7 @@ async function scenario(teamFile) {
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, teamFile);
+    return await drive(ctx, base, teamFile, oneClick);
   } finally {
     await ctx.close();
     server.close();
@@ -61,7 +61,7 @@ async function scenario(teamFile) {
   }
 }
 
-async function drive(ctx, base, teamFile) {
+async function drive(ctx, base, teamFile, oneClick = false) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -123,58 +123,70 @@ async function drive(ctx, base, teamFile) {
     });
     await page.waitForTimeout(250);
 
-    // Step A: the Add NAICS button. The gap beside it is refused first.
-    await click("Pick the Add NAICS button");
-    await clickPage("#naics .group__i");
-    assert.match(await cardText(), /not the button itself/);
-    await click("Pick the Add NAICS button");
-    await clickPage("#addNaics .button__caption");
-    await waitFor(() => page.evaluate(() => window.__naics.opens === 1), "the extension to open the dialog");
+    if (oneClick) {
+      // One click: no picking at all. The extension finds the Add button, opens the dialog, finds every part and closes it.
+      await click("Detect everything");
+      await waitFor(async () => /Found everything/.test(await cardText()), "the one-click detection", 60000);
+      assert.equal(await page.evaluate(() => document.getElementById("dlg").style.display), "none", "the dialog was closed again");
+      assert.deepEqual(await page.evaluate(() => [window.__naics.saves, window.__naics.sectionSaves]), [0, 0], "nothing was saved while detecting");
+    } else {
+      // Step A: the Add NAICS button. The gap beside it is refused first.
+      await click("Pick the Add NAICS button");
+      await clickPage("#naics .group__i");
+      assert.match(await cardText(), /not the button itself/);
+      await click("Pick the Add NAICS button");
+      await clickPage("#addNaics .button__caption");
+      await waitFor(() => page.evaluate(() => window.__naics.opens === 1), "the extension to open the dialog");
 
-    // Step B: a + inside the dialog (a real click on the drawn plus sign).
-    await click("Pick a + button");
-    await clickPage("#left li:first-child .plus");
-    // Step C: the extension opens a branch; point at a code's radio button.
-    await click("Open a branch and pick a radio button");
-    await waitFor(() => page.evaluate(() => !!document.querySelector(".teach-overlay") || [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".teach-overlay")].length), "the picker");
-    await waitFor(() => page.evaluate(() => document.querySelectorAll("input[type=radio]").length > 0), "a branch to open");
-    // "Let me click the page first": a real click opens another branch by hand
-    // without being taken as a pick or an error, then "Pick now" resumes picking.
-    const overlayUp = () => inPanel(() => !!document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-overlay"));
-    const clicksBefore = await page.evaluate(() => window.__naics.expanderClicks);
-    await click("Let me click the page first", ".teach-bar");
-    await clickPage("#left > ul > li:nth-child(3) .plus");
-    assert.equal(await page.evaluate(() => window.__naics.expanderClicks), clicksBefore + 1, "the page received the click");
-    assert.equal(await overlayUp(), true, "still picking: nothing was picked or rejected");
-    assert.doesNotMatch(await cardText(), /not a radio|not a \+ button/);
-    await click("Pick now", ".teach-bar");
-    await clickPage("input[type=radio] + .radio-button__caption .radio-button__pointer");
-    // Step D: the dialog's Save (greyed out, still pickable).
-    await click("Pick the dialog's Save button");
-    await clickPage("#dlgSave .button__caption");
-    // Step E: close the dialog ourselves, then the section's Save Changes.
-    await click("I'll close the dialog myself");
-    await clickPage("#dlgCancel");
-    await click("Continue", ".teach-bar");
-    await click("Pick Save Changes");
-    await clickPage("#naicsSave .button__caption");
-    assert.equal((await cardText()).match(/Step E[\s\S]*Save Changes/) !== null, true);
+      // Step B: a + inside the dialog (a real click on the drawn plus sign).
+      await click("Pick a + button");
+      await clickPage("#left li:first-child .plus");
+      // Step C: the extension opens a branch; point at a code's radio button.
+      await click("Open a branch and pick a radio button");
+      await waitFor(() => page.evaluate(() => !!document.querySelector(".teach-overlay") || [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".teach-overlay")].length), "the picker");
+      await waitFor(() => page.evaluate(() => document.querySelectorAll("input[type=radio]").length > 0), "a branch to open");
+      // "Let me click the page first": a real click opens another branch by hand
+      // without being taken as a pick or an error, then "Pick now" resumes picking.
+      const overlayUp = () => inPanel(() => !!document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-overlay"));
+      const clicksBefore = await page.evaluate(() => window.__naics.expanderClicks);
+      await click("Let me click the page first", ".teach-bar");
+      await clickPage("#left > ul > li:nth-child(3) .plus");
+      assert.equal(await page.evaluate(() => window.__naics.expanderClicks), clicksBefore + 1, "the page received the click");
+      assert.equal(await overlayUp(), true, "still picking: nothing was picked or rejected");
+      assert.doesNotMatch(await cardText(), /not a radio|not a \+ button/);
+      await click("Pick now", ".teach-bar");
+      await clickPage("input[type=radio] + .radio-button__caption .radio-button__pointer");
+      // Step D: the dialog's Save (greyed out, still pickable).
+      await click("Pick the dialog's Save button");
+      await clickPage("#dlgSave .button__caption");
+      // Step E: close the dialog ourselves, then the section's Save Changes.
+      await click("I'll close the dialog myself");
+      await clickPage("#dlgCancel");
+      await click("Continue", ".teach-bar");
+      await click("Pick Save Changes");
+      await clickPage("#naicsSave .button__caption");
+      assert.equal((await cardText()).match(/Step E[\s\S]*Save Changes/) !== null, true);
+
+    }
 
     // Try a code: finds and selects it, saves nothing.
     await click("Find this code in the dialog");
     await waitFor(async () => /Found 541511 and selected it/.test(await cardText()), "the dry run");
     assert.equal(await page.evaluate(() => window.__naics.saves), 0);
-    await clickPage("#dlgCancel");
+    await page.evaluate(() => document.getElementById("dlgCancel").click()); // the panel can cover the dialog's Cancel, so press it directly
+    assert.equal(await page.evaluate(() => document.getElementById("dlg").style.display), "none");
 
     await click("Save mapping");
     await page.waitForTimeout(300);
 
     // Share it: Export team defaults.
+    if (!oneClick) {
     await click("Teach new field", ".card");
     const downloadPromise = page.waitForEvent("download");
     await click("Export team defaults");
     exportedFile = fs.readFileSync(await (await downloadPromise).path(), "utf8");
     await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-x").click());
+    }
   }
 
   // Publish all three NAICS codes through the real panel.
@@ -212,4 +224,8 @@ test("a lead maps the NAICS dialog, exports it, and a researcher publishes three
   expectPublished(lead);
   assert.match(lead.exportedFile, /"kind": "naics"/);
   expectPublished(await scenario(lead.exportedFile));
+});
+
+test("one click: 'Detect everything' maps the NAICS dialog with no picking, and three codes are published", { timeout: 400000 }, async () => {
+  expectPublished(await scenario(undefined, true));
 });

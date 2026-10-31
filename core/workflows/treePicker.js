@@ -323,7 +323,86 @@
     };
   }
 
+  // ---- one-click mapping ----
+  // Starting from the Add NAICS button, opens the dialog and finds every other part by itself: a + button,
+  // a code's radio button, the dialog's Save, and the section's Save Changes beside the Add button.
+  // Nothing is chosen or saved. Returns { expander, leaf, save, sectionSave, closed }.
+  const sharedOnly = (selectors) => {
+    const shared = selectors.filter((selector) => !selector.startsWith("#") && !/\[(aria-label|title)=/.test(selector) && !/^sx-/.test(selector));
+    return shared.length ? shared : selectors;
+  };
+  const shownButtons = (root = document) => Array.from(root.querySelectorAll(BUTTONS)).filter(isShown);
+
+  // The dialog: the nearest ancestor of a shown tick box / radio that also holds its own Save button.
+  function findDialogRoot() {
+    const inputs = Array.from(document.querySelectorAll("input[type=checkbox], input[type=radio]")).filter(rendered);
+    for (const input of inputs) {
+      for (let node = input.parentElement, depth = 0; node && node !== document.body && depth < 14; node = node.parentElement, depth++) {
+        if (shownButtons(node).some((b) => /^(save|ok|apply|done|select)$/i.test(labelOf(b)))) return node;
+      }
+    }
+    return null;
+  }
+
+  async function detect(opener) {
+    if (!opener) throw new Error("Pick the Add NAICS button first.");
+    let root = findDialogRoot();
+    if (!root) {
+      if (!isEnabled(opener)) throw new Error("The Add NAICS button is greyed out right now, so it cannot open the dialog.");
+      opener.click();
+      if (!(await waitFor(() => Boolean(findDialogRoot()), TIMEOUTS.open))) throw new Error("The NAICS dialog did not open after clicking the button.");
+      root = findDialogRoot();
+    }
+    const part = (node, options) => {
+      const info = sb().inspectButton(node, options);
+      if (!info.selectors.length && !info.text) throw new Error("Nothing on one of the dialog's controls can identify it.");
+      return info;
+    };
+
+    const toggles = Array.from(root.querySelectorAll("input[type=checkbox]")).filter(rendered);
+    if (!toggles.length) throw new Error("The dialog shows no + buttons to open.");
+    const expander = part(toggles[0], { allowMultiple: true, preferStable: true });
+    expander.selectors = sharedOnly(expander.selectors);
+
+    // Open branches until a code shows, touching only the dialog (the page behind it may have look-alike boxes).
+    const probe = { tree: { expander: { selectors: expander.selectors }, leaf: { selectors: ["input[type=radio]"] } } };
+    const radiosIn = () => Array.from(root.querySelectorAll("input[type=radio]")).filter(rendered);
+    for (let pass = 0; pass < 12 && !radiosIn().length; pass++) {
+      const next = Array.from(root.querySelectorAll("input[type=checkbox]")).filter((b) => rendered(b) && !isExpanded(b))[0];
+      if (!next) break;
+      next.click();
+      await settled(probe);
+    }
+    const radio = radiosIn()[0];
+    if (!radio) throw new Error("No code with a radio button could be shown by opening the + buttons.");
+    if (!radio) throw new Error("A branch opened, but no code with a round radio button was found in the dialog.");
+    const leaf = part(radio, { allowMultiple: true, preferStable: true });
+    leaf.selectors = sharedOnly(leaf.selectors);
+
+    const saveNode = shownButtons(root).find((b) => /^save$/i.test(labelOf(b))) || shownButtons(root).find((b) => /^(ok|apply|done|select)$/i.test(labelOf(b)));
+    if (!saveNode) throw new Error("The dialog's Save button was not found.");
+    const save = part(saveNode, {});
+
+    // Close the dialog (nothing is saved) so the section's own Save Changes can be found.
+    const cancel = shownButtons(root).find((b) => /^(cancel|close)$/i.test(labelOf(b)));
+    let closed = false;
+    if (cancel) {
+      cancel.click();
+      closed = await waitFor(() => !findDialogRoot() && !Array.from(document.querySelectorAll("input[type=checkbox], input[type=radio]")).some((n) => root.contains(n) && rendered(n)), TIMEOUTS.save);
+    }
+
+    let sectionSave = null;
+    if (closed) {
+      for (const candidate of shownButtons().filter((b) => /^save changes$/i.test(labelOf(b)))) {
+        const info = sb().inspectButton(candidate, {});
+        if (!info.selectors.length && !info.text) continue;
+        if (scopeFor(opener, info)?.save === candidate) { sectionSave = info; break; }
+      }
+    }
+    return { expander, leaf, save, sectionSave, closed };
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.treePicker = { apply, findRadio, revealLeaf, scopeFor, isOpen: (def) => expanders(def).length > 0, SECTORS, TIMEOUTS };
+  globalThis.SXRTS.workflows.treePicker = { apply, detect, findRadio, revealLeaf, scopeFor, isOpen: (def) => expanders(def).length > 0, SECTORS, TIMEOUTS };
 })();

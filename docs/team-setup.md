@@ -138,3 +138,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 ## 0.22.1
 
 - **"No popup window opened" fixed at the root.** That message came up when a window for the form was already open: RTS then only brings it to the front, which opens nothing new for the extension to find. The extension now (1) also watches for any pop-up that was not there before, even if Chrome gave no event; (2) after 2.5 seconds without a new window, uses the window that is already open and brings it to the front; (3) if that window holds an old page (not the form), closes it and presses the button once more for a clean one. The message only appears now if there really is no window and the button opens none (disabled button, or pop-ups blocked).
+
+## 0.22.2
+
+- **NAICS one-click mapping.** In "Map NAICS codes", the new **Detect everything** button finds the Add NAICS button (if it is not picked), opens the dialog by itself, finds a + button, a code's radio button, the dialog's Save and the section's own Save Changes (never the look-alike GECS one), closes the dialog and fills Steps A to E. Nothing is chosen or saved while detecting. Picking each part by hand still works.
+- Industry tagging was not changed in this version.
