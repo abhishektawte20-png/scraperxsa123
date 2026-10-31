@@ -28,7 +28,7 @@ The related [Conference ScraperX Field Assistant](https://github.com/abhishektaw
 2. Click **Copy prompt**, then **Open Rovo** and run the prompt there.
 3. Paste the JSON response back into the panel and click **Validate JSON** — the preview builds automatically on success.
 4. Review the preview: each proposed change is its own card (RTS area, status) with every field of that record shown as its own labeled, editable input — fix a small mistake directly there, no JSON editing required. Uncheck anything you don't want touched, or **Select all pending**.
-5. Click **Publish selected to RTS** — you'll be asked to confirm before anything is written. The identity lock runs first and blocks the whole batch on any mismatch.
+5. Click **Publish and save** — you'll be asked to confirm before anything is written. The identity lock runs first and blocks the whole batch on any mismatch.
 6. **Clear cache for this profile** removes the saved plan for the currently open company from `chrome.storage.local` at any time.
 
 Every build of the preview is saved to a profile-scoped cache automatically (keyed by PBID/domain), so reopening the assistant on the same record shows a "cached plan found" notice — this only remembers which fields were proposed and their outcome, never raw research text.

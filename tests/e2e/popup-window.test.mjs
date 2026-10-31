@@ -209,16 +209,16 @@ async function drive(ctx, base, { teamFile } = {}) {
       const box = card.querySelector("input[type=checkbox]");
       if (box) box.checked = /socialMediaIdentifiers/.test(card.querySelector(".action-card-field").textContent);
     }
-    const publish = [...root.querySelectorAll("button")].find((b) => b.textContent === "Publish selected to RTS");
+    const publish = [...root.querySelectorAll("button")].find((b) => b.textContent === "Publish and save");
     publish.click();
   });
   for (let i = 0; i < 120; i++) {
-    if (await inPanel(() => /Published \d/.test(document.getElementById("sx-test-root").shadowRoot.textContent))) break;
+    if (await inPanel(() => /Saved \d/.test(document.getElementById("sx-test-root").shadowRoot.textContent))) break;
     await page.waitForTimeout(500);
   }
   await page.waitForTimeout(1000); // the window closes itself shortly after reporting
   return {
-    summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Published \d+, skipped \d+, failed \d+/)?.[0]),
+    summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Saved \d+ · Already in RTS \d+ · Needs attention \d+/)?.[0]),
     saved: await inPanel(() => window.saved),
     rows: await inPanel(() => [...document.querySelectorAll(".smRow")].map((r) => `${r.dataset.n}:${r.querySelector("#change") ? "New" : "linked"}`)),
     openWindows: ctx.pages().filter((p) => p.url().includes("/popup.html")).length,
@@ -227,8 +227,8 @@ async function drive(ctx, base, { teamFile } = {}) {
 }
 
 const expectPublished = (result) => {
-  assert.equal(result.summary, "Published 2, skipped 0, failed 0");
-  assert.deepEqual(result.saved, { Facebook: "https://www.facebook.com/psyphergames", Instagram: "https://www.instagram.com/psyphergames/" });
+  assert.equal(result.summary, "Saved 2 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.saved, { Facebook: "psyphergames", Instagram: "psyphergames" }); // handle only, as RTS wants it
   assert.deepEqual(result.rows, ["Twitter:New", "Facebook:linked", "Instagram:linked", "LinkedIn:linked"]);
   assert.equal(result.openWindows, 0, "no popup window is left open");
 };

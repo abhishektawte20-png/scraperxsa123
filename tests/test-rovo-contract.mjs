@@ -18,6 +18,9 @@ import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import { validOutput, NF, sourced } from "./helpers/rovo-sample.mjs";
 
+// These tests exercise the output-rule and mapping machinery with the agent's full links; the built-in handle-only step is covered in test-social-handle.mjs.
+globalThis.SXRTS.rovoContract.settings.handlesOnly = false;
+
 const rc = globalThis.SXRTS.rovoContract;
 const schema = globalThis.SXRTS.schema;
 

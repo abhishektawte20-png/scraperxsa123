@@ -142,8 +142,8 @@ test("teach a field inside a popup, then publish it and verify the saved value",
     custom: { employees: { value: 250, action: "addIfMissing", source: "https://acme.com/about" } }
   });
   buttonByText(shadow, "Validate JSON").click();
-  buttonByText(shadow, "Publish selected to RTS").click();
-  assert.ok(await until(() => /Published 1/.test(shadow.textContent)), shadow.textContent.slice(-400));
+  buttonByText(shadow, "Publish and save").click();
+  assert.ok(await until(() => /Saved 1/.test(shadow.textContent)), shadow.textContent.slice(-400));
   assert.equal(state.saved, "250");
   assert.equal(dlg.style.display, "none", "the popup is closed again afterwards");
   await globalThis.SXRTS.customFields.removeDefinition("employees");

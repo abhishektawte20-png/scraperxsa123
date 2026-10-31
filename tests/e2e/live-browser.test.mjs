@@ -175,19 +175,19 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
     const summaryBefore = await root.locator(".status").nth(1).innerText();
     assert.match(summaryBefore, /5 ready to publish/, `expected 5 ready-to-publish actions, got: ${summaryBefore}`);
 
-    await root.getByRole("button", { name: "Publish selected to RTS" }).click();
+    await root.getByRole("button", { name: "Publish and save" }).click();
 
     // Poll rather than a fixed sleep: waits only as long as actually needed.
     await page.waitForFunction(
       () => {
         const host = document.getElementById("sxrts-assistant-root");
         const statuses = host.shadowRoot.querySelectorAll(".status");
-        return statuses[statuses.length - 1]?.textContent.includes("Published");
+        return statuses[statuses.length - 1]?.textContent.includes("Saved ");
       },
       { timeout: 10000 }
     );
     const publishStatus = await root.locator(".status").nth(1).innerText();
-    assert.match(publishStatus, /Published 5, skipped 0, failed 0/, `expected all 5 live fields to publish cleanly, got: ${publishStatus}`);
+    assert.match(publishStatus, /Saved 5 · Already in RTS 0 · Needs attention 0/, `expected all 5 live fields to publish cleanly, got: ${publishStatus}`);
 
     // The real proof: read the actual RTS DOM state, not just the panel's
     // own claim about what happened.

@@ -100,8 +100,8 @@ async function publishOnly(shadow, path) {
     const box = card.querySelector("input[type=checkbox]");
     if (box && !box.disabled) box.checked = card.querySelector(".action-card-field").textContent.startsWith(path);
   }
-  btn(shadow, "Publish selected to RTS").click();
-  assert.ok(await until(() => /Published \d/.test(shadow.textContent)), "publish finished");
+  btn(shadow, "Publish and save").click();
+  assert.ok(await until(() => /Saved \d/.test(shadow.textContent)), "publish finished");
 }
 
 
@@ -229,7 +229,7 @@ test("after a publish, the report lists what failed, what was skipped and what i
   assert.ok(shadow.querySelector(".verdict.ok, .verdict.warn"), shadow.querySelector(".status.error")?.textContent);
   await publishOnly(shadow, "company.briefDescription");
   const text = shadow.querySelector("#sxrts-report").value;
-  assert.match(text, /FAILED \(1\)/);
+  assert.match(text, /NEEDS ATTENTION \(1\)/);
   assert.match(text, /company\.briefDescription · mapped field "Brief description"/);
   assert.match(text, /Message: Brief description › value was not found on this page/);
   assert.match(text, /Likely cause: A mapped control is not on screen/);
@@ -239,4 +239,36 @@ test("after a publish, the report lists what failed, what was skipped and what i
   assert.match(text, /extras\.address/);
   assert.match(text, /"counts": \{/);
   assert.ok(shadow.querySelector(".report-count").textContent.includes("to look at"));
+});
+
+test("a value RTS already holds is reported as already in RTS, in green, and never as a failure", async () => {
+  const rs = globalThis.SXRTS.resultsSummary;
+  const sum = rs.buildSummary({
+    "businessEntity.nameVariations": { status: "skipped", reason: "duplicate", detail: '"ARM Lagoon Texas City, LLC" (Legal Name) already exists.' },
+    "company.fullDescription": { status: "skipped", reason: 'Full description already has a value ("Operator of a family entertainment facility ...").' },
+    "company.keywords": { status: "savedValueVerified", name: "companyKeywords" },
+    "company.sicCodes": { status: "error", error: "Add New Sic Industry Path button was not found." },
+    "extras.employeeCount": { status: "skipped", reason: "action=skip" }
+  });
+  assert.deepEqual(sum.counts, { success: 1, failed: 1, skipped: 1, already: 2 });
+  assert.match(sum.html, /Saved 1 · Already in RTS 2 · Needs attention 1 · Skipped 1/);
+  assert.match(sum.html, /summary-item-already/);
+  assert.match(sum.html, /<details class="summary-fold"><summary>Already in RTS \(2\)/);
+  assert.doesNotMatch(sum.html.slice(0, sum.html.indexOf("<details")), /already exists|already has a value/, "the already-there lines are folded away");
+  assert.ok(sum.html.indexOf("summary-item-error") < sum.html.indexOf("summary-item-success"), "what needs attention comes first");
+  assert.match(sum.html, /Name variations/);
+});
+
+test("the report lists already-there values apart from failures and counts them separately", () => {
+  const out = globalThis.SXRTS.issueReport.build({
+    actions: [
+      { jsonPath: "businessEntity.nameVariations", executionStatus: "skipped", resultMessage: '"X" (Legal Name) already exists.', proposedValue: { name: "X" } },
+      { jsonPath: "company.sicCodes", executionStatus: "failed", resultMessage: "Add New Sic Industry Path button was not found.", proposedValue: { code: "7999" } }
+    ]
+  });
+  assert.match(out.text, /Publish: 0 saved, 1 already in RTS, 0 skipped, 1 needs attention/);
+  assert.match(out.text, /ALREADY IN RTS \(nothing to do\) \(1\)/);
+  assert.match(out.text, /NEEDS ATTENTION \(1\)/);
+  assert.equal(out.counts.already, 1);
+  assert.equal(out.counts.failed, 1);
 });

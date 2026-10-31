@@ -55,7 +55,7 @@ test("the report is mapped to the internal document: identity, website, SMIs, SI
   assert.equal(document.businessEntity.websiteAddresses[0].value, "https://www.psypher.in");
   assert.equal(document.businessEntity.nameVariations, undefined, "fallback names are never written");
   assert.deepEqual(document.businessEntity.socialMediaIdentifiers.map((s) => [s.network, s.handleOrUrl]), [
-    ["Facebook", "https://www.facebook.com/psyphergames"], ["Instagram", "https://www.instagram.com/psyphergames/"]
+    ["Facebook", "psyphergames"], ["Instagram", "psyphergames"]
   ]);
   assert.deepEqual(document.company.sicCodes.map((s) => s.code), ["2321", "2331", "5651"]);
   assert.deepEqual(document.company.naicsCodes.map((s) => s.code), ["315220", "448140", "315240"]);

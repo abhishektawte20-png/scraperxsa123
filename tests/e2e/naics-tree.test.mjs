@@ -188,11 +188,11 @@ async function drive(ctx, base, teamFile) {
       const box = card.querySelector("input[type=checkbox]");
       if (box) box.checked = /naicsCodes/.test(card.querySelector(".action-card-field").textContent);
     }
-    [...root.querySelectorAll("button")].find((b) => b.textContent === "Publish selected to RTS").click();
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "Publish and save").click();
   });
-  await waitFor(() => inPanel(() => /Published \d+, skipped \d+, failed \d+/.test(document.getElementById("sx-test-root").shadowRoot.textContent)), "the publish summary", 120000);
+  await waitFor(() => inPanel(() => /Saved \d+ · Already in RTS \d+ · Needs attention \d+/.test(document.getElementById("sx-test-root").shadowRoot.textContent)), "the publish summary", 120000);
   return {
-    summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Published \d+, skipped \d+, failed \d+/)?.[0]),
+    summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Saved \d+ · Already in RTS \d+ · Needs attention \d+/)?.[0]),
     listed: await page.evaluate(() => window.__naics.listed),
     sectionSaves: await page.evaluate(() => window.__naics.sectionSaves),
     gecsSaves: await page.evaluate(() => window.__naics.gecsSaves),
@@ -201,7 +201,7 @@ async function drive(ctx, base, teamFile) {
 }
 
 const expectPublished = (result) => {
-  assert.equal(result.summary, "Published 3, skipped 0, failed 0");
+  assert.equal(result.summary, "Saved 3 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.listed, ["315220", "448140", "315240"]);
   assert.equal(result.sectionSaves, 3);
   assert.equal(result.gecsSaves, 0, "the look-alike GECS Save Changes was never clicked");

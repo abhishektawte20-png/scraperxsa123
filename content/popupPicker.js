@@ -122,7 +122,7 @@
     }
 
     const boxes = allBoxes();
-    if (!boxes.length) { found.notes.push("No checkboxes were found in this window, even after opening branches. Pick them yourself, or send this window's structure to the developer."); return found; }
+    if (!boxes.length) { found.notes.push("No ordinary checkboxes were found in this window, even after opening branches, so the choices are drawn some other way. Press \"Copy this window's structure (for the developer)\" and send it, so this window can be supported."); return found; }
     const info = sb.inspectButton(boxes[0], { allowMultiple: true, preferStable: true });
     const covers = (selector) => { try { return sb.matchAll(selector).length >= Math.ceil(boxes.length * 0.9); } catch { return false; } };
     const good = info.selectors.find(covers);

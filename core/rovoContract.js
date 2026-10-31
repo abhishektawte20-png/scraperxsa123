@@ -514,6 +514,33 @@
 
   const NETWORKS = { linkedin: "LinkedIn", twitter_x: "Twitter/X", facebook: "Facebook", instagram: "Instagram", youtube: "YouTube" };
 
+  // RTS wants only the handle: "https://www.facebook.com/RelianceIndustriesLimited/" -> "RelianceIndustriesLimited".
+  // No @, no address, no trailing slash. Anything that is not clearly a link to that network is only tidied.
+  const SETTINGS = { handlesOnly: true };
+  function toHandle(network, value) {
+    if (!SETTINGS.handlesOnly) return String(value ?? "");
+    let text = String(value ?? "").trim().replace(/^\[([^\]]+)\]\(([^)]+)\)$/, "$2"); // a link a chat window turned into markdown
+    if (!/^(https?:\/\/|www\.)/i.test(text) && !/^[a-z0-9.-]+\.[a-z]{2,}\//i.test(text)) return text.replace(/^@+/, "").replace(/\/+$/, "").trim();
+    let url;
+    try { url = new URL(/^https?:/i.test(text) ? text : `https://${text}`); } catch { return text; }
+    const parts = url.pathname.split("/").map((p) => decodeURIComponent(p)).filter(Boolean);
+    const id = url.searchParams.get("id");
+    let handle = "";
+    if (/linkedin/i.test(network)) {
+      const at = parts.findIndex((p) => /^(company|school|in|showcase|pub)$/i.test(p));
+      handle = at >= 0 ? parts[at + 1] : parts[0];
+    } else if (/facebook/i.test(network)) {
+      handle = parts[0] === "profile.php" ? id : parts[0] === "pages" ? parts[1] : parts[0];
+    } else if (/twitter|^x$/i.test(network) || /instagram/i.test(network)) {
+      handle = parts[0];
+    } else if (/youtube/i.test(network)) {
+      handle = /^(c|channel|user)$/i.test(parts[0]) ? parts[1] : parts[0];
+    } else {
+      return text; // another network: its form is not known, leave it for the researcher
+    }
+    return String(handle ?? "").replace(/^@+/, "").trim() || text;
+  }
+
   function toInternalDocument(src) {
     const nv = src.name_variations || {};
     const formal = real(nv.formal_name?.value);
@@ -558,7 +585,7 @@
     for (const [key, network] of Object.entries(NETWORKS)) {
       const entry = src.social_media_identifiers?.[key];
       const handle = real(entry?.value);
-      if (handle) smi.push({ network, handleOrUrl: handle, action: act, source: entry.source_url ?? null, confidence: null });
+      if (handle) smi.push({ network, handleOrUrl: toHandle(network, handle), action: act, source: entry.source_url ?? null, confidence: null });
     }
     for (const other of Array.isArray(src.social_media_identifiers?.other) ? src.social_media_identifiers.other : []) {
       const url = real(other?.url);
@@ -801,5 +828,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
+  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, toHandle, settings: SETTINGS, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
 })();

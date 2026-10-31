@@ -8,7 +8,8 @@
  *
  * Privacy: this is the structure only. Typed values and the value of every
  * input are never read, numbers in data-
- * attributes are masked, links keep their path but not their query, text is
+ * attributes are masked, data-* values and handler arguments are dropped,
+ * links keep their path but not their query, text is
  * kept only where it names a control or field (labels, headings, buttons,
  * options, "Name:") and is replaced by "…" everywhere else, and scripts,
  * styles and images are dropped.
@@ -23,19 +24,24 @@
   const squash = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
   const cut = (text, n) => (text.length > n ? `${text.slice(0, n)}…` : text);
 
+  // Long digit runs are identifiers (PBIDs, record ids): never copied.
+  const maskDigits = (value) => String(value).replace(/\d{4,}/g, "#");
+
   function cleanAttributes(src, copy) {
     const tag = src.tagName.toLowerCase();
     const type = (src.getAttribute("type") || "").toLowerCase();
     for (const attr of Array.from(src.attributes)) {
       const name = attr.name.toLowerCase();
       const value = attr.value;
-      if (KEEP.has(name)) { copy.setAttribute(name, cut(value, 120)); continue; }
-      if (name.startsWith("aria-")) { copy.setAttribute(name, cut(value, 60)); continue; }
-      if (name.startsWith("data-")) { copy.setAttribute(name, /^\d{4,}$/.test(value) ? "#" : cut(value, 40)); continue; }
-      if (name === "onclick" || name === "onchange") { copy.setAttribute(name, cut(squash(value), 80)); continue; }
+      if (KEEP.has(name)) { copy.setAttribute(name, maskDigits(cut(value, 80))); continue; }
+      if (name.startsWith("aria-")) { copy.setAttribute(name, maskDigits(cut(value, 40))); continue; }
+      // data-* values are often links or ids: only a short plain word survives.
+      if (name.startsWith("data-")) { const v = maskDigits(value); copy.setAttribute(name, /^[\w#-]{0,24}$/.test(v) ? v : "\u2026"); continue; }
+      // A handler keeps its shape (which function it calls), not its arguments.
+      if (name === "onclick" || name === "onchange") { copy.setAttribute(name, maskDigits(cut(squash(value).replace(/(['"])(?:(?!\1).)*\1/g, "$1\u2026$1"), 80))); continue; }
       if (name === "href") {
         const path = value.startsWith("javascript:") ? "javascript:" : value.replace(/^[a-z]+:\/\/[^/]+/i, "").replace(/[?#].*$/, "");
-        copy.setAttribute("href", cut(path, 80));
+        copy.setAttribute("href", maskDigits(cut(path, 60)));
         continue;
       }
       if (name === "value" && (tag === "option" || tag === "button" || (tag === "input" && VALUE_OK_TYPES.has(type)))) { copy.setAttribute("value", cut(value, 40)); continue; }

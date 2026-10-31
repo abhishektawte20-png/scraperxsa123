@@ -92,7 +92,7 @@ test("validating a valid response builds a preview with the expected row count",
 
   const rows = shadow.querySelectorAll(".action-card");
   assert.equal(rows.length, 2);
-  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish selected to RTS");
+  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   assert.equal(publishButton.disabled, false);
 });
 
@@ -138,7 +138,7 @@ test("publish blocks via the identity lock when no RTS page is present", async (
   });
   Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Validate JSON").click();
 
-  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish selected to RTS");
+  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   publishButton.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -175,7 +175,7 @@ test("insufficient identity (no strong match, but no conflict either) asks for m
   let confirmCalls = 0;
   window.confirm = () => { confirmCalls += 1; return confirmCalls === 1; }; // accept the generic publish confirm, decline the identity one
 
-  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish selected to RTS").click();
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save").click();
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const statuses = shadow.querySelectorAll(".status");
@@ -220,11 +220,11 @@ test("insufficient identity proceeds to publish once manually confirmed", async 
 
   window.confirm = () => true; // accept both the generic publish confirm and the identity confirm
 
-  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish selected to RTS").click();
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save").click();
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   const statuses = shadow.querySelectorAll(".status");
-  assert.match(statuses[statuses.length - 1].textContent, /Published 1, skipped 0, failed 0/);
+  assert.match(statuses[statuses.length - 1].textContent, /Saved 1 · Already in RTS 0 · Needs attention 0/);
 });
 
 test("clear cache button does not throw when no cache exists yet", async () => {
@@ -308,13 +308,13 @@ test("publishing Email Default Structure actually writes and saves it end to end
   });
   Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Validate JSON").click();
 
-  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish selected to RTS");
+  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   publishButton.click();
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   assert.equal(emailSelect.value, "2");
   const statuses = shadow.querySelectorAll(".status");
-  assert.match(statuses[statuses.length - 1].textContent, /Published 1, skipped 0, failed 0/);
+  assert.match(statuses[statuses.length - 1].textContent, /Saved 1 · Already in RTS 0 · Needs attention 0/);
 });
 
 test("an invalid manual edit is caught by real schema re-validation before any workflow runs", async () => {
@@ -335,7 +335,7 @@ test("an invalid manual edit is caught by real schema re-validation before any w
   const nameField = Array.from(card.querySelectorAll(".value-field")).find((f) => f.querySelector(".value-field-label").textContent === "name");
   nameField.querySelector("input").value = "   "; // blanked out by mistake while correcting it
 
-  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish selected to RTS");
+  const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   publishButton.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
 

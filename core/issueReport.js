@@ -65,7 +65,11 @@
 
     const failed = actions.filter((a) => a.executionStatus === "failed");
     const saved = actions.filter((a) => a.executionStatus === "savedValueVerified");
-    const ranAndSkipped = actions.filter((a) => a.executionStatus === "skipped" && a.resultMessage);
+    // "Already there" is good news, not a problem: it gets its own short list and never counts as a failure.
+    const ALREADY = /already (has|exists|equals|ticked|there|linked|have)|already has an entry|\bduplicate\b|is already/i;
+    const ranSkipped = actions.filter((a) => a.executionStatus === "skipped" && a.resultMessage);
+    const alreadyThere = ranSkipped.filter((a) => ALREADY.test(a.resultMessage));
+    const ranAndSkipped = ranSkipped.filter((a) => !ALREADY.test(a.resultMessage));
     const notMapped = actions.filter((a) => a.executionStatus === "skipped" && !a.resultMessage);
     const notPublished = actions.filter((a) => a.executionStatus === "pending");
 
@@ -78,7 +82,7 @@
 
     add("SUMMARY");
     add(`Validation: ${validation ? `${validation.ok ? "valid" : "FAILED"} · ${validation.headline}` : "not run"}`);
-    add(`Publish: ${saved.length} saved, ${ranAndSkipped.length} skipped, ${failed.length} failed, ${notMapped.length} not mapped yet, ${notPublished.length} not published`);
+    add(`Publish: ${saved.length} saved, ${alreadyThere.length} already in RTS, ${ranAndSkipped.length} skipped, ${failed.length} needs attention, ${notMapped.length} not mapped yet, ${notPublished.length} not published`);
     add("");
 
     const validationLines = validation?.lines ?? [];
@@ -122,8 +126,9 @@
       });
       add("");
     };
-    itemLines("FAILED", failed, "failed", true);
+    itemLines("NEEDS ATTENTION", failed, "failed", true);
     itemLines("SKIPPED (the run reached these and left them alone)", ranAndSkipped, "skipped", true);
+    itemLines("ALREADY IN RTS (nothing to do)", alreadyThere, "already", false);
     itemLines("NOT MAPPED YET (no RTS field known for these)", notMapped, "not-mapped", false);
     itemLines("NOT PUBLISHED (ready, but not ticked or not run)", notPublished, "not-published", false);
 
@@ -151,7 +156,7 @@
         if (c.html) add(c.html);
       });
     }
-    return { text: lines.join("\n"), counts: { failed: failed.length, skipped: ranAndSkipped.length, errors: errors.length, warnings: warnings.length, notMapped: notMapped.length } };
+    return { text: lines.join("\n"), counts: { failed: failed.length, skipped: ranAndSkipped.length, already: alreadyThere.length, errors: errors.length, warnings: warnings.length, notMapped: notMapped.length } };
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};

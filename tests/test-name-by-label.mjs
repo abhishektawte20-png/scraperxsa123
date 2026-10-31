@@ -130,8 +130,8 @@ test("name a look-alike box by its label while mapping, then publish into exactl
     custom: { briefDescription: { value: "Acme makes anvils.", action: "addIfMissing", source: "https://acme.com/about" } }
   });
   buttonByText(shadow, "Validate JSON").click();
-  buttonByText(shadow, "Publish selected to RTS").click();
-  assert.ok(await until(() => /Published 1/.test(shadow.textContent)), shadow.textContent.slice(-300));
+  buttonByText(shadow, "Publish and save").click();
+  assert.ok(await until(() => /Saved 1/.test(shadow.textContent)), shadow.textContent.slice(-300));
   assert.equal(brief.value, "Acme makes anvils.");
   assert.equal(full.value, "", "the look-alike Full Description box is untouched");
 });

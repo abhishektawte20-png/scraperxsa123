@@ -142,8 +142,8 @@ test("teach a field by clicking it on the page, then it flows through prompt, va
   assert.match(cards[0].textContent, /Taught field/);
 
   // Publish writes the page and verifies the save.
-  buttonByText(shadow, "Publish selected to RTS").click();
-  assert.ok(await until(() => /Published 1/.test(shadow.textContent)), "publish summary reports one success");
+  buttonByText(shadow, "Publish and save").click();
+  assert.ok(await until(() => /Saved 1/.test(shadow.textContent)), "publish summary reports one success");
   assert.equal(doc.getElementById("foundedYear").value, "1997");
 
   // The last pasted JSON was cached under the open profile's PBID.

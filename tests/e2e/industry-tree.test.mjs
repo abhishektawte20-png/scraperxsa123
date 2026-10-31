@@ -193,15 +193,15 @@ async function drive(ctx, base, code, auto) {
       const box = c.querySelector("input[type=checkbox]");
       if (box) box.checked = /extras\.industryCode/.test(c.querySelector(".action-card-field").textContent);
     }
-    [...root.querySelectorAll("button")].find((b) => b.textContent === "Publish selected to RTS").click();
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "Publish and save").click();
   });
   for (let i = 0; i < 120; i++) {
-    if (await inPanel(() => /Published \d/.test(document.getElementById("sx-test-root").shadowRoot.textContent))) break;
+    if (await inPanel(() => /Saved \d/.test(document.getElementById("sx-test-root").shadowRoot.textContent))) break;
     await page.waitForTimeout(500);
   }
   await page.waitForTimeout(1000);
   return {
-    summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Published \d+, skipped \d+, failed \d+/)?.[0]),
+    summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Saved \d+ · Already in RTS \d+ · Needs attention \d+/)?.[0]),
     industries: await inPanel(() => window.industries),
     saves: await inPanel(() => window.saves),
     opens: await inPanel(() => window.opens),
@@ -212,7 +212,7 @@ async function drive(ctx, base, code, auto) {
 for (const mode of ["close", "stay"]) {
   test(`maps a tree of checkboxes in a window and publishes the right choice (the page ${mode === "close" ? "closes the window itself on Save" : "leaves the window open on Save"})`, { timeout: 150000 }, async () => {
     const result = await scenario(mode);
-    assert.equal(result.summary, "Published 1, skipped 0, failed 0");
+    assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
     // 2.1.2 is the 2nd branch, 1st group, 2nd choice: Clothing.
     assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
     assert.equal(result.saves, 1, "saved exactly once");
@@ -223,7 +223,7 @@ for (const mode of ["close", "stay"]) {
 
 test("a generic name such as Other is chosen by its code, in the right group, in a real browser", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.2.2 — Other");
-  assert.equal(result.summary, "Published 1, skipped 0, failed 0");
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   // 2.2.2 is the 2nd branch, 2nd group (Consumer Durables), 2nd choice: its Other, not Apparel's.
   assert.deepEqual(result.industries, ["Consumer Durables > Other"]);
   assert.equal(result.saves, 1);
@@ -231,20 +231,20 @@ test("a generic name such as Other is chosen by its code, in the right group, in
 
 test("a unique name decides the choice even if the code's position differs", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.2 — Footwear");
-  assert.equal(result.summary, "Published 1, skipped 0, failed 0");
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Footwear"]);
 });
 
 test("a name that is not in the tree publishes nothing", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.9 — Space Tourism");
-  assert.match(result.summary, /Published 0, skipped 0, failed 1/);
+  assert.match(result.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/);
   assert.deepEqual(result.industries, []);
   assert.equal(result.saves, 0);
 });
 
 test("one click detects the checkboxes, the + buttons and Save, and the mapping publishes the right choice", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.2 — Clothing", { auto: true });
-  assert.equal(result.summary, "Published 1, skipped 0, failed 0");
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
   assert.equal(result.saves, 1);
 });

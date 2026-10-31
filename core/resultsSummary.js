@@ -19,6 +19,24 @@
     "No shared strong identifier": "The profile identity could not be verified. Manually confirm you're on the correct profile and try again."
   };
 
+  // "Nothing to do": RTS already holds the value. Not a failure, not a problem.
+  const ALREADY = /already (has|exists|equals|ticked|there|linked|have)|already has an entry|\bduplicate\b|is already/i;
+  const isAlready = (text) => ALREADY.test(String(text ?? ""));
+
+  const NAMES = {
+    "businessEntity.nameVariations": "Name variations", "businessEntity.websiteAddresses": "Website address",
+    "businessEntity.emailDefaultStructure": "Email default structure", "businessEntity.researchNotes": "Research notes",
+    "company.sicCodes": "SIC codes", "company.naicsCodes": "NAICS codes", "company.keywords": "Keywords",
+    "company.briefDescription": "Brief description", "company.fullDescription": "Full description",
+    "businessEntity.socialMediaIdentifiers": "Social media"
+  };
+  function friendly(field) {
+    const base = String(field).replace(/\[\d+\]/g, "");
+    return NAMES[base] || globalThis.SXRTS?.outputFields?.get?.(base)?.label || field;
+  }
+  const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const shorten = (text, n = 110) => (String(text).length > n ? `${String(text).slice(0, n - 1)}\u2026` : String(text));
+
   function getSolution(error) {
     for (const [key, solution] of Object.entries(SOLUTION_MAP)) {
       if (error.includes(key)) {
@@ -46,6 +64,16 @@
         label: field,
         message: `Saved ${result.name || "value"}; RTS now shows it as linked`,
         detail: result.detail || null
+      };
+    }
+
+    if (result.status === "skipped" && (isAlready(result.reason) || isAlready(result.detail))) {
+      return {
+        icon: "\u2713",
+        status: "already",
+        label: field,
+        message: "Already in RTS",
+        detail: shorten(result.detail || result.reason || "")
       };
     }
 
@@ -98,13 +126,15 @@
     const counts = {
       success: 0,
       failed: 0,
-      skipped: 0
+      skipped: 0,
+      already: 0
     };
 
     for (const fieldResults of byField.values()) {
       for (const result of fieldResults) {
         if (result.status === "success") counts.success++;
         else if (result.status === "error") counts.failed++;
+        else if (result.status === "already") counts.already++;
         else if (result.status === "skipped") counts.skipped++;
       }
     }
@@ -116,38 +146,18 @@
     };
   }
 
+  // One line per field, worst first: what needs attention, what was saved, then (folded) what was already there.
   function generateHtml(byField, counts) {
-    const sections = [];
+    const line = (field, r) => `<div class="summary-item summary-item-${r.status}"><span class="summary-icon">${r.icon}</span><span class="summary-field">${esc(friendly(field))}</span><span class="summary-message">${esc(shorten(r.message))}</span></div>${r.detail && r.status === "error" ? `<div class="summary-detail">${esc(r.detail)}</div>` : ""}`;
+    const rows = { error: [], success: [], skipped: [], already: [] };
+    for (const [field, results] of byField.entries()) for (const r of results) (rows[r.status] || rows.skipped).push(line(field, r));
 
-    sections.push(`<div class="summary-header">`);
-    sections.push(`  <div class="summary-stats">Published ${counts.success}, skipped ${counts.skipped}, failed ${counts.failed}.</div>`);
-    sections.push(`</div>`);
-
-    for (const [field, results] of byField.entries()) {
-      for (const result of results) {
-        const icon = result.icon;
-        const statusClass = result.status;
-        const message = result.message;
-        const detail = result.detail;
-
-        sections.push(`<div class="summary-item summary-item-${statusClass}">`);
-        sections.push(`  <div class="summary-item-header">`);
-        sections.push(`    <span class="summary-icon">${icon}</span>`);
-        sections.push(`    <div class="summary-item-text">`);
-        sections.push(`      <div class="summary-field">${field}</div>`);
-        sections.push(`      <div class="summary-message">${message}</div>`);
-        sections.push(`    </div>`);
-        sections.push(`  </div>`);
-        if (detail) {
-          sections.push(`  <div class="summary-detail">💡 ${detail}</div>`);
-        }
-        sections.push(`</div>`);
-      }
-    }
-
-    return sections.join("\n");
+    const out = [`<div class="summary-header"><div class="summary-stats">Saved ${counts.success} \u00B7 Already in RTS ${counts.already} \u00B7 Needs attention ${counts.failed}${counts.skipped ? ` \u00B7 Skipped ${counts.skipped}` : ""}</div></div>`];
+    out.push(...rows.error, ...rows.success, ...rows.skipped);
+    if (rows.already.length) out.push(`<details class="summary-fold"><summary>Already in RTS (${rows.already.length}): nothing to do</summary>${rows.already.join("")}</details>`);
+    return out.join("\n");
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.resultsSummary = { buildSummary, formatResult, getSolution };
+  globalThis.SXRTS.resultsSummary = { buildSummary, formatResult, getSolution, isAlready };
 })();

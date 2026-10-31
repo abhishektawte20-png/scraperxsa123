@@ -33,6 +33,9 @@ import "../content/ui.js";
 import "../content/panel.js";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
 
+// These tests exercise the output-rule and mapping machinery with the agent's full links; the built-in handle-only step is covered in test-social-handle.mjs.
+globalThis.SXRTS.rovoContract.settings.handlesOnly = false;
+
 const store = new Map();
 global.chrome = { storage: { local: { async get(k) { return store.has(k) ? { [k]: store.get(k) } : {}; }, async set(o) { for (const [k, v] of Object.entries(o)) store.set(k, v); }, async remove(k) { store.delete(k); } } } };
 const or = globalThis.SXRTS.outputRules;

@@ -38,6 +38,9 @@ import "../content/rules.js";
 import "../content/panel.js";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
 
+// These tests exercise the output-rule and mapping machinery with the agent's full links; the built-in handle-only step is covered in test-social-handle.mjs.
+globalThis.SXRTS.rovoContract.settings.handlesOnly = false;
+
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, timeout = 4000) {
   const deadline = Date.now() + timeout;
@@ -99,8 +102,8 @@ async function publishOnly(shadow, path) {
     const box = card.querySelector("input[type=checkbox]");
     if (box && !box.disabled) box.checked = card.querySelector(".action-card-field").textContent.startsWith(path);
   }
-  btn(shadow, "Publish selected to RTS").click();
-  assert.ok(await until(() => /Published \d/.test(shadow.textContent)), "publish finished");
+  btn(shadow, "Publish and save").click();
+  assert.ok(await until(() => /Saved \d/.test(shadow.textContent)), "publish finished");
 }
 
 test("waiting rows offer 'Map this field' with an explanation; native rows do not", async () => {
@@ -114,7 +117,7 @@ test("waiting rows offer 'Map this field' with an explanation; native rows do no
   assert.ok(map);
   assert.match(map.getAttribute("data-tip"), /Teach the extension where "Brief description" goes in RTS/);
   assert.equal(cardFor(shadow, "businessEntity.websiteAddresses")[0].querySelector("button.map"), null, "native fields have no map button");
-  assert.ok(shadow.querySelector(".group-title.waiting"), "waiting group heading");
+  assert.match(shadow.querySelector("details.waiting-fold > summary").textContent, /Waiting for RTS mapping \(\d+\)/, "waiting group, folded");
   assert.ok(shadow.querySelector(".group-title.ready"), "ready group heading");
   for (const path of ["extras.address", "extras.startDate", "extras.management", "extras.industryCode"]) assert.ok(cardFor(shadow, path)[0]?.querySelector("button.map"), path);
 });
@@ -151,7 +154,7 @@ test("map a single field from its row: guided dialog shows what the agent found,
   await publishOnly(shadow, "company.briefDescription");
   assert.match(doc.getElementById("briefDesc").value, /^Designer of streetwear apparel intended for individual consumers/);
   assert.equal(doc.getElementById("saveDesc").disabled, true);
-  assert.match(shadow.textContent, /Published 1, skipped 0, failed 0/);
+  assert.match(shadow.textContent, /Saved 1 · Already in RTS 0 · Needs attention 0/);
 });
 
 test("map a repeatable record (Add -> network + handle -> Save): both social handles are written and verified", async () => {
@@ -188,7 +191,7 @@ test("map a repeatable record (Add -> network + handle -> Save): both social han
   assert.deepEqual(rows.map((r) => [r.querySelector("select").selectedOptions[0].textContent, r.querySelector("input").value]), [
     ["Facebook", "https://www.facebook.com/psyphergames"], ["Instagram", "https://www.instagram.com/psyphergames/"]
   ]);
-  assert.match(shadow.textContent, /Published 2, skipped 0, failed 0/);
+  assert.match(shadow.textContent, /Saved 2 · Already in RTS 0 · Needs attention 0/);
 });
 
 test("a mapping combined with an output rule writes the rule's value", async () => {
@@ -221,7 +224,7 @@ test("a mapped dropdown value the page doesn't offer is caught before anything i
   btn(shadow, "Validate JSON").click();
   await publishOnly(shadow, "extras.startDate");
   assert.match(shadow.textContent, /is not a supported value\. Supported: 2020/);
-  assert.match(shadow.textContent, /Published 0, skipped 0, failed 1/);
+  assert.match(shadow.textContent, /Saved 0 · Already in RTS 0 · Needs attention 1/);
   assert.equal(doc.querySelector("select.net").value, "");
 });
 

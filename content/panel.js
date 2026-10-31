@@ -182,6 +182,7 @@
       .badge-skipped { background: #eef0f4; color: var(--muted); }
       .badge-waiting { background: var(--warn-soft); color: var(--warn); }
       .badge-saved { background: var(--ok-soft); color: var(--ok); }
+      .badge-already { background: #eaf5f0; color: #3d6354; }
       .badge-failed { background: var(--bad-soft); color: var(--bad); }
       .hidden { display: none !important; }
       .helptext { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
@@ -191,23 +192,27 @@
       .foot { text-align: center; padding: 6px 18px 18px; font-size: 11px; color: var(--muted); }
       .foot strong { color: var(--navy); font-weight: 700; }
 
-      .summary-header { margin-bottom: 14px; }
+      .summary-header { margin-bottom: 8px; }
       .summary-header h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--ink); }
       .summary-stats { display: flex; gap: 12px; flex-wrap: wrap; font-weight: 650; }
       .stat-item { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 650; }
       .stat-item.success { background: var(--ok-soft); color: var(--ok); }
       .stat-item.error { background: var(--bad-soft); color: var(--bad); }
       .stat-item.skipped { background: #eef0f4; color: var(--muted); }
-      .summary-item { margin-bottom: 10px; padding: 10px; border-radius: 8px; border-left: 3px solid var(--line); background: #fbfcfe; }
+      .summary-item { display: flex; gap: 8px; align-items: baseline; margin: 0 0 3px; padding: 5px 8px; border-radius: 6px; border-left: 3px solid var(--line); background: #fbfcfe; font-size: 12px; }
       .summary-item-success { border-left-color: #1a8a5f; background: #f0faf7; }
-      .summary-item-skipped { border-left-color: #9ca3af; background: #f5f5f7; opacity: .85; }
+      .summary-item-already { border-left-color: #8fcbb2; background: #f6fbf9; color: #3d6354; }
+      .summary-item-skipped { border-left-color: #9ca3af; background: #f5f5f7; }
       .summary-item-error { border-left-color: #dc2626; background: #fef2f2; }
-      .summary-item-header { display: flex; gap: 10px; align-items: flex-start; }
-      .summary-icon { font-size: 16px; font-weight: 700; flex-shrink: 0; width: 20px; text-align: center; }
-      .summary-item-text { flex: 1; min-width: 0; }
-      .summary-field { font-size: 12px; font-weight: 700; color: var(--ink); }
-      .summary-message { font-size: 12px; color: #47536b; margin-top: 2px; }
-      .summary-detail { font-size: 11px; color: #6b5100; background: var(--warn-soft); padding: 8px; border-radius: 6px; margin-top: 8px; }
+      .summary-icon { font-weight: 700; flex-shrink: 0; width: 14px; text-align: center; }
+      .summary-field { font-weight: 700; color: var(--ink); white-space: nowrap; }
+      .summary-message { color: #47536b; min-width: 0; overflow-wrap: anywhere; }
+      .summary-item-already .summary-message { color: #5b7a6c; }
+      .summary-detail { font-size: 11px; color: #6b5100; background: var(--warn-soft); padding: 5px 8px; border-radius: 6px; margin: 0 0 4px 17px; }
+      .summary-fold { margin-top: 4px; }
+      .waiting-fold { margin-top: 8px; }
+      .waiting-fold > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--warn); padding: 6px 2px; }
+      .summary-fold > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: #3d6354; padding: 4px 2px; }
       .summary-warning { white-space: pre-wrap; color: #6b5100; margin-top: 12px; padding-top: 12px; border-top: 1px solid #ffd9a8; font-size: 11px; }
 
       .html-capture-modal { display: none; position: fixed; z-index: 2147483648; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, .5); }
@@ -380,7 +385,7 @@
     const actionList = element("div", { className: "action-list" });
     previewCard.appendChild(actionList);
     const selectAllButton = element("button", { className: "btn secondary", text: "Select all pending", type: "button", tip: "Ticks every row that is ready to publish." });
-    const publishButton = element("button", { className: "btn primary-cta", text: "Publish selected to RTS", type: "button", tip: "Fills the ticked rows in the open RTS profile, clicks Save, then reads each value back to confirm it saved. The identity lock checks this is the right profile first." });
+    const publishButton = element("button", { className: "btn primary-cta", text: "Publish and save", type: "button", tip: "Fills the ticked rows in the open RTS profile, clicks Save, then reads each value back to confirm it saved. The identity lock checks this is the right profile first." });
     const captureHtmlButton = element("button", { className: "btn secondary", text: "Capture field HTML", type: "button", tip: "Shows the real HTML of the form fields on this page so you can check they were populated." });
     const clearCacheButton = element("button", { className: "btn danger", text: "Clear cache for this profile", type: "button", tip: "Forgets the saved plan and the last pasted report for this profile." });
     previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, captureHtmlButton, clearCacheButton]));
@@ -704,8 +709,9 @@
       if (!entry) return;
       entry.action.executionStatus = statusText;
       entry.action.resultMessage = reasonText || "";
-      entry.statusBadge.textContent = statusText;
-      entry.statusBadge.className = `badge badge-${statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "failed" : "skipped"}`;
+      const already = statusText === "skipped" && globalThis.SXRTS.resultsSummary?.isAlready?.(reasonText);
+      entry.statusBadge.textContent = already ? "already in RTS" : statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "needs attention" : statusText;
+      entry.statusBadge.className = `badge badge-${already ? "already" : statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "failed" : "skipped"}`;
       entry.card.querySelector(".map-row")?.remove();
       entry.reasonEl.textContent = reasonText || "";
       entry.checkbox.checked = false;
@@ -737,9 +743,13 @@
         for (const action of ready) actionList.appendChild(renderActionRow(action));
       }
       if (waiting.length) {
-        actionList.appendChild(groupTitle("waiting", "Waiting for RTS mapping", waiting.length));
-        actionList.appendChild(element("div", { className: "group-note", text: "The agent found these, but the extension doesn't know where they go in RTS yet. Click \"Map this field\" on a row to fix that." }));
-        for (const action of waiting) actionList.appendChild(renderActionRow(action));
+        // Folded by default: these rows can be long, and they are not what is about to be published.
+        const fold = element("details", { className: "waiting-fold" }, [
+          element("summary", { text: `Waiting for RTS mapping (${waiting.length}): open to map them` }),
+          element("div", { className: "group-note", text: "The agent found these, but the extension doesn't know where they go in RTS yet. Click \"Map this field\" on a row to fix that." })
+        ]);
+        for (const action of waiting) fold.appendChild(renderActionRow(action));
+        actionList.appendChild(fold);
       }
       previewCard.classList.remove("hidden");
       renderRovoRows(lastValidated.rovo?.rows);

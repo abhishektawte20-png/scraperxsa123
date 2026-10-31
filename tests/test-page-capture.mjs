@@ -21,14 +21,14 @@ const PAGE = `
   <div id="header"><span>PBID: 999999-99</span></div>
   <div class="section" id="kw-section">
     <div class="row"><b>Keywords:</b> <a href="/help?token=SECRET#x" class="help">?</a></div>
-    <div class="tagbox" data-id="123456" style="color:red; display:none">
+    <div class="tagbox" data-id="123456" data-clipboard-text="https://rts.pitchbook.com/ext/1166374-99?secret-link=1" data-tooltip="Copy link to this section" id="box9988776" style="color:red; display:none">
       <span class="tag">secret keyword one</span><span class="tag">secret keyword two</span>
       <input type="text" name="kw" id="kwInput" value="typed secret value" placeholder="Add keyword">
     </div>
     <textarea name="notes">private notes text</textarea>
     <select name="kind"><option value="A" selected>Alpha</option><option value="B">Beta</option></select>
     <input type="checkbox" name="agree" value="True" checked>
-    <button type="button" onclick="addKeyword()" disabled>Add</button>
+    <button type="button" onclick="addKeyword('private text', 1166374)" disabled>Add</button>
     <script>var secret = "do not leak";</script>
     <svg width="10"><path d="M0 0"/></svg>
     <p>${"very long paragraph of company text ".repeat(12)}</p>
@@ -45,7 +45,7 @@ test("the area around a field is found by its label on the page", () => {
   assert.match(hit.html, /id="kwInput"/);
   assert.match(hit.html, /name="kw"/);
   assert.match(hit.html, /placeholder="Add keyword"/);
-  assert.match(hit.html, /onclick="addKeyword\(\)"/);
+  assert.match(hit.html, /onclick="addKeyword\('…', #\)"/, "a handler keeps its shape, not its arguments");
   assert.match(hit.html, /disabled/);
 });
 
@@ -55,6 +55,7 @@ test("no typed or stored values, scripts or free text leave the page", () => {
   assert.doesNotMatch(hit.html, /typed secret value|private notes text|do not leak|token=SECRET|<script|<path/);
   assert.doesNotMatch(hit.html, /123456/, "numbers in data attributes are masked");
   assert.match(hit.html, /data-id="#"/);
+  assert.doesNotMatch(hit.html, /1166374|ext\/#|secret-link|9988776/, "no attribute carries a link or an id");
   assert.match(hit.html, /href="\/help"/, "links keep the path, not the query");
   assert.match(hit.html, /<svg>\n<\/svg>/);
   assert.match(hit.html, /style="display:none"/);

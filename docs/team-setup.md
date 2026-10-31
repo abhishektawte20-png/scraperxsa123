@@ -93,3 +93,15 @@ For the window mapping, the quickest way is **Detect automatically (one click)**
 - **Keywords (a tag box).** Map the box once (**Map this field**, pick the "Enter or paste keywords" box as both the box and the Add button). When publishing, each keyword is typed, Enter is pressed (RTS offers the exact existing keyword if there is one, otherwise "(new)"), Save Changes is pressed only if it is waiting, and success is claimed only when the tag is really on the page. Keywords that are already tags are skipped.
 - **Reports.** The page capture now ignores a mapped button that is hidden (a look-alike inside a pop-up) and knows the names RTS uses for Name Variations, Website Address, Email Default Structure and SIC.
 - **Industry tagging detection** now also works when the tree draws its choices only after a branch is opened.
+
+## What the results mean (v0.21.0)
+
+After **Publish and save** each field ends in one of four states:
+- **Saved** (green): written, saved with RTS's own Save button, and read back from the page.
+- **Already in RTS** (green, muted, folded away): RTS already holds the value, so nothing was changed. This is never a failure.
+- **Needs attention** (red): something really went wrong; the line says what.
+- **Not mapped** (grey): the extension does not know where this goes in RTS yet. These rows are folded under "Waiting for RTS mapping".
+
+Social media values are written as the bare handle on every network (`facebook.com/RelianceIndustriesLimited/` becomes `RelianceIndustriesLimited`; no address, no @, no trailing slash). The preview shows the handle and it stays editable. Page captures never copy attribute values that look like links or ids.
+
+**A fixed extension ID.** From this version the extension carries a fixed key, so Chrome gives it the same ID (`dojojjlelcjpebaekkgmpagfcolnfhig`) wherever the folder is loaded, and mappings made in the browser survive moving or re-loading the folder. Upgrading to this version from an older one starts with empty browser storage once (mappings that were only in the browser are lost; those shipped as team defaults are not). Export your mappings as team defaults first.
