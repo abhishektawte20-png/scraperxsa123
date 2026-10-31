@@ -158,6 +158,12 @@ async function runInWindow(tabId, job) {
       func: (windowJob) => globalThis.SXRTS.workflows.popupWindow.run(windowJob),
       args: [job]
     });
+    // A page that navigates or closes itself as soon as Save is accepted (RTS submits the industry form)
+    // ends the script without a result: that is "the window went away after Save", not a value.
+    if (injection?.result === undefined || injection?.result === null) {
+      if (lastStage.get(tabId) === "saveClicked") return { status: "windowClosedAfterSave" };
+      throw new Error("The window closed before it reported back. Nothing was confirmed.");
+    }
     return injection.result;
   } catch (error) {
     // The page may close its own window as soon as Save is accepted.

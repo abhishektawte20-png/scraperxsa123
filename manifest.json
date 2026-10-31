@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ScraperX UI Automation Tool",
-  "version": "0.21.3",
+  "version": "0.21.4",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApfmEjOuvGU0LvrS59RkJsgzz9dsjcKsKsJ409eJTPd2y5IkRSM2iodByWxbAXewppDg7EKYZAlpilVhDedJVegHzsAfIMrQDoek3BbLGNyM0+0E4qb0y8Mt3f08m5+dADb2RvghwTMME6AZQ3Luat2krbgP/w/FXaffDyLSVHTy4k4ejrvx4tfuLHezNiNDAggz7GFcn2cC4qYsv3FbGFUUIkEwpdKUIL8uVXkBqgNpCfxoBPx5vIbFRo6nVCFfjpr54MCMRefeMnQXKusQLfx2I6zQy83VfspyMhniGRPFBwPR4N0l9GGQdynFrKncj5Lb3Qo6H5h1T/HGgUmUCtwIDAQAB",
   "description": "ScraperX UI Automation Tool, developed by Abhishek Tawte. Validates the ScraperX agent report against the output rules, previews every proposed change, and fills PitchBook RTS fields with profile identity locking and save verification. Any field can be mapped from the preview in seconds.",
   "permissions": [

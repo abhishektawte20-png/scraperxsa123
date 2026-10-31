@@ -113,3 +113,13 @@ RTS draws the industry tick boxes itself (`div.controls_checkBox`) and the + but
 ## Industry window: Detect reads the whole list (v0.21.3)
 
 RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls_checkBox_border` frame) and the choices a box of their own (`controls_checkBox`). **Detect automatically** now picks the *choices* only: it ignores the frame and the branches' own boxes, and finds the choices by the letters of their id around the record number (`industryControlCode…CheckBox`). It then opens every branch and reports what it read, for example "Found: 227 choices in 49 branches; + buttons tested; Save button "Save Changes"". The picker window is laid out so **Done** is always in view, the manual picking is folded away once detection succeeded, and "press before Save" is under Advanced (the industry window has no such step).
+
+## Fixes after the first real industry run (v0.21.4)
+
+- **Detect never ticks anything.** Tick boxes are small and clickable, so earlier versions mistook them for + buttons and clicked them while reading the list. They are now excluded, and Detect checks that no box changed (and warns to close the window without Save if one did).
+- **Both levels of + buttons.** RTS's sector buttons and group buttons have different ids (`industryControlGroup…Expander`, `industryControlSegment…Expander`); Detect keeps both, top level first.
+- **A choice is found by the place RTS gives it.** Every choice's click handler carries `checkCode(this, sector, group, choice)` counted from 0, which is the code minus 1: 2.5.6 is (1, 4, 5). The extension opens the sector and group by that place, ticks the choice there, and refuses if the name RTS lists at that place is not the reported name, or if the reported name sits at a different code.
+- **A window that goes away on Save** (RTS submits the form) is no longer a crash: the extension reopens the window and reads the tick back.
+- **Keywords:** Enter is pressed again (up to three times, waiting longer each time) if the suggestion list was not ready.
+- **Mapped fields on the other tab:** if a mapped control is not found, the extension switches between Business Entity and Company (which also expands the sections) and tries once more.
+- **Page captures** count rows that differ only in numbers as the same row ("N more similar").

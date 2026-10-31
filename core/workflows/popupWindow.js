@@ -134,6 +134,27 @@
     return Boolean(base) && classKey(box) !== base;
   }
 
+  // Every + button of every level: they may carry different ids (RTS: ...Group...Expander and ...Segment...Expander).
+  function treeShownAll(selectors) {
+    const out = [];
+    for (const selector of selectors || []) for (const node of queryAll(selector)) if (rendered(node) && !out.includes(node)) out.push(node);
+    return out.sort((a, b) => (a.compareDocumentPosition(b) & 4 ? -1 : 1));
+  }
+
+  // The words printed for a choice. RTS puts them in a "...Description" element whose text can be cut up by
+  // highlighting; the first text after the box is the fallback.
+  function choiceLabel(box) {
+    const description = box.id && /CheckBox$/.test(box.id) ? document.getElementById(box.id.replace(/CheckBox$/, "Description")) : null;
+    const words = description ? description.textContent.replace(/\s+/g, " ").trim() : "";
+    return words || nextText(box);
+  }
+
+  // RTS gives every choice its place in its click handler: checkCode(this, sector, group, choice), counted from 0.
+  const TUPLE = /\(\s*(?:this\s*,\s*)?(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/;
+  const tupleOf = (box) => { const m = TUPLE.exec(box.getAttribute?.("onclick") || ""); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null; };
+  const wantTuple = (code) => { const p = String(code || "").split(".").map(Number); return p.length === 3 && p.every((n) => Number.isInteger(n) && n >= 1) ? p.map((n) => n - 1) : null; };
+  const sameTuple = (a, b) => Boolean(a && b) && a.every((n, i) => n === b[i]);
+
   // "6.5.1 \u2014 Application Software" -> { code: "6.5.1", name: "Application Software" }
   function parseChoice(value) {
     const text = String(value ?? "").trim();
@@ -156,8 +177,8 @@
   async function findChoice(job, name) {
     const target = plain(name);
     const leaves = () => treeShown(job.tree.leaf.selectors);
-    const expanders = () => (job.tree.expander ? treeShown(job.tree.expander.selectors) : []);
-    const find = () => leaves().filter((leaf) => plain(nextText(leaf)) === target);
+    const expanders = () => (job.tree.expander ? treeShownAll(job.tree.expander.selectors) : []);
+    const find = () => leaves().filter((leaf) => plain(choiceLabel(leaf)) === target);
     const count = () => leaves().length + expanders().length;
     let hits = find();
     if (hits.length || !job.tree.expander) return hits;
@@ -208,7 +229,7 @@
       throw new Error(`More than one choice in the tree is called "${choice.name}" and the code "${choice.code || "(none)"}" does not say which. Tick it by hand.`);
     }
     const leaves = () => treeShown(job.tree.leaf.selectors);
-    const expanders = () => (job.tree.expander ? treeShown(job.tree.expander.selectors) : []);
+    const expanders = () => (job.tree.expander ? treeShownAll(job.tree.expander.selectors) : []);
     const count = () => leaves().length + expanders().length;
     const keyed = () => {
       const seen = {};
@@ -256,26 +277,69 @@
     const inGroup = leaves().filter((leaf) => after(groupNode, leaf) && (!nextGroup || after(leaf, nextGroup.node)));
     const leaf = inGroup[parts[2] - 1];
     if (!leaf) throw new Error(`Group ${parts[0]}.${parts[1]} of the tree has ${inGroup.length} choice(s), so "${choice.code}" cannot be found.`);
-    if (plain(nextText(leaf)) !== plain(choice.name)) {
-      throw new Error(`The report says ${choice.code} is "${choice.name}", but RTS lists "${nextText(leaf)}" at that place. Nothing was ticked: check the code and name.`);
+    if (plain(choiceLabel(leaf)) !== plain(choice.name)) {
+      throw new Error(`The report says ${choice.code} is "${choice.name}", but RTS lists "${choiceLabel(leaf)}" at that place. Nothing was ticked: check the code and name.`);
     }
     return [leaf];
   }
 
+  // With the place RTS gives a choice (sector, group, choice) and a + button selector per level, the branches are
+  // opened by their place, without relying on how the page is laid out. Returns [] when that is not possible.
+  async function descendByTuple(job, want) {
+    const levels = job.tree.expander?.selectors || [];
+    if (!want || levels.length < 2) return [];
+    const at = (i) => treeShown([levels[i]]);
+    const leaves = () => treeShown(job.tree.leaf.selectors);
+    const count = () => leaves().length + at(0).length + at(1).length;
+    const open = async (get) => {
+      const node = get();
+      if (!node) throw new Error(`The tree has no branch at place ${want.map((n) => n + 1).join(".")}.`);
+      const before = count();
+      node.click();
+      await treeSettled(count);
+      if (count() < before) { const again = get(); if (again) { again.click(); await treeSettled(count); } }
+    };
+    await open(() => at(0)[want[0]]);
+    const sector = () => at(0)[want[0]];
+    const next = () => at(0)[want[0] + 1];
+    const groups = () => at(1).filter((n) => after(sector(), n) && (!next() || after(n, next())));
+    await open(() => groups()[want[1]]);
+    return leaves().filter((l) => sameTuple(tupleOf(l), want));
+  }
+
   function nearbyNames(job, name) {
     const words = plain(name).split(" ").filter((w) => w.length > 3);
-    return treeShown(job.tree.leaf.selectors).map(nextText).filter((text) => words.some((w) => plain(text).includes(w))).slice(0, 5);
+    return treeShown(job.tree.leaf.selectors).map(choiceLabel).filter((text) => words.some((w) => plain(text).includes(w))).slice(0, 5);
   }
 
   // job: { tree: { expander?, leaf }, value, replace?, verifyOnly?, preSave, saveButton }
   async function runTree(job) {
     const choice = parseChoice(job.value);
     if (!choice.name) throw new Error("The report gives no industry name to choose in the tree.");
-    const present = await waitFor(() => treeShown(job.tree.leaf.selectors).length || treeShown(job.tree.expander?.selectors).length, TIMEOUTS.fields);
+    const present = await waitFor(() => treeShown(job.tree.leaf.selectors).length || treeShownAll(job.tree.expander?.selectors).length, TIMEOUTS.fields);
     if (!present) throw new Error("The window opened, but its tree of choices was not found. Re-map the field.");
 
-    let hits = await findChoice(job, choice.name);
-    if (GENERIC.has(plain(choice.name)) || hits.length > 1) hits = await descendByCode(job, choice);
+    // The place RTS gives the choice (when it says so) is the surest way: it never confuses two "Other"s.
+    const want = wantTuple(choice.code);
+    const here = () => treeShown(job.tree.leaf.selectors).filter((l) => sameTuple(tupleOf(l), want));
+    let hits = want ? here() : [];
+    if (!hits.length) hits = await findChoice(job, choice.name);
+    let placed = want ? hits.some((h) => sameTuple(tupleOf(h), want)) && hits.length === 1 : false;
+    if (!placed && want && (!hits.length || GENERIC.has(plain(choice.name)) || hits.length > 1)) {
+      const byPlace = await descendByTuple(job, want);
+      if (byPlace.length === 1) { hits = byPlace; placed = true; }
+    }
+    if (!placed && (GENERIC.has(plain(choice.name)) || hits.length > 1)) {
+      hits = await descendByCode(job, choice);
+    }
+    // Whatever was found must be where the report says and carry the reported name.
+    if (hits.length === 1 && want && sameTuple(tupleOf(hits[0]), want) && plain(choiceLabel(hits[0])) !== plain(choice.name)) {
+      throw new Error(`The report says ${choice.code} is "${choice.name}", but RTS lists "${choiceLabel(hits[0])}" at that code. Nothing was ticked: check the code and name.`);
+    }
+    if (hits.length === 1 && want) {
+      const place = tupleOf(hits[0]);
+      if (place && !sameTuple(place, want)) throw new Error(`The report says ${choice.code} is "${choice.name}", but RTS lists "${choiceLabel(hits[0])}" at ${place.map((n) => n + 1).join(".")}, not at ${choice.code}. Nothing was ticked: check the code and name.`);
+    }
     if (!hits.length) {
       const near = nearbyNames(job, choice.name);
       throw new Error(`"${choice.name}" was not found in the tree of choices${near.length ? ` (similar: ${near.join(", ")})` : ""}. Check the name the report gives against RTS's list.`);

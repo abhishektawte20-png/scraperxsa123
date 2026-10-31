@@ -21,39 +21,48 @@ const TREE = [
 // RTS's real markup: a frame (controls_checkBox_border) around the box, ids that carry a record number, and a box of
 // its own for every branch (controls_emptyCheckBox) that is NOT a choice.
 const leaf = { selectors: ['[id^="industryControlCode"][id$="CheckBox"]'], text: "" };
-const expander = { selectors: ['[id^="industryControlGroup"][id$="Expander"]'], text: "" };
+// Two levels of + buttons with different ids: sectors (...Group...) and groups (...Segment...).
+const expander = { selectors: ['[id^="industryControlGroup"][id$="Expander"]', '[id^="industryControlSegment"][id$="Expander"]'], text: "" };
 const job = (value, extra = {}) => ({ tree: { leaf, expander }, value, preSave: [], saveButton: { selectors: ["#saveIndustryButton"], text: "Save Changes" }, ...extra });
 
 function setup({ lazy = false, closeOnSave = false } = {}) {
   let n = 100;
-  const box = (l) => { const o = typeof l === "string" ? { n: l } : l; return `<li><div class="controls_checkBox_border"><div id="industryControlCode${n++}1284861CheckBox" class="controls_checkBox${o.on ? " controls_checkBox_checked" : ""}"></div></div> <span>${o.n}</span></li>`; };
-  const group = (g, level) => `<li><div id="industryControlGroup${n++}1284861Expander" class="mt_5 sub-section__icon-expand section__icon"></div><div class="controls_checkBox_border"><div id="industryControlGroup${n++}1284861CheckBox" class="controls_emptyCheckBox"></div></div> <span>${g.name}</span><ul style="display:none">${lazy ? "" : level === 1 ? g.kids.map((k) => group(k, 2)).join("") : g.leaves.map(box).join("")}</ul></li>`;
-  const html = `<ul id="root">${TREE.map((g) => group(g, 1)).join("")}</ul><input id="saveIndustryButton" type="button" value="Save Changes" disabled>`;
+  const gi = new Map();
+  // RTS's markup: the click handler of a choice carries its place checkCode(this, sector, group, choice) from 0,
+  // its look is the WHOLE class (controls_checkBox / controls_checkBox_checked), and every box is clickable.
+  const box = (l, a, b, c) => { const o = typeof l === "string" ? { n: l } : l; const k = n++; return `<div id="industryControlCode${k}"><div><div id="industryControlCode${k}1284861CheckBox" class="${o.on ? "controls_checkBox_checked" : "controls_checkBox"}" style="cursor:pointer" onclick="IndustryControl.checkCode(this, ${a}, ${b}, ${c});"></div></div><div id="industryControlCode${k}1284861Description">${o.n}</div></div>`; };
+  const sector = (g, a) => `<div id="industryControlGroup${n}"><div id="industryControlGroup${n++}1284861Expander" class="mt_5 sub-section__icon-expand section__icon" style="cursor:pointer"></div><div><div class="controls_checkBox_border"><div id="industryControlGroup${n++}1284861CheckBox" class="controls_emptyCheckBox" style="cursor:pointer"></div></div></div><div id="industryControlGroup${n}Description">${g.name}</div><div class="child" style="display:none">${lazy ? "" : g.kids.map((k, b) => segment(k, a, b)).join("")}</div></div>`;
+  const segment = (k, a, b) => `<div id="industryControlSegment${n}"><div id="industryControlSegment${n++}1284861Expander" class="mt_5 sub-section__icon-expand section__icon" style="cursor:pointer"></div><div><div id="industryControlSegment${n++}1284861CheckBox" class="controls_emptyCheckBox" style="cursor:pointer"></div></div><div id="industryControlSegment${n}Description">${k.name}</div><div class="child" style="display:none">${lazy ? "" : k.leaves.map((l, c) => box(l, a, b, c)).join("")}</div></div>`;
+  const html = `<div id="root">${TREE.map((g, a) => sector(g, a)).join("")}</div><input id="saveIndustryButton" type="button" value="Save Changes" disabled>`;
   const dom = new JSDOM(`<!doctype html><body>${html}</body>`, { runScripts: "outside-only", url: "http://localhost/industryGroup/create.html" });
   const { window } = dom;
   Object.assign(global, { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement, NodeFilter: window.NodeFilter, HTMLInputElement: window.HTMLInputElement, Event: window.Event, InputEvent: window.InputEvent });
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const doc = window.document;
-  const state = { saves: 0, stages: [], closed: 0 };
+  const state = { saves: 0, stages: [], closed: 0, clickedBranchBoxes: 0 };
   global.chrome = { runtime: { sendMessage: (m) => state.stages.push(m.stage) } };
   window.close = () => { state.closed++; };
   const save = doc.getElementById("saveIndustryButton");
-  const build = (li, level) => {
-    const g = (level === 1 ? TREE : TREE.flatMap((t) => t.kids)).find((x) => x.name === li.querySelector(":scope > span").textContent);
-    li.querySelector(":scope > ul").innerHTML = level === 1 ? g.kids.map((k) => group(k, 2)).join("") : g.leaves.map(box).join("");
+  const drawChildren = (holder, level, a, b) => {
+    const name = holder.querySelector(":scope > [id$=Description]").textContent;
+    if (level === 1) { const t = TREE.find((x) => x.name === name); holder.querySelector(":scope > .child").innerHTML = t.kids.map((k, kb) => segment(k, TREE.indexOf(t), kb)).join(""); }
+    else { const t = TREE.find((x) => x.kids.some((k) => k.name === name)); const kb = t.kids.findIndex((k) => k.name === name); holder.querySelector(":scope > .child").innerHTML = t.kids[kb].leaves.map((l, c) => box(l, TREE.indexOf(t), kb, c)).join(""); }
   };
   doc.getElementById("root").addEventListener("click", (event) => {
     const t = event.target;
-    if (t.classList.contains("controls_checkBox")) { t.classList.toggle("controls_checkBox_checked"); save.disabled = false; return; }
-    if (!t.classList.contains("sub-section__icon-expand")) return;
-    const li = t.parentElement, list = li.querySelector(":scope > ul");
-    const open = list.style.display !== "none";
-    if (!open && lazy && !list.children.length) build(li, li.parentElement.id === "root" ? 1 : 2);
-    list.style.display = open ? "none" : "block";
+    if (/^industryControlCode\d+1284861CheckBox$/.test(t.id)) { t.className = t.className === "controls_checkBox" ? "controls_checkBox_checked" : "controls_checkBox"; save.disabled = false; return; }
+    if (/CheckBox$/.test(t.id)) { state.clickedBranchBoxes++; return; }
+    if (!/Expander$/.test(t.id)) return;
+    const holder = t.parentElement, child = holder.querySelector(":scope > .child");
+    const open = child.style.display !== "none";
+    if (!open && lazy && !child.children.length) drawChildren(holder, /^industryControlGroup/.test(t.id) ? 1 : 2);
+    child.style.display = open ? "none" : "block";
+    t.className = open ? "mt_5 sub-section__icon-expand section__icon" : "mt_5 sub-section__icon-collapse section__icon";
   });
   save.addEventListener("click", () => { state.saves++; if (closeOnSave) doc.getElementById("root").remove(); save.disabled = true; });
   Object.assign(globalThis.SXRTS.workflows.popupWindow.TIMEOUTS, { fields: 400, button: 400, settle: 400, after: 20, branch: 120, poll: 5, search: 5000 });
-  return { doc, state, ticked: () => Array.from(doc.querySelectorAll(".controls_checkBox_checked")).map((b) => b.closest("li").querySelector(":scope > span").textContent) };
+  const ticked = () => Array.from(doc.querySelectorAll(".controls_checkBox_checked")).map((b) => b.parentElement.parentElement.querySelector("[id$=Description]").textContent);
+  return { doc, state, ticked };
 }
 const run = (j) => globalThis.SXRTS.workflows.popupWindow.run(j);
 
@@ -86,16 +95,30 @@ test("a given usual look (baseKey) decides what counts as ticked, even when few 
   assert.ok(doc.querySelectorAll(".controls_checkBox_checked").length === 2);
 });
 
-test("a generic name such as Other still goes by its code, with drawn boxes too", async () => {
-  const { ticked } = setup();
-  window.Element.prototype.getBoundingClientRect = function () {
-    let depth = 0;
-    for (let n = this.parentElement; n; n = n.parentElement) if (n.tagName === "UL") depth++;
-    return { left: 10 + depth * 20, top: 0, right: 0, bottom: 0, width: 10, height: 10, x: 0, y: 0 };
-  };
+test("a generic name such as Other goes by the place RTS gives it, even with no page layout to go by", async () => {
+  const { ticked, state } = setup();
+  // 2.2.2 is sector 2, its group 2, choice 2: the Other under Consumer Durables, not the Others elsewhere.
   const out = await run(job("2.2.2 — Other"));
   assert.equal(out.status, "saved");
-  assert.ok(ticked().includes("Other") && ticked().length === 2);
+  assert.equal(state.saves, 1);
+  const mine = ticked().filter((x) => x === "Other");
+  assert.equal(mine.length, 1);
+  const box = Array.from(document.querySelectorAll(".controls_checkBox_checked")).find((b) => /Other/.test(b.parentElement.parentElement.textContent));
+  assert.match(box.getAttribute("onclick"), /checkCode\(this, 1, 1, 1\)/, "sector 1, group 1, choice 1 (from 0)");
+});
+
+test("a place that holds a different name, or a wrong name for a place, ticks nothing", async () => {
+  const { ticked, state } = setup();
+  await assert.rejects(run(job("2.1.2 — Footwear")), /RTS lists "Footwear" at 2\.1\.3, not at 2\.1\.2/);
+  await assert.rejects(run(job("2.2.2 — Chemicals")), /RTS lists "Chemicals" at 1\.1\.2, not at 2\.2\.2/);
+  assert.equal(state.saves, 0);
+  assert.deepEqual(ticked(), ["Clothing"]);
+});
+
+test("the reported name must match what RTS lists, even when the place exists", async () => {
+  const { state } = setup();
+  await assert.rejects(run(job("1.1.2 — Chemicals and Plastics")), /check the code and name|not found/);
+  assert.equal(state.saves, 0);
 });
 
 test("verify only reads the drawn tick back and never saves", async () => {
@@ -112,7 +135,7 @@ test("a window that closes itself on Save leaves the tick unconfirmed here", asy
 });
 
 test("Detect recognises the drawn boxes and the + buttons, and remembers the usual look", async () => {
-  const { doc } = setup();
+  const { doc, state } = setup();
   const found = await globalThis.SXRTS.popupPicker.detectTree(globalThis.SXRTS.selectorBuilder, null);
   assert.ok(found.leaf, found.notes.join(" "));
   assert.ok(found.expander);
@@ -121,6 +144,8 @@ test("Detect recognises the drawn boxes and the + buttons, and remembers the usu
   assert.match(found.expander.selectors[0], /industryControlGroup|icon-expand/);
   assert.equal(found.leaf.baseKey, "DIV|controls_checkBox", "the unticked look, not the ticked one");
   assert.equal(doc.querySelectorAll(".controls_checkBox_checked").length, 1, "nothing was ticked while detecting");
+  assert.equal(state.clickedBranchBoxes, 0, "the boxes of branches were never clicked");
+  assert.deepEqual(found.expander.selectors, ['[id^="industryControlGroup"][id$="Expander"]', '[id^="industryControlSegment"][id$="Expander"]'], "both levels of + buttons, top level first");
   // Everything was read: all 11 choices under 3 sectors and 4 groups; the 7 boxes of the branches themselves are not choices.
   assert.equal(found.counts.choices, 11);
   assert.equal(found.counts.covered, 11);

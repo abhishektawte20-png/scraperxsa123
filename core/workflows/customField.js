@@ -207,6 +207,9 @@
   // use count ("agentic ai (1185)"), which is ignored when comparing.
   const tagWord = (text) => normalize(String(text ?? "").replace(/\(\s*\d+\s*\)/g, " ").replace(/[\u2715\u2716\u00D7\u2A2F\u2297]\s*$/, " "));
 
+  // Waits (ms) before pressing Enter, and for the tag to appear after it, per attempt. Exposed so tests stay fast.
+  const TAG_ATTEMPTS = [{ before: 450, after: 1800 }, { before: 900, after: 2200 }, { before: 1500, after: 3000 }];
+
   function isTagBox(def) {
     if (def.fields.length !== 1 || def.fields[0].kind !== "text") return false;
     const add = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.addButton);
@@ -237,11 +240,17 @@
 
     input.focus();
     await globalThis.SXRTS.adapters.textField.applyText(input, value);
-    await waitFor(() => false, 450); // let the suggestion list draw: the exact tag if it exists, otherwise "(new)"
-    for (const type of ["keydown", "keypress", "keyup"]) {
-      input.dispatchEvent(new window.KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+    // The suggestion list is fetched from RTS, so Enter pressed too early is ignored: wait for it to draw
+    // (the exact tag if it exists, otherwise "(new)"), and press Enter again if nothing happened.
+    let added = false;
+    for (let attempt = 0; attempt < TAG_ATTEMPTS.length && !added; attempt++) {
+      await waitFor(() => false, TAG_ATTEMPTS[attempt].before);
+      if (document.activeElement !== input) input.focus();
+      for (const type of ["keydown", "keypress", "keyup"]) {
+        input.dispatchEvent(new window.KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+      }
+      added = await waitFor(() => tagsIn(container, input).includes(want), TAG_ATTEMPTS[attempt].after);
     }
-    const added = await waitFor(() => tagsIn(container, input).includes(want), 3000);
     if (!added) throw new Error(`${def.label}: "${value}" was typed and Enter was pressed, but no tag appeared. The suggestion list may need a click: send the report so the box can be mapped.`);
 
     // Some pages save on Enter; others enable Save Changes. Press it only if it is waiting.
@@ -402,6 +411,7 @@
     };
     const name = label ? `${def.label} (${label})` : def.label;
     const result = await runInWindow(opener, job);
+    if (!result) throw new Error(`${name}: the window ended without telling what happened. Check it in RTS.`);
     if (result.status === "skipped") return { status: "skipped", reason: result.reason };
 
     if (tree) {
@@ -411,7 +421,7 @@
       const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
       if (!again || again.disabled) return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };
       const check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true });
-      if (check.status === "verified" && check.checked) return { status: "savedValueVerified", name: def.key };
+      if (check?.status === "verified" && check.checked) return { status: "savedValueVerified", name: def.key };
       throw new Error(`${name}: Save was clicked, but when the window was opened again the choice is not ticked. Please check it in RTS.`);
     }
 
@@ -438,7 +448,28 @@
     };
   }
 
+  // A mapped control that is "not found" is often just on the other tab (the run may have left the page on
+  // Company while this field lives on Business Entity). Switch tab (which also expands the sections) and try once more.
+  const NOT_ON_SCREEN = /was not found on this page|No row labelled|Add button .* was not found|box was not found|button that opens .* was not found/i;
   async function applyCustomField(def, record) {
+    try {
+      return await applyHere(def, record);
+    } catch (error) {
+      const nav = globalThis.SXRTS.navigation;
+      if (!nav?.navigateToSection || !NOT_ON_SCREEN.test(String(error?.message))) throw error;
+      for (const tab of ["Business Entity", "Company"]) {
+        try {
+          await nav.navigateToSection(tab);
+          return await applyHere(def, record);
+        } catch (again) {
+          if (!NOT_ON_SCREEN.test(String(again?.message))) throw again;
+        }
+      }
+      throw error;
+    }
+  }
+
+  async function applyHere(def, record) {
     if (record.action === "skip") return { status: "skipped", reason: "action=skip" };
     if (def.tree) return globalThis.SXRTS.workflows.treePicker.apply(def, record);
     if (def.window) return applyWindowed(def, record);
@@ -447,5 +478,5 @@
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.customField = { applyCustomField, rowsOf, TIMEOUTS };
+  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS };
 })();

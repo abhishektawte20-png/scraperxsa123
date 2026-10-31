@@ -109,3 +109,8 @@ test("no value proposed is a skip and the window is never opened", async () => {
   assert.equal(out.status, "skipped");
   assert.equal(state.opened, 0);
 });
+
+test("a window that ends without any result is a clear error, never a crash on null", async () => {
+  setup(() => ({ type: "result", result: null }));
+  await assert.rejects(run(), /the window ended without telling what happened/);
+});

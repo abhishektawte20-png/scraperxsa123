@@ -63,6 +63,7 @@
     const out = [];
     for (const node of document.body.querySelectorAll("img, input[type=image], a, span, i, em, b, button, div, td")) {
       if (host && (node === host || host.contains(node))) continue;
+      if (isCheckboxLike(node, host) || node.matches?.(CHECKBOX_LIKE)) continue; // a tick box is never a + button: clicking it would tick it
       if (node.querySelector("input, select, textarea")) continue;
       if (node.children.length > 1 && node.tagName !== "A") continue;
       if (!includeHidden && !shown(node)) continue;
@@ -138,6 +139,7 @@
     const count = () => shownChoices().length + expanderCandidates(host).length;
     const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
     const hadChoices = choices().length > 0;
+    const before = new Map(allBoxes().map((b) => [b, classKey(b)])); // detection must never tick or untick anything
 
     // The + buttons first: a tree that draws its choices only when a branch is opened has none yet.
     const groups = new Map();
@@ -148,17 +150,19 @@
       if (!groups.has(key)) groups.set(key, { info: i, nodes: [] });
       groups.get(key).nodes.push(node);
     }
-    for (const [, group] of Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 6)) {
+    // Branches may come in levels with different ids (sectors, then groups): every group that really opens counts.
+    const verified = [];
+    for (const [, group] of Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 8)) {
       const node = group.nodes.find((n) => n.isConnected);
       if (!node) continue;
       const before = count();
       node.click();
       await settle();
       if (count() === before) continue;
-      found.expander = group.info;
-      if (hadChoices) { node.click(); await settle(); } // put the branch back as it was
-      break;
+      verified.push(group.info);
+      if (hadChoices || verified.length > 1) { node.click(); await settle(); } // put the branch back as it was
     }
+    if (verified.length) found.expander = { ...verified[0], selectors: Array.from(new Set(verified.map((v) => v.selectors[0]))) };
 
     // Still no choices: open the next + button down, a few levels deep, until choices appear.
     if (found.expander && !choices().length) {
@@ -187,6 +191,7 @@
     if (saves.length === 1) found.saveButton = sb.inspectButton(saves[0], { allowMultiple: true, preferStable: true });
     else found.notes.push(saves.length ? "More than one Save button was found. Pick the right one yourself." : "No Save button was found. Pick it yourself.");
 
+    const realLevels = new Set(); // the + button patterns that really opened something (one per level of the tree)
     // Read the whole list: open every branch once (a branch that was open is opened again if the click closed it).
     if (found.expander) {
       const keyed = () => {
@@ -204,15 +209,26 @@
           const live = keyed().find((x) => x.key === item.key);
           if (!live) continue;
           const before = count();
+          const signature = sb.inspectButton(live.node, { allowMultiple: true, preferStable: true }).selectors[0];
           live.node.click();
           await settle();
           done.add(item.key);
+          if (signature && count() !== before) realLevels.add(signature);
           if (count() < before) { const again = keyed().find((x) => x.key === item.key); if (again) { again.node.click(); await settle(); } }
           opened++;
           onProgress(`Reading the whole list… ${opened} branches opened, ${choices().length} choices so far.`);
         }
       }
     }
+    if (found.expander && realLevels.size > 1) {
+      // Levels drawn later (groups inside sectors) have their own ids: keep every level, top level first.
+      const firstOf = (sel) => { try { return sb.matchAll(sel)[0] || null; } catch { return null; } };
+      const ordered = Array.from(new Set([...found.expander.selectors, ...realLevels])).map((sel) => ({ sel, node: firstOf(sel) })).filter((x) => x.node)
+        .sort((a, b) => (a.node.compareDocumentPosition(b.node) & 4 ? -1 : 1)).map((x) => x.sel);
+      if (ordered.length) found.expander = { ...found.expander, selectors: ordered };
+    }
+    const changed = Array.from(before).filter(([b, key]) => b.isConnected && classKey(b) !== key);
+    if (changed.length) found.notes.push(`Warning: ${changed.length} box${changed.length === 1 ? "" : "es"} in this window changed while detecting. Close this window WITHOUT pressing Save, and tell the developer.`);
     const total = choices();
     const covered = (() => { try { return sb.matchAll(selectors[0]).length; } catch { return 0; } })();
     found.counts = { choices: total.length, branches: expanderCandidates(host).length, covered };

@@ -68,17 +68,20 @@
     return Boolean(style && (style.display === "none" || style.visibility === "hidden"));
   }
 
+  // Rows that differ only in their numbers (record ids, positions) count as the same row.
+  const shape = (node) => node.outerHTML.replace(/\d+/g, "#");
+
   function collapseRepeats(copy, doc) {
     const kids = Array.from(copy.childNodes);
     let i = 0;
     while (i < kids.length) {
       if (kids[i].nodeType !== 1) { i++; continue; }
-      const key = kids[i].outerHTML;
+      const key = shape(kids[i]);
       let j = i + 1;
-      while (j < kids.length && kids[j].nodeType === 1 && kids[j].outerHTML === key) j++;
+      while (j < kids.length && kids[j].nodeType === 1 && shape(kids[j]) === key) j++;
       if (j - i > 2) {
         for (let k = i + 2; k < j; k++) kids[k].remove();
-        kids[i + 1].after(doc.createComment(` ${j - i - 2} more identical `));
+        kids[i + 1].after(doc.createComment(` ${j - i - 2} more similar `));
       }
       i = j;
     }

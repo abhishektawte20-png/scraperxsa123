@@ -60,26 +60,27 @@ const GROUPS = [
 ];
 // The markup RTS really uses: drawn tick boxes (div.controls_checkBox) and + buttons (div.sub-section__icon-expand).
 const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Industries</h3>
-<style>ul{list-style:none;margin:0;padding-left:22px} .sub-section__icon-expand{width:11px;height:11px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle} .controls_checkBox_border{display:inline-block;border:1px solid #999;padding:1px;vertical-align:middle} .controls_checkBox,.controls_emptyCheckBox{width:13px;height:13px;display:block;border:1px solid #333} .controls_checkBox_on{background:#2a2}</style>
+<style>ul{list-style:none;margin:0;padding-left:22px} .sub-section__icon-expand{width:11px;height:11px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle} .controls_checkBox_border{display:inline-block;border:1px solid #999;padding:1px;vertical-align:middle} .controls_checkBox,.controls_emptyCheckBox{width:13px;height:13px;display:block;border:1px solid #333} .controls_checkBox_checked{background:#2a2}</style>
 <div style="display:none"><select id="adminsList">${Array.from({ length: 30 }, (_, i) => `<option>staff.member${i}</option>`).join("")}</select></div>
-<div id="12848611Content"><ul id="root">${GROUPS.map((g, gi) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${16 + gi}12848611Expander"></div><div class="controls_checkBox_border"><div id="industryControlGroup${16 + gi}12848611CheckBox" class="controls_emptyCheckBox"></div></div> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k, ki) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${170 + gi * 10 + ki}12848611Expander"></div><div class="controls_checkBox_border"><div id="industryControlGroup${170 + gi * 10 + ki}12848611CheckBox" class="controls_emptyCheckBox"></div></div> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l, li) => `<li><div class="controls_checkBox_border"><div class="controls_checkBox" id="industryControlCode${400 + gi * 100 + ki * 10 + li}12848611CheckBox"${k.open ? " data-vis" : ""}></div></div> <span>${l}</span></li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul></div>
+<div id="12848611Content"><ul id="root">${GROUPS.map((g, gi) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${16 + gi}12848611Expander"></div><div class="controls_checkBox_border"><div id="industryControlGroup${16 + gi}12848611CheckBox" class="controls_emptyCheckBox"></div></div> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k, ki) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlSegment${170 + gi * 10 + ki}12848611Expander"></div><div class="controls_checkBox_border"><div id="industryControlSegment${170 + gi * 10 + ki}12848611CheckBox" class="controls_emptyCheckBox"></div></div> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l, li) => `<li><div class="controls_checkBox_border"><div class="controls_checkBox" id="industryControlCode${400 + gi * 100 + ki * 10 + li}12848611CheckBox" style="cursor:pointer" onclick="IndustryControl.checkCode(this, ${gi}, ${ki}, ${li});"${k.open ? " data-vis" : ""}></div></div> <span id="industryControlCode${400 + gi * 100 + ki * 10 + li}12848611Description">${l}</span></li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul></div>
 <input id="saveIndustryButton" type="button" value="Save Changes" class="btn buttonSave" disabled>
 <script>
   const q = new URLSearchParams(location.search);
   const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.closest("li").querySelector(":scope > span").textContent;
-  for (const box of document.querySelectorAll(".controls_checkBox")) { if ((window.opener.industries || []).includes(where(box))) box.classList.add("controls_checkBox_on"); }
+  for (const box of document.querySelectorAll('[id^="industryControlCode"][id$="CheckBox"]')) { if ((window.opener.industries || []).includes(where(box))) box.className = "controls_checkBox_checked"; }
   document.getElementById("root").addEventListener("click", (e) => {
-    if (e.target.classList.contains("controls_checkBox")) { e.target.classList.toggle("controls_checkBox_on"); document.getElementById("saveIndustryButton").disabled = false; return; }
+    if (/CheckBox$/.test(e.target.id) && /^industryControlCode/.test(e.target.id)) { e.target.className = e.target.className === "controls_checkBox" ? "controls_checkBox_checked" : "controls_checkBox"; document.getElementById("saveIndustryButton").disabled = false; return; }
     const t = e.target.closest(".sub-section__icon-expand"); if (!t) return;
     const list = t.parentElement.querySelector(":scope > ul"); list.style.display = list.style.display === "none" ? "block" : "none";
   });
   document.getElementById("saveIndustryButton").addEventListener("click", () => {
-    window.opener.markIndustry([...document.querySelectorAll(".controls_checkBox_on")].map(where));
+    window.opener.markIndustry([...document.querySelectorAll(".controls_checkBox_checked")].map(where));
     document.getElementById("saveIndustryButton").disabled = true;
     if (q.get("mode") === "close") window.close();
+    if (q.get("mode") === "navigate") location.href = "/after.html"; // RTS submits the form: the window leaves the page
   });
 <\/script></body>`;
-  const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(req.url.startsWith("/tree.html") ? TREE : MAIN); });
+  const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(req.url.startsWith("/tree.html") ? TREE : req.url.startsWith("/after.html") ? "<p>saved</p>" : MAIN); });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -185,7 +186,7 @@ async function drive(ctx, base, code, auto, reuse) {
     });
     assert.deepEqual(doneVisible, { inView: true, enabled: true });
     assert.equal(await popup.evaluate(() => [...document.querySelectorAll("li > ul")].filter((u) => u.style.display === "none").length), 0, "every branch was opened to read the whole list");
-    assert.equal(await popup.evaluate(() => document.querySelectorAll(".controls_checkBox_on").length), 0, "nothing was ticked while detecting");
+    assert.equal(await popup.evaluate(() => document.querySelectorAll(".controls_checkBox_checked").length), 0, "nothing was ticked while detecting");
     // The developer copy starts at the tree, skips hidden lists, and counts repeated rows.
     await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
     await popup.evaluate(() => { for (const d of [...document.querySelectorAll("div")].map((x) => x.shadowRoot).filter(Boolean)) d.querySelectorAll("details").forEach((x) => { x.open = true; }); });
@@ -196,7 +197,7 @@ async function drive(ctx, base, code, auto, reuse) {
     assert.doesNotMatch(shared, /adminsList|staff\.member/, "hidden lists are not copied");
     assert.match(shared, /controls_checkBox/);
     assert.match(shared, /controls_emptyCheckBox/);
-    assert.match(shared, /more identical/, "repeated rows are counted, not listed");
+    assert.match(shared, /more similar/, "repeated rows are counted, not listed");
   } else {
     await pickerClick("Pick a + button"); await clickAt(popup, ".sub-section__icon-expand");
     await pickerClick("Pick a choice box"); await clickAt(popup, ".controls_checkBox[data-vis]");
@@ -258,10 +259,11 @@ test("a generic name such as Other is chosen by its code, in the right group, in
   assert.equal(result.saves, 1);
 });
 
-test("a unique name decides the choice even if the code's position differs", { timeout: 150000 }, async () => {
+test("a name that RTS lists at a different code than the report says ticks nothing", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.2 — Footwear");
-  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
-  assert.deepEqual(result.industries, ["Apparel and Accessories > Footwear"]);
+  assert.match(result.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/);
+  assert.deepEqual(result.industries, []);
+  assert.equal(result.saves, 0);
 });
 
 test("a name that is not in the tree publishes nothing", { timeout: 150000 }, async () => {
@@ -283,4 +285,12 @@ test("a window for the form that is already open is reused instead of failing wi
   assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
   assert.equal(result.saves, 1);
+});
+
+test("a window that navigates away on Save (RTS submits the form) is reopened and the tick read back, not reported as an error", { timeout: 150000 }, async () => {
+  const result = await scenario("navigate", "2.1.2 — Clothing", { auto: true });
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  assert.equal(result.saves, 1);
+  assert.ok(result.opens >= 2, "the window was opened again to read the tick back");
 });

@@ -94,7 +94,7 @@ test("the extension's own panel is never captured, and a known button anchors th
 });
 
 test("size limits hold: per capture, in total and in the number of fields", () => {
-  const big = Array.from({ length: 30 }, (_, i) => `<div><input name="f${i}" class="${"c".repeat(60)}"></div>`).join("");
+  const big = Array.from({ length: 30 }, (_, i) => `<div><input name="f${String.fromCharCode(97 + i % 26)}${String.fromCharCode(97 + (i * 7) % 26)}" class="${"c".repeat(60)}"></div>`).join("");
   const doc = page(`<div><b>Keywords</b>${big}</div>`);
   const [one] = pc.capture(doc, [{ path: "company.keywords", label: "Keywords" }], { perCapture: 500 });
   assert.ok(one.html.length < 700);
@@ -130,7 +130,8 @@ test("hidden parts of a page are never copied, and long option lists are cut sho
     <select name="visible">${staff}</select><span hidden>secret hidden text</span></div>`);
   const [hit] = pc.capture(doc, [{ path: "company.keywords", label: "Keywords" }]);
   assert.doesNotMatch(hit.html, /adminsList|secret hidden/, "hidden elements are skipped");
-  assert.equal((hit.html.match(/<option/g) || []).length, 12, "a visible list keeps only its first options");
+  assert.equal((hit.html.match(/<option/g) || []).length, 2, "a visible list keeps only its first options, and options that differ only in a number count as one");
+  assert.match(hit.html, /10 more similar/);
   assert.match(hit.html, /28 more options/);
 });
 
@@ -140,7 +141,7 @@ test("rows that repeat exactly are kept twice and counted, so a long tree stays 
   const doc = page(`<div id="t"><b>Keywords:</b><ul>${rows}${ticked}${rows}</ul></div>`);
   const [hit] = pc.capture(doc, [{ path: "company.keywords", label: "Keywords" }], { perCapture: 20000 });
   assert.equal((hit.html.match(/<li>/g) || []).length, 5, "two of each run, plus the one that differs");
-  assert.match(hit.html, /28 more identical/);
+  assert.match(hit.html, /28 more similar/);
   assert.match(hit.html, /checked/);
 });
 

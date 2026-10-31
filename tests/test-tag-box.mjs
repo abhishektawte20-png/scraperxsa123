@@ -21,7 +21,7 @@ const def = {
   binds: { path: "company.keywords", map: { value: "value" } }
 };
 
-function setup({ enterAdds = true, autoSaves = false, existing = ["agentic ai (1185)", "ai development (797)"], dropsTag = false } = {}) {
+function setup({ ignoreFirstEnters = 0, enterAdds = true, autoSaves = false, existing = ["agentic ai (1185)", "ai development (797)"], dropsTag = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
     <div class="keywords"><div class="keywords__list">${existing.map((t) => `<span class="tag"><span class="t">${t}</span><b class="x">✖</b></span>`).join("")}<input placeholder="Enter or paste keywords" class="keywords__input" type="text" maxlength="100"></div></div>
     <button data-test-id="description-keywords-save-btn" disabled>Save Changes</button></body>`, { runScripts: "outside-only", url: "http://localhost/" });
@@ -38,6 +38,7 @@ function setup({ enterAdds = true, autoSaves = false, existing = ["agentic ai (1
   input.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     state.enters++;
+    if (state.enters <= ignoreFirstEnters) return; // the suggestion list was not ready yet
     if (!enterAdds || !input.value.trim()) return;
     event.preventDefault();
     const tag = doc.createElement("span");
@@ -50,6 +51,8 @@ function setup({ enterAdds = true, autoSaves = false, existing = ["agentic ai (1
   });
   save.addEventListener("click", () => { state.saves++; save.disabled = true; });
   globalThis.SXRTS.workflows.customField.TIMEOUTS.rowChange = 300;
+  // keep the retries short in tests
+  globalThis.SXRTS.workflows.customField.TAG_ATTEMPTS.splice(0, 3, { before: 40, after: 150 }, { before: 40, after: 150 }, { before: 40, after: 150 });
   return { doc, state, tags: () => Array.from(doc.querySelectorAll(".t")).map((n) => n.textContent) };
 }
 const run = (value) => globalThis.SXRTS.workflows.customField.applyCustomField(def, { action: "addIfMissing", value });
@@ -99,4 +102,12 @@ test("a box with a row layout (an Add button that is not the box) still uses the
   setup();
   const rowDef = { ...def, addButton: { selectors: ['[data-test-id="description-keywords-save-btn"]'], text: "Save Changes" } };
   await assert.rejects(globalThis.SXRTS.workflows.customField.applyCustomField(rowDef, { action: "addIfMissing", value: "x" }), /did not appear after clicking Add/);
+});
+
+test("Enter pressed before the suggestions are ready is pressed again, and the tag is then confirmed", async () => {
+  const { state, tags } = setup({ ignoreFirstEnters: 2 });
+  const out = await run("beach club");
+  assert.equal(out.status, "savedValueVerified");
+  assert.equal(state.enters, 3, "pressed three times, the third one worked");
+  assert.deepEqual(tags().at(-1), "beach club (0)");
 });
