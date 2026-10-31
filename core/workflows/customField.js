@@ -418,10 +418,24 @@
       if (result.fieldRetained === true) return { status: "savedValueVerified", name: def.key };
       // The window closed itself (or could not be read): open it again and read the tick back.
       if (result.status !== "saved" && result.status !== "windowClosedAfterSave") throw new Error(`${name}: the window ended unexpectedly (${result.status}).`);
-      const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
-      if (!again || again.disabled) return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };
-      const check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true });
-      if (check?.status === "verified" && check.checked) return { status: "savedValueVerified", name: def.key };
+      // Reading the tick back reopens the window. If that window closes while it is being read, open it again.
+      let check = null;
+      let lastError = null;
+      for (let attempt = 0; attempt < 3 && !check; attempt++) {
+        const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+        if (!again || again.disabled) break;
+        try {
+          check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true });
+        } catch (error) {
+          lastError = error;
+          if (!/closed before it could be read|Frame with ID|was removed/i.test(String(error?.message))) throw error;
+        }
+      }
+      if (!check) {
+        if (lastError) throw new Error(`${name}: Save was accepted, but the window kept closing while the tick was being read back, so it could not be confirmed. Please check it in RTS.`);
+        return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };
+      }
+      if (check.status === "verified" && check.checked) return { status: "savedValueVerified", name: def.key };
       throw new Error(`${name}: Save was clicked, but when the window was opened again the choice is not ticked. Please check it in RTS.`);
     }
 

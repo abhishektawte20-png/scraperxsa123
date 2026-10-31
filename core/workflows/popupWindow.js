@@ -349,11 +349,9 @@
 
     if (job.verifyOnly) {
       const checked = isTicked(box, job.tree.leaf);
-      window.setTimeout(() => window.close(), 150);
       return { status: "verified", checked };
     }
     if (isTicked(box, job.tree.leaf)) {
-      window.setTimeout(() => window.close(), 150);
       return { status: "skipped", reason: `"${choice.name}" is already ticked in RTS.` };
     }
 
@@ -378,7 +376,6 @@
 
     // Still here? Then the tick can be read straight away; if the window closed itself, the page reopens it to check.
     const retained = box.isConnected ? isTicked(box, job.tree.leaf) : null;
-    window.setTimeout(() => window.close(), 250);
     return { status: "saved", fieldRetained: retained };
   }
 

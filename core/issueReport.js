@@ -11,6 +11,7 @@
 (() => {
   // Likely causes, matched against the message. Order matters: first match wins.
   const CAUSES = [
+    [/Frame with ID|window closed before|window kept closing/i, "The window closed itself while the extension was still working in it (RTS closes the industry window after Save). The result is checked by reopening the window; if it says the choice is ticked, it was saved."],
     [/did not appear after clicking Add.*tag box/i, "The field is a tag box (type a word, press Enter). Tag boxes are not supported yet; the HTML of the box with one tag in it is needed."],
     [/Could not find the "View All Name Variations"|Add New Name Variation button was not found/i, "The Name Variations controls are not on screen: the section is closed or this is not the Business Entity > Entity view."],
     [/Add New Sic Industry Path button was not found/i, "The SIC section is closed or this is not the Company tab."],

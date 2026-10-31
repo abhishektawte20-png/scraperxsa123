@@ -149,10 +149,19 @@ async function waitUntilLoaded(tabId, origin) {
   throw new Error("The popup window opened but did not finish loading.");
 }
 
+// Chrome's wording when a window goes away while a script is still running in it.
+const WINDOW_GONE = /Frame with ID|was removed|No tab with id|tab was closed|frame was removed/i;
+
+// A window that was only used to choose or check a tree is closed from here, after its result has been
+// delivered: closing it from inside the page races with the result and loses it.
+function closeLater(tabId) {
+  setTimeout(() => { chrome.tabs.remove(tabId).catch(() => { /* already gone */ }); }, 400);
+}
+
 async function runInWindow(tabId, job) {
   lastStage.delete(tabId);
-  await chrome.scripting.executeScript({ target: { tabId }, files: WINDOW_RUN_FILES });
   try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: WINDOW_RUN_FILES });
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId },
       func: (windowJob) => globalThis.SXRTS.workflows.popupWindow.run(windowJob),
@@ -164,10 +173,15 @@ async function runInWindow(tabId, job) {
       if (lastStage.get(tabId) === "saveClicked") return { status: "windowClosedAfterSave" };
       throw new Error("The window closed before it reported back. Nothing was confirmed.");
     }
+    if (job?.tree) closeLater(tabId);
     return injection.result;
   } catch (error) {
+    const gone = WINDOW_GONE.test(String(error?.message ?? error));
     // The page may close its own window as soon as Save is accepted.
     if (lastStage.get(tabId) === "saveClicked") return { status: "windowClosedAfterSave" };
+    // Not known whether Save was reached: the page reopens the window and reads the tick back, which settles it.
+    if (gone && job?.tree && !job.verifyOnly) return { status: "windowClosedAfterSave", unsure: true };
+    if (gone && job?.tree) throw new Error("The window closed before it could be read.");
     throw error;
   }
 }

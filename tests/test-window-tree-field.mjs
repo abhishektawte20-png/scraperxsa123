@@ -85,6 +85,23 @@ test("a window that closes itself is reopened and the tick read back before succ
   assert.equal(state.opened, 2, "the opening button was pressed again");
 });
 
+test("a read-back window that closes itself once is reopened and the tick still confirmed", async () => {
+  let reads = 0;
+  const state = setup((job) => {
+    if (!job.verifyOnly) return result({ status: "windowClosedAfterSave" });
+    reads++;
+    return reads === 1 ? { type: "error", error: "The window closed before it could be read." } : result({ status: "verified", checked: true });
+  });
+  assert.equal((await run()).status, "savedValueVerified");
+  assert.equal(state.jobs.length, 3);
+  assert.equal(state.opened, 3);
+});
+
+test("a read-back window that keeps closing is a plain 'check it in RTS' error, not a raw frame error", async () => {
+  setup((job) => (job.verifyOnly ? { type: "error", error: "Frame with ID 0 was removed." } : result({ status: "windowClosedAfterSave" })));
+  await assert.rejects(run(), /could not be confirmed. Please check it in RTS/);
+});
+
 test("if the reopened window shows the choice unticked it is an error, never a success", async () => {
   setup((job) => (job.verifyOnly ? result({ status: "verified", checked: false }) : result({ status: "saved", fieldRetained: null })));
   await assert.rejects(run(), /the choice is not ticked/);

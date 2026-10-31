@@ -123,3 +123,7 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Keywords:** Enter is pressed again (up to three times, waiting longer each time) if the suggestion list was not ready.
 - **Mapped fields on the other tab:** if a mapped control is not found, the extension switches between Business Entity and Company (which also expands the sections) and tries once more.
 - **Page captures** count rows that differ only in numbers as the same row ("N more similar").
+
+## 0.21.5
+
+- Industry tagging no longer reports "Needs attention — Frame with ID 0 was removed." when the save worked. That message meant the industry window closed while the extension was still working in it. The extension now closes the window itself after it has reported, and if the window disappears while it is being read back, it reopens it (up to 3 times) before deciding. "Needs attention" appears only if the tick cannot be confirmed.
