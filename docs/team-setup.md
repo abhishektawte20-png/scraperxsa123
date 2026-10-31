@@ -109,3 +109,7 @@ Social media values are written as the bare handle on every network (`facebook.c
 ## Industry tagging on RTS's real markup (v0.21.2)
 
 RTS draws the industry tick boxes itself (`div.controls_checkBox`) and the + buttons are `div.sub-section__icon-expand`. **Detect automatically** recognises both, remembers what an *unticked* box looks like, and tests the + buttons. A choice counts as ticked when its look differs from that usual look (a real checkbox is read directly). If a window for the form is already open (RTS opens the industry window under a fixed name), publishing now reuses it instead of failing with "No popup window opened".
+
+## Industry window: Detect reads the whole list (v0.21.3)
+
+RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls_checkBox_border` frame) and the choices a box of their own (`controls_checkBox`). **Detect automatically** now picks the *choices* only: it ignores the frame and the branches' own boxes, and finds the choices by the letters of their id around the record number (`industryControlCode…CheckBox`). It then opens every branch and reports what it read, for example "Found: 227 choices in 49 branches; + buttons tested; Save button "Save Changes"". The picker window is laid out so **Done** is always in view, the manual picking is folded away once detection succeeded, and "press before Save" is under Advanced (the industry window has no such step).

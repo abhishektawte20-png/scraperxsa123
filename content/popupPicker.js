@@ -11,10 +11,13 @@
   const STORAGE_KEY = "sxrts_window_pick";
   const CSS = `
     :host { all: initial; }
-    .card { position: fixed; z-index: 2147483647; top: 12px; right: 12px; width: 300px; max-height: calc(100vh - 24px); overflow-y: auto; background: #fff; color: #1b2430; border-radius: 12px; box-shadow: 0 10px 32px rgba(15,30,60,.35); font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
-    .head { background: #0b2f52; color: #fff; padding: 10px 12px; font-weight: 600; }
+    .card { position: fixed; z-index: 2147483647; top: 12px; right: 12px; width: 300px; max-height: calc(100vh - 24px); display: flex; flex-direction: column; overflow: hidden; background: #fff; color: #1b2430; border-radius: 12px; box-shadow: 0 10px 32px rgba(15,30,60,.35); font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    .foot { border-top: 1px solid #e2e6ed; padding: 10px 12px; display: grid; gap: 6px; background: #fff; flex-shrink: 0; }
+    details { font-size: 12px; } summary { cursor: pointer; color: #124a80; font-weight: 600; padding: 4px 0; }
+    details[open] > .btn { margin-top: 6px; display: block; width: 100%; }
+    .head { background: #0b2f52; color: #fff; padding: 10px 12px; font-weight: 600; flex-shrink: 0; }
     .head small { display: block; font-weight: 400; opacity: .8; }
-    .body { padding: 10px 12px; display: grid; gap: 8px; }
+    .body { padding: 10px 12px; display: grid; gap: 8px; overflow-y: auto; min-height: 0; flex: 1; align-content: start; }
     .btn { background: #124a80; color: #fff; border: 1px solid #124a80; border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
     .btn.secondary { background: #fff; color: #124a80; }
     .btn:disabled { opacity: .45; cursor: default; }
@@ -56,13 +59,13 @@
   const textOf = (node) => (node.textContent || node.value || "").trim().replace(/\s+/g, " ");
 
   // Small clickable things with no words of their own: the + and - that open and close branches.
-  function expanderCandidates(host) {
+  function expanderCandidates(host, { includeHidden = false } = {}) {
     const out = [];
     for (const node of document.body.querySelectorAll("img, input[type=image], a, span, i, em, b, button, div, td")) {
       if (host && (node === host || host.contains(node))) continue;
       if (node.querySelector("input, select, textarea")) continue;
       if (node.children.length > 1 && node.tagName !== "A") continue;
-      if (!shown(node)) continue;
+      if (!includeHidden && !shown(node)) continue;
       const own = node.tagName === "INPUT" ? "" : textOf(node);
       if (own && !SYMBOLS.test(own)) continue;
       if (node.tagName === "A" && node.getAttribute("href") && !/^(#|javascript:)/i.test(node.getAttribute("href"))) continue;
@@ -93,18 +96,50 @@
     return Array.from(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   }
 
-  // Finds the checkboxes, the + buttons and the Save button of a window by itself, and TESTS
-  // the + buttons by opening one to see whether more choices appear. Returns what it found
-  // and plain-language notes about what it could not.
-  async function detectTree(sb, host) {
-    const found = { leaf: null, expander: null, saveButton: null, notes: [], summary: [] };
-    const allBoxes = () => Array.from(document.querySelectorAll(CHECKBOX_LIKE)).filter((b) => isCheckboxLike(b, host));
-    const boxesShown = () => allBoxes().filter(shown);
-    const count = () => boxesShown().length + expanderCandidates(host).length;
-    const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
-    const hadBoxes = allBoxes().length > 0;
+  // The first real words after a node: the name printed beside a + button.
+  function nextTextAfter(node) {
+    const walker = document.createTreeWalker(document.body, 4);
+    walker.currentNode = node;
+    let t;
+    for (let guard = 0; (t = walker.nextNode()) && guard < 40; guard++) {
+      const v = t.nodeValue.replace(/\s+/g, " ").trim();
+      if (v && !SYMBOLS.test(v) && t.parentElement && !/^(SCRIPT|STYLE)$/.test(t.parentElement.tagName)) return v;
+    }
+    return "";
+  }
 
-    // The + buttons first: a tree that draws its choices only when a branch is opened has no checkboxes yet.
+  // What kind of row a choice box sits in: a branch's own box comes straight after its + button, a choice's does not.
+  function rowKind(box, expanders) {
+    const walker = document.createTreeWalker(document.body, 1 | 4);
+    walker.currentNode = box;
+    let node = walker.previousNode();
+    for (let guard = 0; node && guard < 80; guard++, node = walker.previousNode()) {
+      if (node.nodeType === 1) {
+        if (node.contains(box)) continue;
+        if (expanders.has(node)) return "group";
+        if (node.matches?.(CHECKBOX_LIKE)) return "leaf";
+      } else if (/\S/.test(node.nodeValue)) return "leaf";
+    }
+    return "leaf";
+  }
+
+  // Finds the choice boxes, the + buttons and the Save button of a window by itself, TESTS the + buttons, and
+  // then opens every branch to read the whole list (so what was found can be checked against all of it).
+  async function detectTree(sb, host, onProgress = () => {}) {
+    const found = { leaf: null, expander: null, saveButton: null, notes: [], summary: [], counts: null };
+    const allBoxes = () => Array.from(document.querySelectorAll(CHECKBOX_LIKE)).filter((b) => isCheckboxLike(b, host));
+    const innermost = (nodes) => nodes.filter((n) => !nodes.some((m) => m !== n && n.contains(m))); // the frame around a box is not the box
+    // The choices only: boxes of branches (which come right after a + button) are left out.
+    const choices = () => {
+      const exp = new Set(expanderCandidates(host, { includeHidden: true })); // a hidden branch's own box still comes after its + button
+      return innermost(allBoxes()).filter((b) => rowKind(b, exp) === "leaf");
+    };
+    const shownChoices = () => choices().filter(shown);
+    const count = () => shownChoices().length + expanderCandidates(host).length;
+    const settle = async () => { let last = count(); for (let k = 0; k < 8; k++) { await waitMs(70); const now = count(); if (now === last && k >= 2) return; last = now; } };
+    const hadChoices = choices().length > 0;
+
+    // The + buttons first: a tree that draws its choices only when a branch is opened has none yet.
     const groups = new Map();
     for (const node of expanderCandidates(host)) {
       const i = sb.inspectButton(node, { allowMultiple: true, preferStable: true });
@@ -113,8 +148,7 @@
       if (!groups.has(key)) groups.set(key, { info: i, nodes: [] });
       groups.get(key).nodes.push(node);
     }
-    const ordered = Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 6);
-    for (const [, group] of ordered) {
+    for (const [, group] of Array.from(groups).sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 6)) {
       const node = group.nodes.find((n) => n.isConnected);
       if (!node) continue;
       const before = count();
@@ -122,44 +156,71 @@
       await settle();
       if (count() === before) continue;
       found.expander = group.info;
-      found.summary.push(`+ buttons (${group.nodes.length}; opening one revealed more choices)`);
-      if (hadBoxes) { node.click(); await settle(); } // put the branch back as it was
+      if (hadChoices) { node.click(); await settle(); } // put the branch back as it was
       break;
     }
 
-    // Still no checkboxes: open the next + button down, a few levels deep, until choices appear.
-    if (found.expander && !allBoxes().length) {
-      for (let depth = 0; depth < 6 && !allBoxes().length; depth++) {
+    // Still no choices: open the next + button down, a few levels deep, until choices appear.
+    if (found.expander && !choices().length) {
+      for (let depth = 0; depth < 8 && !choices().length; depth++) {
         const next = expanderCandidates(host).find((n) => !n.dataset?.sxTried);
         if (!next) break;
         if (next.dataset) next.dataset.sxTried = "1";
         next.click();
         await settle();
       }
-      if (allBoxes().length) found.summary.push("opened branches until the choices appeared");
     }
 
-    const boxes = allBoxes();
+    const boxes = choices();
     if (!boxes.length) { found.notes.push("No choice boxes were found in this window, even after opening branches. Press \"Copy this window's structure (for the developer)\" and send it, so this window can be supported."); return found; }
     const info = sb.inspectButton(boxes[0], { allowMultiple: true, preferStable: true });
     const covers = (selector) => { try { return sb.matchAll(selector).length >= Math.ceil(boxes.length * 0.9); } catch { return false; } };
-    const good = info.selectors.find(covers);
     const native = boxes[0].matches("input[type=checkbox]");
+    const good = info.selectors.find(covers);
     const selectors = good ? [good, ...info.selectors.filter((x) => x !== good)] : native ? ['input[type="checkbox"]'] : info.selectors;
     let matched = [];
     try { matched = sb.matchAll(selectors[0]); } catch { matched = boxes; }
     found.leaf = { ...info, selectors, ...(native ? {} : { baseKey: baseKeyFor(matched.length ? matched : boxes) }) };
-    found.summary.unshift(`${boxes.length} checkbox${boxes.length === 1 ? "" : "es"}`);
 
     const buttons = Array.from(document.querySelectorAll("button, input[type=button], input[type=submit], [role=button], a.btn")).filter((b) => shown(b) && !(host && host.contains(b)));
     const saves = buttons.filter((b) => /^save\b/i.test(textOf(b)));
-    if (saves.length === 1) { found.saveButton = sb.inspectButton(saves[0], { allowMultiple: true, preferStable: true }); found.summary.push(`Save button "${textOf(saves[0])}"`); }
-    else found.notes.push(saves.length ? "More than one Save button was found. Pick the right one yourself (step 4)." : "No Save button was found. Pick it yourself (step 4).");
+    if (saves.length === 1) found.saveButton = sb.inspectButton(saves[0], { allowMultiple: true, preferStable: true });
+    else found.notes.push(saves.length ? "More than one Save button was found. Pick the right one yourself." : "No Save button was found. Pick it yourself.");
 
-    if (!found.expander) {
-      if (boxes.every(shown)) found.summary.push("every choice is already visible, so no + button is needed");
-      else found.notes.push("Some choices are hidden but no + button was found. Pick one + button yourself (step 1).");
+    // Read the whole list: open every branch once (a branch that was open is opened again if the click closed it).
+    if (found.expander) {
+      const keyed = () => {
+        const seen = {};
+        return expanderCandidates(host).map((node) => { const label = nextTextAfter(node); seen[label] = (seen[label] || 0) + 1; return { key: `${label}#${seen[label]}`, node }; });
+      };
+      const done = new Set();
+      const deadline = Date.now() + 90000;
+      let opened = 0;
+      for (let pass = 0; pass < 40 && Date.now() < deadline; pass++) {
+        const fresh = keyed().filter((x) => !done.has(x.key));
+        if (!fresh.length) break;
+        for (const item of fresh) {
+          if (Date.now() > deadline) break;
+          const live = keyed().find((x) => x.key === item.key);
+          if (!live) continue;
+          const before = count();
+          live.node.click();
+          await settle();
+          done.add(item.key);
+          if (count() < before) { const again = keyed().find((x) => x.key === item.key); if (again) { again.node.click(); await settle(); } }
+          opened++;
+          onProgress(`Reading the whole list… ${opened} branches opened, ${choices().length} choices so far.`);
+        }
+      }
     }
+    const total = choices();
+    const covered = (() => { try { return sb.matchAll(selectors[0]).length; } catch { return 0; } })();
+    found.counts = { choices: total.length, branches: expanderCandidates(host).length, covered };
+    found.summary.push(`${total.length} choices in ${found.counts.branches} branches`);
+    if (found.expander) found.summary.push("+ buttons tested");
+    if (found.saveButton) found.summary.push(`Save button "${found.saveButton.text}"`);
+    if (covered < total.length) found.notes.push(`The choice boxes were found, but the pattern covers only ${covered} of ${total.length}. Check with a test publish.`);
+    if (!found.expander && !total.every(shown)) found.notes.push("Some choices are hidden but no + button was found. Pick one + button yourself.");
     return found;
   }
 
@@ -172,7 +233,7 @@
     const shadow = host.attachShadow({ mode: "open" });
     shadow.appendChild(el("style", { text: CSS }));
 
-    const state = { mode: "form", fields: [], tree: { expander: null, leaf: null }, preSave: [], saveButton: null, error: "", note: "", sent: false };
+    const state = { mode: "form", fields: [], tree: { expander: null, leaf: null }, preSave: [], saveButton: null, error: "", note: "", busy: false, sent: false };
     const card = el("div", { className: "card" });
     shadow.appendChild(card);
 
@@ -243,9 +304,11 @@
     // One click: find the checkboxes, + buttons and Save by itself (and test the + buttons).
     async function detect() {
       state.error = "";
+      state.busy = true;
       state.note = "Looking at this window…";
       render();
-      const found = await detectTree(sb, host);
+      const found = await detectTree(sb, host, (text) => { state.note = text; render(); });
+      state.busy = false;
       if (found.leaf) state.tree.leaf = found.leaf;
       if (found.expander) state.tree.expander = found.expander;
       if (found.saveButton) state.saveButton = found.saveButton;
@@ -314,12 +377,13 @@
       card.replaceChildren();
       card.appendChild(el("div", { className: "head" }, [document.createTextNode("ScraperX · mapping this window"), el("small", { text: "Developed by Abhishek Tawte" })]));
       const body = el("div", { className: "body" });
-      card.appendChild(body);
+      const foot = el("div", { className: "foot" });
+      card.append(body, foot);
       if (state.sent) {
         body.appendChild(el("div", { className: "ok", text: "Sent to ScraperX. Go back to the RTS window to finish the mapping. You can close this window." }));
         return;
       }
-      body.appendChild(el("div", { className: "muted", text: "Click each part of this form in the order you would use it. Nothing is typed or saved while mapping." }));
+      body.appendChild(el("div", { className: "muted", text: "Nothing is typed, ticked or saved while mapping." }));
 
       body.appendChild(el("h4", { text: "What is in this window?" }));
       const modes = el("div", { className: "modes" });
@@ -330,12 +394,46 @@
       }
       body.appendChild(modes);
 
+      const item = (text, remove) => {
+        const children = [el("span", { text })];
+        if (remove) { const x = el("button", { className: "x", text: "×", type: "button" }); x.addEventListener("click", () => { remove(); render(); }); children.push(x); }
+        return el("div", { className: "item" }, children);
+      };
+      const label = (b) => `${b.text || b.tag} · ${b.selectors?.[0] || "by text"}`;
+
       if (state.mode === "tree") {
-        const auto = el("button", { className: "btn", text: "Detect automatically (one click)", type: "button" });
+        const auto = el("button", { className: "btn", text: state.busy ? "Reading…" : "Detect automatically (one click)", type: "button", disabled: state.busy });
         auto.addEventListener("click", detect);
         body.appendChild(auto);
-        body.appendChild(el("div", { className: "muted", text: "Finds the checkboxes, the + buttons and Save by itself and tests the + buttons (it opens and closes one branch). Nothing is ticked or saved. Or pick each part yourself below." }));
+        body.appendChild(el("div", { className: "muted", text: "Finds the choice boxes, the + buttons and Save, and opens every branch to read the whole list. Nothing is ticked or saved." }));
         if (state.note) body.appendChild(el("div", { className: "ok", text: state.note }));
+
+        // What was found, in one place. The manual picking below is only for what detection missed.
+        const ready = Boolean(state.tree.leaf && state.saveButton);
+        const pieces = [
+          ["+ button", state.tree.expander ? label(state.tree.expander) : "not needed if the list is already open"],
+          ["Choice box", state.tree.leaf ? label(state.tree.leaf) : "not found yet"],
+          ["Save", state.saveButton ? label(state.saveButton) : "not found yet"]
+        ];
+        for (const [name, value] of pieces) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${name}: ${value}` })]));
+
+        const manual = el("details", {});
+        if (!ready) manual.open = true;
+        manual.appendChild(el("summary", { text: "Pick the parts yourself instead" }));
+        const addExpander = el("button", { className: "btn secondary", text: state.tree.expander ? "Re-pick the + button" : "Pick a + button", type: "button" });
+        addExpander.addEventListener("click", () => pickTreePart("expander"));
+        const addLeaf = el("button", { className: "btn secondary", text: state.tree.leaf ? "Re-pick the choice box" : "Pick a choice box", type: "button" });
+        addLeaf.addEventListener("click", () => pickTreePart("leaf"));
+        const addSave = el("button", { className: "btn secondary", text: state.saveButton ? "Re-pick the Save button" : "Pick the Save button", type: "button" });
+        addSave.addEventListener("click", () => pickButton("save", "Click the Save button (a greyed-out one works too)"));
+        manual.append(addExpander, addLeaf, addSave);
+        body.appendChild(manual);
+
+        const advanced = el("details", {});
+        advanced.appendChild(el("summary", { text: "Advanced" }));
+        advanced.append(...list(state.preSave, (i) => state.preSave.splice(i, 1), (b) => `Press first: ${label(b)}`));
+        const addPre = el("button", { className: "btn secondary", text: "Pick a button to press before Save", type: "button" });
+        addPre.addEventListener("click", () => pickButton("preSave", "Click the button that must be pressed before Save"));
         const share = el("button", { className: "btn secondary", text: "Copy this window's structure (for the developer)", type: "button" });
         share.addEventListener("click", async () => {
           const capture = globalThis.SXRTS.pageCapture;
@@ -347,44 +445,37 @@
           catch { state.error = "Copy was blocked by the browser."; }
           render();
         });
-        body.appendChild(share);
-        body.appendChild(el("h4", { text: "1 · A + button (opens a branch)" }));
-        if (state.tree.expander) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.tree.expander.tag} · ${state.tree.expander.selectors[0]}` })]));
-        const addExpander = el("button", { className: "btn secondary", text: state.tree.expander ? "Re-pick the + button" : "Pick a + button", type: "button" });
-        addExpander.addEventListener("click", () => pickTreePart("expander"));
-        body.appendChild(addExpander);
-        body.appendChild(el("div", { className: "muted", text: "Skip this if the whole list is already open." }));
-
-        body.appendChild(el("h4", { text: "2 · A checkbox (a choice)" }));
-        if (state.tree.leaf) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.tree.leaf.tag} · ${state.tree.leaf.selectors[0]}` })]));
-        const addLeaf = el("button", { className: "btn", text: state.tree.leaf ? "Re-pick the checkbox" : "Pick a checkbox", type: "button" });
-        addLeaf.addEventListener("click", () => pickTreePart("leaf"));
-        body.appendChild(addLeaf);
-        body.appendChild(el("div", { className: "muted", text: "Click any one checkbox. The extension finds the right one by the name printed next to it." }));
+        advanced.append(addPre, share);
+        body.appendChild(advanced);
       } else {
         body.appendChild(el("h4", { text: "1 · Text box(es) to fill" }));
         body.append(...list(state.fields, (i) => state.fields.splice(i, 1), (f) => `${f.label || f.tag} · ${f.selectors[0]}`));
         const addField = el("button", { className: "btn", text: state.fields.length ? "Pick another box" : "Pick the text box", type: "button" });
         addField.addEventListener("click", pickField);
         body.appendChild(addField);
+
+        body.appendChild(el("h4", { text: "2 · Press before Save (optional)" }));
+        body.append(...list(state.preSave, (i) => state.preSave.splice(i, 1), (b) => `${b.text || b.tag} · ${b.selectors[0] || "by text"}`));
+        const addPre = el("button", { className: "btn secondary", text: "Pick a button to press first", type: "button" });
+        addPre.addEventListener("click", () => pickButton("preSave", "Click the button that must be pressed before Save (for example Show existing data)"));
+        body.appendChild(addPre);
+
+        body.appendChild(el("h4", { text: "3 · Save button" }));
+        if (state.saveButton) body.appendChild(el("div", { className: "item" }, [el("span", { text: label(state.saveButton) })]));
+        const addSave = el("button", { className: "btn secondary", text: state.saveButton ? "Re-pick Save" : "Pick the Save button", type: "button" });
+        addSave.addEventListener("click", () => pickButton("save", "Click the Save button (a greyed-out one works too)"));
+        body.appendChild(addSave);
       }
 
-      body.appendChild(el("h4", { text: `${state.mode === "tree" ? 3 : 2} · Press before Save (optional)` }));
-      body.append(...list(state.preSave, (i) => state.preSave.splice(i, 1), (b) => `${b.text || b.tag} · ${b.selectors[0] || "by text"}`));
-      const addPre = el("button", { className: "btn secondary", text: "Pick a button to press first", type: "button" });
-      addPre.addEventListener("click", () => pickButton("preSave", "Click the button that must be pressed before Save (for example Show existing data)"));
-      body.appendChild(addPre);
-
-      body.appendChild(el("h4", { text: `${state.mode === "tree" ? 4 : 3} · Save button` }));
-      if (state.saveButton) body.appendChild(el("div", { className: "item" }, [el("span", { text: `${state.saveButton.text || state.saveButton.tag} · ${state.saveButton.selectors[0] || "by text"}` })]));
-      const addSave = el("button", { className: "btn secondary", text: state.saveButton ? "Re-pick Save" : "Pick the Save button", type: "button" });
-      addSave.addEventListener("click", () => pickButton("save", "Click the Save button (a greyed-out one works too)"));
-      body.appendChild(addSave);
-
-      if (state.error) body.appendChild(el("div", { className: "err", text: state.error }));
-      const done = el("button", { className: "btn", text: "Done: send to ScraperX", type: "button", disabled: !((state.mode === "tree" ? state.tree.leaf : state.fields.length) && state.saveButton) });
+      // Always in view: what is still missing, and Done.
+      const missing = [];
+      if (state.mode === "tree" ? !state.tree.leaf : !state.fields.length) missing.push(state.mode === "tree" ? "a choice box" : "a text box");
+      if (!state.saveButton) missing.push("the Save button");
+      if (state.error) foot.appendChild(el("div", { className: "err", text: state.error }));
+      if (missing.length) foot.appendChild(el("div", { className: "muted", text: `Still needed: ${missing.join(" and ")}.` }));
+      const done = el("button", { className: "btn", text: "Done: send to ScraperX", type: "button", disabled: Boolean(missing.length) || state.busy });
       done.addEventListener("click", send);
-      body.appendChild(done);
+      foot.appendChild(done);
     }
 
     render();

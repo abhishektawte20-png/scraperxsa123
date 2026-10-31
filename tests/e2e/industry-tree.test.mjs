@@ -60,22 +60,22 @@ const GROUPS = [
 ];
 // The markup RTS really uses: drawn tick boxes (div.controls_checkBox) and + buttons (div.sub-section__icon-expand).
 const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Industries</h3>
-<style>ul{list-style:none;margin:0;padding-left:22px} .sub-section__icon-expand{width:11px;height:11px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle} .controls_checkBox{width:13px;height:13px;border:1px solid #333;display:inline-block;margin:4px 5px 0 0;vertical-align:middle} .controls_checkBox_on{background:#2a2}</style>
+<style>ul{list-style:none;margin:0;padding-left:22px} .sub-section__icon-expand{width:11px;height:11px;cursor:pointer;background:#ccc;display:inline-block;vertical-align:middle} .controls_checkBox_border{display:inline-block;border:1px solid #999;padding:1px;vertical-align:middle} .controls_checkBox,.controls_emptyCheckBox{width:13px;height:13px;display:block;border:1px solid #333} .controls_checkBox_on{background:#2a2}</style>
 <div style="display:none"><select id="adminsList">${Array.from({ length: 30 }, (_, i) => `<option>staff.member${i}</option>`).join("")}</select></div>
-<div id="12848611Content"><ul id="root">${GROUPS.map((g, gi) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${16 + gi}12848611Expander"></div> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k, ki) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${170 + gi * 10 + ki}12848611Expander"></div> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l, li) => `<li><div class="controls_checkBox" id="industryControlCode${400 + gi * 100 + ki * 10 + li}12848611CheckBox"${k.open ? " data-vis" : ""}></div> <span>${l}</span></li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul></div>
-<input id="save" type="button" value="Save Changes" class="btn" disabled>
+<div id="12848611Content"><ul id="root">${GROUPS.map((g, gi) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${16 + gi}12848611Expander"></div><div class="controls_checkBox_border"><div id="industryControlGroup${16 + gi}12848611CheckBox" class="controls_emptyCheckBox"></div></div> <span>${g.n}</span><ul style="display:${g.open ? "block" : "none"}">${g.kids.map((k, ki) => `<li><div class="mt_5 sub-section__icon-expand section__icon" id="industryControlGroup${170 + gi * 10 + ki}12848611Expander"></div><div class="controls_checkBox_border"><div id="industryControlGroup${170 + gi * 10 + ki}12848611CheckBox" class="controls_emptyCheckBox"></div></div> <span>${k.n}</span><ul style="display:${k.open ? "block" : "none"}">${k.leaves.map((l, li) => `<li><div class="controls_checkBox_border"><div class="controls_checkBox" id="industryControlCode${400 + gi * 100 + ki * 10 + li}12848611CheckBox"${k.open ? " data-vis" : ""}></div></div> <span>${l}</span></li>`).join("")}</ul></li>`).join("")}</ul></li>`).join("")}</ul></div>
+<input id="saveIndustryButton" type="button" value="Save Changes" class="btn buttonSave" disabled>
 <script>
   const q = new URLSearchParams(location.search);
-  const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.parentElement.querySelector(":scope > span").textContent;
+  const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.closest("li").querySelector(":scope > span").textContent;
   for (const box of document.querySelectorAll(".controls_checkBox")) { if ((window.opener.industries || []).includes(where(box))) box.classList.add("controls_checkBox_on"); }
   document.getElementById("root").addEventListener("click", (e) => {
-    if (e.target.classList.contains("controls_checkBox")) { e.target.classList.toggle("controls_checkBox_on"); document.getElementById("save").disabled = false; return; }
+    if (e.target.classList.contains("controls_checkBox")) { e.target.classList.toggle("controls_checkBox_on"); document.getElementById("saveIndustryButton").disabled = false; return; }
     const t = e.target.closest(".sub-section__icon-expand"); if (!t) return;
     const list = t.parentElement.querySelector(":scope > ul"); list.style.display = list.style.display === "none" ? "block" : "none";
   });
-  document.getElementById("save").addEventListener("click", () => {
+  document.getElementById("saveIndustryButton").addEventListener("click", () => {
     window.opener.markIndustry([...document.querySelectorAll(".controls_checkBox_on")].map(where));
-    document.getElementById("save").disabled = true;
+    document.getElementById("saveIndustryButton").disabled = true;
     if (q.get("mode") === "close") window.close();
   });
 <\/script></body>`;
@@ -174,23 +174,33 @@ async function drive(ctx, base, code, auto, reuse) {
     await pickerClick("Detect automatically");
     await popup.waitForFunction(() => [...document.querySelectorAll("div")].some((d) => /^Found:/.test(d.shadowRoot?.querySelector(".ok")?.textContent || "")), null, { timeout: 15000 });
     const note = await popup.evaluate(() => [...document.querySelectorAll("div")].map((d) => d.shadowRoot?.querySelector(".ok")?.textContent).find(Boolean));
-    assert.match(note, /choice boxes|checkbox/);
+    assert.match(note, /Found: 10 choices in 7 branches/);
     assert.match(note, /Save button "Save Changes"/);
-    assert.match(note, /opening one revealed more choices/);
-    assert.equal(await popup.evaluate(() => [...document.querySelectorAll("li > ul")].filter((u) => u.style.display === "none").length), 5, "the branch that was opened to test is closed again");
+    // Done must always be reachable, even in a small window: it sits in a footer that never scrolls away.
+    const doneVisible = await popup.evaluate(() => {
+      const host = [...document.querySelectorAll("div")].find((d) => d.shadowRoot?.querySelector(".card"));
+      const done = [...host.shadowRoot.querySelectorAll("button")].find((b) => b.textContent.startsWith("Done"));
+      const r = done.getBoundingClientRect();
+      return { inView: r.top >= 0 && r.bottom <= window.innerHeight, enabled: !done.disabled };
+    });
+    assert.deepEqual(doneVisible, { inView: true, enabled: true });
+    assert.equal(await popup.evaluate(() => [...document.querySelectorAll("li > ul")].filter((u) => u.style.display === "none").length), 0, "every branch was opened to read the whole list");
     assert.equal(await popup.evaluate(() => document.querySelectorAll(".controls_checkBox_on").length), 0, "nothing was ticked while detecting");
     // The developer copy starts at the tree, skips hidden lists, and counts repeated rows.
     await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+    await popup.evaluate(() => { for (const d of [...document.querySelectorAll("div")].map((x) => x.shadowRoot).filter(Boolean)) d.querySelectorAll("details").forEach((x) => { x.open = true; }); });
     await pickerClick("Copy this window's structure");
     const shared = await popup.evaluate(() => navigator.clipboard.readText());
     assert.match(shared, /^WINDOW STRUCTURE/);
     assert.match(shared, /sub-section__icon-expand/);
     assert.doesNotMatch(shared, /adminsList|staff\.member/, "hidden lists are not copied");
     assert.match(shared, /controls_checkBox/);
+    assert.match(shared, /controls_emptyCheckBox/);
+    assert.match(shared, /more identical/, "repeated rows are counted, not listed");
   } else {
     await pickerClick("Pick a + button"); await clickAt(popup, ".sub-section__icon-expand");
-    await pickerClick("Pick a checkbox"); await clickAt(popup, ".controls_checkBox[data-vis]");
-    await pickerClick("Pick the Save button"); await clickAt(popup, "#save"); // greyed out, still pickable
+    await pickerClick("Pick a choice box"); await clickAt(popup, ".controls_checkBox[data-vis]");
+    await pickerClick("Pick the Save button"); await clickAt(popup, "#saveIndustryButton"); // greyed out, still pickable
   }
   await pickerClick("Done");
   await page.waitForTimeout(500);

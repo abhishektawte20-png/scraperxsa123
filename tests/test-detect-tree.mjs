@@ -27,7 +27,7 @@ const OPEN_CLOSE = `
     list.style.display = list.style.display === "none" ? "block" : "none";
   });`;
 
-test("finds the checkboxes, the + buttons and Save, and leaves the tested branch as it was", async () => {
+test("finds the checkboxes, the + buttons and Save, and opens every branch to read the whole list", async () => {
   const doc = page(`<ul>
     <li><img class="tg" alt="+"> Energy<ul style="display:none"><li><input type="checkbox" name="i"> Oil</li><li><input type="checkbox" name="i"> Gas</li></ul></li>
     <li><img class="tg" alt="+"> Healthcare<ul style="display:none"><li><input type="checkbox" name="i"> Devices</li></ul></li></ul>
@@ -39,8 +39,9 @@ test("finds the checkboxes, the + buttons and Save, and leaves the tested branch
   assert.equal(sb().matchAll(found.expander.selectors[0]).length, 2);
   assert.equal(found.saveButton.text, "Save");
   assert.deepEqual(found.notes, []);
-  assert.match(found.summary.join(" "), /3 checkboxes.*opening one revealed more choices.*Save button "Save"/);
-  assert.deepEqual(Array.from(doc.querySelectorAll("li > ul")).map((u) => u.style.display), ["none", "none"]);
+  assert.match(found.summary.join(" "), /3 choices in 2 branches.*\+ buttons tested.*Save button "Save"/);
+  assert.deepEqual(found.counts, { choices: 3, branches: 2, covered: 3 });
+  assert.deepEqual(Array.from(doc.querySelectorAll("li > ul")).map((u) => u.style.display), ["block", "block"], "every branch was opened to read the list");
   assert.equal(doc.querySelectorAll("input[type=checkbox]:checked").length, 0, "nothing is ticked");
 });
 
@@ -57,7 +58,7 @@ test("a tree that draws its choices only when a branch is opened is still detect
   assert.ok(found.leaf, "checkboxes found after opening a branch");
   assert.ok(found.expander);
   assert.equal(found.saveButton.text, "Save Changes");
-  assert.match(found.summary.join(" "), /2 checkboxes/);
+  assert.match(found.summary.join(" "), /4 choices in 2 branches/);
   assert.ok(doc.querySelectorAll("input[type=checkbox]").length >= 2);
 });
 
@@ -66,7 +67,7 @@ test("an already-open list needs no + button", async () => {
   const found = await detect();
   assert.equal(found.expander, null);
   assert.deepEqual(found.notes, []);
-  assert.match(found.summary.join(" "), /every choice is already visible/);
+  assert.match(found.summary.join(" "), /2 choices in 0 branches/);
 });
 
 test("what could not be found is said plainly", async () => {

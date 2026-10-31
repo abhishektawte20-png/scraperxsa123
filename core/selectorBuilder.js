@@ -188,6 +188,10 @@
     const candidates = [];
 
     if (el.id && isStableId(el.id)) candidates.push(`#${el.id}`);
+    // An id that carries a record number ("industryControlCode41712848611CheckBox") is not stable, but its
+    // letters around the number are: [id^="industryControlCode"][id$="CheckBox"] finds every choice, and only choices.
+    const pattern = el.id && !isStableId(el.id) ? /^([A-Za-z][A-Za-z_-]{3,}?)\d[\d_-]*([A-Za-z][A-Za-z_-]*)?$/.exec(el.id) : null;
+    if (pattern) candidates.push(`[id^=${quote(pattern[1])}]${pattern[2] ? `[id$=${quote(pattern[2])}]` : ""}`);
     for (const attr of TEST_ATTRS) {
       const value = el.getAttribute(attr);
       if (value) candidates.push(`[${attr}=${quote(value)}]`);
@@ -214,7 +218,7 @@
     }
 
     if (preferStable) {
-      const rank = (selector) => (selector.startsWith("[data-") ? 0 : selector.startsWith("#") ? 1 : 2);
+      const rank = (selector) => (selector.startsWith("[data-") ? 0 : selector.startsWith("#") ? 1 : selector.startsWith("[id^=") ? 1.5 : 2);
       good.sort((a, b) => rank(a) - rank(b));
     } else if (allowMultiple) {
       // Row sub-fields: prefer shared class/name selectors over unique ids.

@@ -18,14 +18,17 @@ const TREE = [
   { name: "Information Technology", kids: [{ name: "Software", leaves: ["Application Software", "Other"] }] }
 ];
 
-const leaf = { selectors: ["div.controls_checkBox"], text: "" };
-const expander = { selectors: ["div.sub-section__icon-expand"], text: "" };
-const job = (value, extra = {}) => ({ tree: { leaf, expander }, value, preSave: [], saveButton: { selectors: ["#save"], text: "Save Changes" }, ...extra });
+// RTS's real markup: a frame (controls_checkBox_border) around the box, ids that carry a record number, and a box of
+// its own for every branch (controls_emptyCheckBox) that is NOT a choice.
+const leaf = { selectors: ['[id^="industryControlCode"][id$="CheckBox"]'], text: "" };
+const expander = { selectors: ['[id^="industryControlGroup"][id$="Expander"]'], text: "" };
+const job = (value, extra = {}) => ({ tree: { leaf, expander }, value, preSave: [], saveButton: { selectors: ["#saveIndustryButton"], text: "Save Changes" }, ...extra });
 
 function setup({ lazy = false, closeOnSave = false } = {}) {
-  const box = (l) => { const o = typeof l === "string" ? { n: l } : l; return `<li><div class="controls_checkBox mt_5${o.on ? " controls_checkBox_checked" : ""}"></div> <span>${o.n}</span></li>`; };
-  const group = (g, level) => `<li><div class="mt_5 sub-section__icon-expand section__icon"></div> <span>${g.name}</span><ul style="display:${lazy ? "none" : "none"}" data-lazy="${lazy ? 1 : 0}">${lazy ? "" : level === 1 ? g.kids.map((k) => group(k, 2)).join("") : g.leaves.map(box).join("")}</ul></li>`;
-  const html = `<ul id="root">${TREE.map((g) => group(g, 1)).join("")}</ul><input id="save" type="button" value="Save Changes" disabled>`;
+  let n = 100;
+  const box = (l) => { const o = typeof l === "string" ? { n: l } : l; return `<li><div class="controls_checkBox_border"><div id="industryControlCode${n++}1284861CheckBox" class="controls_checkBox${o.on ? " controls_checkBox_checked" : ""}"></div></div> <span>${o.n}</span></li>`; };
+  const group = (g, level) => `<li><div id="industryControlGroup${n++}1284861Expander" class="mt_5 sub-section__icon-expand section__icon"></div><div class="controls_checkBox_border"><div id="industryControlGroup${n++}1284861CheckBox" class="controls_emptyCheckBox"></div></div> <span>${g.name}</span><ul style="display:none">${lazy ? "" : level === 1 ? g.kids.map((k) => group(k, 2)).join("") : g.leaves.map(box).join("")}</ul></li>`;
+  const html = `<ul id="root">${TREE.map((g) => group(g, 1)).join("")}</ul><input id="saveIndustryButton" type="button" value="Save Changes" disabled>`;
   const dom = new JSDOM(`<!doctype html><body>${html}</body>`, { runScripts: "outside-only", url: "http://localhost/industryGroup/create.html" });
   const { window } = dom;
   Object.assign(global, { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement, NodeFilter: window.NodeFilter, HTMLInputElement: window.HTMLInputElement, Event: window.Event, InputEvent: window.InputEvent });
@@ -34,10 +37,10 @@ function setup({ lazy = false, closeOnSave = false } = {}) {
   const state = { saves: 0, stages: [], closed: 0 };
   global.chrome = { runtime: { sendMessage: (m) => state.stages.push(m.stage) } };
   window.close = () => { state.closed++; };
-  const save = doc.getElementById("save");
+  const save = doc.getElementById("saveIndustryButton");
   const build = (li, level) => {
     const g = (level === 1 ? TREE : TREE.flatMap((t) => t.kids)).find((x) => x.name === li.querySelector(":scope > span").textContent);
-    li.querySelector(":scope > ul").innerHTML = level === 1 ? g.kids.map((k) => group(k, 2).replace('data-lazy="0"', 'data-lazy="0"')).join("") : g.leaves.map(box).join("");
+    li.querySelector(":scope > ul").innerHTML = level === 1 ? g.kids.map((k) => group(k, 2)).join("") : g.leaves.map(box).join("");
   };
   doc.getElementById("root").addEventListener("click", (event) => {
     const t = event.target;
@@ -50,7 +53,7 @@ function setup({ lazy = false, closeOnSave = false } = {}) {
   });
   save.addEventListener("click", () => { state.saves++; if (closeOnSave) doc.getElementById("root").remove(); save.disabled = true; });
   Object.assign(globalThis.SXRTS.workflows.popupWindow.TIMEOUTS, { fields: 400, button: 400, settle: 400, after: 20, branch: 120, poll: 5, search: 5000 });
-  return { doc, state, ticked: () => Array.from(doc.querySelectorAll(".controls_checkBox_checked")).map((b) => b.parentElement.querySelector("span").textContent) };
+  return { doc, state, ticked: () => Array.from(doc.querySelectorAll(".controls_checkBox_checked")).map((b) => b.closest("li").querySelector(":scope > span").textContent) };
 }
 const run = (j) => globalThis.SXRTS.workflows.popupWindow.run(j);
 
@@ -77,7 +80,7 @@ for (const lazy of [false, true]) {
 test("a given usual look (baseKey) decides what counts as ticked, even when few choices are on screen", async () => {
   const { doc } = setup();
   // Only Clothing's group is opened by the researcher; with one group on screen the odd one out is still found.
-  const base = "DIV|controls_checkBox mt_5";
+  const base = "DIV|controls_checkBox";
   const out = await run(job("1.1.2 — Chemicals", { tree: { leaf: { ...leaf, baseKey: base }, expander } }));
   assert.equal(out.status, "saved");
   assert.ok(doc.querySelectorAll(".controls_checkBox_checked").length === 2);
@@ -114,15 +117,21 @@ test("Detect recognises the drawn boxes and the + buttons, and remembers the usu
   assert.ok(found.leaf, found.notes.join(" "));
   assert.ok(found.expander);
   assert.equal(found.saveButton.text, "Save Changes");
-  assert.match(found.leaf.selectors[0], /controls_checkBox/);
-  assert.match(found.expander.selectors[0], /icon-expand/);
-  assert.equal(found.leaf.baseKey, "DIV|controls_checkBox mt_5", "the unticked look, not the ticked one");
+  assert.match(found.leaf.selectors[0], /industryControlCode/, "the pattern of the choices only, not the branches' own boxes");
+  assert.match(found.expander.selectors[0], /industryControlGroup|icon-expand/);
+  assert.equal(found.leaf.baseKey, "DIV|controls_checkBox", "the unticked look, not the ticked one");
   assert.equal(doc.querySelectorAll(".controls_checkBox_checked").length, 1, "nothing was ticked while detecting");
+  // Everything was read: all 11 choices under 3 sectors and 4 groups; the 7 boxes of the branches themselves are not choices.
+  assert.equal(found.counts.choices, 11);
+  assert.equal(found.counts.covered, 11);
+  assert.match(found.summary.join(" "), /11 choices in 7 branches/);
+  assert.equal(found.counts.branches, 7, "3 sectors + 4 groups");
+  assert.deepEqual(found.notes, []);
 });
 
 test("Detect opens branches when the drawn boxes exist only after a branch is opened", async () => {
   setup({ lazy: true });
   const found = await globalThis.SXRTS.popupPicker.detectTree(globalThis.SXRTS.selectorBuilder, null);
   assert.ok(found.leaf, found.notes.join(" "));
-  assert.match(found.summary.join(" "), /choice boxes|checkbox/);
+  assert.match(found.summary.join(" "), /11 choices in 7 branches/);
 });
