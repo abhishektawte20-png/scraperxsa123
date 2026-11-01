@@ -236,3 +236,27 @@ test("dialog: the 'Applies to' box offers the report's other fields, and a rule 
   assert.match(list, /Employee count tidy/);
   assert.match(list, /Employee count: Trim spaces/);
 });
+
+// ---- phone numbers the way RTS asks for them ----
+test("the US phone step writes 281-941-6001 and leaves every other number exactly as it is", () => {
+  const f = (v) => or.runSteps([{ type: "phoneUS" }], v);
+  assert.equal(f("281-941-6001"), "281-941-6001");
+  assert.equal(f("(281) 941-6001"), "281-941-6001");
+  assert.equal(f("281.941.6001"), "281-941-6001");
+  assert.equal(f("+1 281 941 6001"), "281-941-6001");
+  assert.equal(f("1-281-941-6001"), "281-941-6001");
+  assert.equal(f("2819416001"), "281-941-6001");
+  assert.equal(f("+91 98765 43210"), "+91 98765 43210", "another country's number is not touched");
+  assert.equal(f("941-6001"), "941-6001", "an incomplete number is not guessed");
+  assert.equal(f("+44 20 7946 0958"), "+44 20 7946 0958");
+});
+
+test("a phone rule changes the phone that reaches the preview, for the text report and for a company.sites record", () => {
+  const rule = { id: "p", label: "Phone as 281-941-6001", target: "field:extras.phone:value", steps: [{ type: "phoneUS" }], enabled: true };
+  assert.deepEqual(or.validateRule(rule), []);
+  const doc = { extras: { phone: { value: "(281) 941-6001", action: "addIfMissing" } }, company: { sites: [{ city: "Texas City", phone: "281.941.6001" }] } };
+  const applied = or.apply(doc, [rule, { ...rule, id: "q", target: "field:company.sites:phone" }]);
+  assert.equal(doc.extras.phone.value, "281-941-6001");
+  assert.equal(doc.company.sites[0].phone, "281-941-6001");
+  assert.equal(applied.length, 2);
+});

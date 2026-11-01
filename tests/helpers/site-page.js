@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false, rejectRed: false }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -92,6 +92,18 @@
           form.style.display = "none";
         }, 700);
         return;
+      }
+      if (o.rejectRed) {
+        // A refusal with no helpful class names: red text and a box marked invalid. Save stays enabled.
+        // "always": every Save is refused. Otherwise it is refused only while the phone box holds something.
+        var phone = field("Phone");
+        if (o.rejectRed === "always" || phone.value) {
+          phone.setAttribute("aria-invalid", "true");
+          if (!phone.parentElement.querySelector("span")) phone.parentElement.insertAdjacentHTML("beforeend", '<span style="color: rgb(200, 30, 30)">Phone is not in the required format</span>');
+          return;
+        }
+        phone.removeAttribute("aria-invalid");
+        var old = phone.parentElement.querySelector("span"); if (old) old.remove();
       }
       if (o.rejectSave) return;
       if (o.rejectSoftly) { $("saveSiteInfoButton").disabled = true; form.insertAdjacentHTML("beforeend", '<div class="errorMsg">Phone number format is invalid</div>'); return; }

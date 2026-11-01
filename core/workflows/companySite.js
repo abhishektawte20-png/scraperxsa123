@@ -278,9 +278,33 @@
     return Boolean(record.city) && text.includes(key(record.city));
   };
 
+  // What RTS complains about: messages by their class, any red text in the form, and the boxes it marked as wrong.
+  function isRed(node) {
+    const color = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(window.getComputedStyle?.(node)?.color || "");
+    return Boolean(color) && Number(color[1]) >= 150 && Number(color[2]) <= 90 && Number(color[3]) <= 90;
+  }
   function formErrors() {
     const found = Array.from(document.querySelectorAll('[class*="error" i], [class*="invalid" i], .errorMsg, [role=alert]')).filter(isShown).map((n) => squash(n.textContent)).filter((t) => t && t.length < 200);
-    return Array.from(new Set(found)).slice(0, 3).join(" ");
+    const root = formRoot();
+    if (root) {
+      for (const node of Array.from(root.querySelectorAll("div, span, p, td, label, li, b, font, strong")).filter((n) => !n.children.length && isShown(n))) {
+        const text = squash(node.textContent);
+        if (text && text.length < 160 && !/^[*?]$/.test(text) && isRed(node)) found.push(text);
+      }
+    }
+    const marked = markedBoxes().map((c) => c.closest("td")?.previousElementSibling?.textContent.trim() || c.name || c.id);
+    const text = Array.from(new Set(found)).slice(0, 4).join(" ");
+    return [text, marked.length ? `Boxes RTS marked as wrong: ${Array.from(new Set(marked.map(squash))).join(", ")}.` : ""].filter(Boolean).join(" ");
+  }
+  function markedBoxes() {
+    const root = formRoot();
+    return root ? Array.from(root.querySelectorAll("input, select, textarea")).filter((c) => isShown(c) && (c.getAttribute("aria-invalid") === "true" || /\b(error|invalid|has-error)\b/i.test(c.className) || /\b(error|invalid|has-error)\b/i.test(c.parentElement?.className || ""))) : [];
+  }
+  // The optional boxes RTS refused (or whose name its message mentions): these can be left out so the site is still saved.
+  const OPTIONAL = { phone: "Phone", fax: "Fax", zip: "Zip", email: "Email", address2: "Address line 2" };
+  function refusedOptional(message) {
+    const marked = markedBoxes();
+    return Object.keys(OPTIONAL).filter((role) => { const box = find(role); return box && (marked.includes(box) || new RegExp(`\\b${OPTIONAL[role].split(" ")[0]}\\b`, "i").test(message)) && box.value; });
   }
 
   // Empties what was typed and chosen, so values of a cancelled try (or a failed run) can never end up in the next site.
@@ -486,27 +510,47 @@
     // Evidence of a save: the form closes, or the new site appears in the list. A message from RTS is a refusal.
     const root = sectionRoot(findOpener() || opener);
     const listed = () => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName });
-    let refusalSince = 0;
-    let refusal = "";
-    const evidence = await waitFor(() => {
-      if (!formOpen() || listed()) return true;
-      const said = formErrors();
-      if (said) { refusalSince = refusalSince || Date.now(); refusal = said; if (Date.now() - refusalSince > TIMEOUTS.after) return true; } else refusalSince = 0;
-      return false;
-    }, TIMEOUTS.settle);
-    if (refusal && formOpen() && !listed()) {
-      await cancelForm();
-      throw new Error(`RTS did not accept the site. RTS says: ${refusal}`);
+    const watchSave = async () => {
+      let refusalSince = 0;
+      let refusal = "";
+      const evidence = await waitFor(() => {
+        if (!formOpen() || listed()) return true;
+        const said = formErrors();
+        if (said) { refusalSince = refusalSince || Date.now(); refusal = said; if (Date.now() - refusalSince > TIMEOUTS.after) return true; } else refusalSince = 0;
+        return false;
+      }, TIMEOUTS.settle);
+      return { evidence, refusal };
+    };
+    let outcome = await watchSave();
+    const leftOut = [];
+    if (outcome.refusal && formOpen() && !listed()) {
+      // RTS refused an optional box (for example the phone's format): leave that box out and press SAVE once more,
+      // so the site is still added. What was left out is reported.
+      const bad = refusedOptional(outcome.refusal);
+      if (bad.length) {
+        for (const role of bad) { const box = find(role); leftOut.push(`${OPTIONAL[role]} (${squash(box.value)})`); await globalThis.SXRTS.adapters.textField.applyText(box, ""); }
+        did(`RTS refused ${leftOut.join(", ")}; those were emptied and SAVE was pressed a second time`);
+        const again = findSave();
+        if (!again || !(await waitFor(() => !again.disabled, TIMEOUTS.field))) throw new Error(`RTS refused ${leftOut.join(", ")} and SAVE did not wake up after it was emptied. RTS says: ${outcome.refusal}`);
+        again.click();
+        outcome = await watchSave();
+      }
     }
-    if (!evidence) {
-      throw new Error(`Save did not complete: SAVE was pressed once, but after ${Math.round(TIMEOUTS.settle / 1000)} seconds the site form is still open and the Site list does not show the site. The form was left as it is: look at it, and at the Site list, before trying again.`);
+    if (outcome.refusal && formOpen() && !listed()) {
+      await cancelForm();
+      throw new Error(`RTS did not accept the site. RTS says: ${outcome.refusal}${leftOut.length ? ` (also tried without ${leftOut.join(", ")})` : ""}`);
+    }
+    if (!outcome.evidence) {
+      const said = formErrors();
+      throw new Error(`Save did not complete: SAVE was pressed once, but after ${Math.round(TIMEOUTS.settle / 1000)} seconds the site form is still open and the Site list does not show the site.${said ? ` RTS shows: ${said}` : ""} The form was left as it is: look at it, and at the Site list, before trying again.`);
     }
     if (formOpen()) await cancelForm();
 
     await rememberAdded(r);
     const shown = await waitFor(listed, TIMEOUTS.list);
     const note = Object.keys(derived).length ? ` (${Object.entries(derived).map(([k, v]) => `${k} ${v}`).join(", ")} taken from the address)` : "";
-    if (shown) return { status: "savedValueVerified", name: r.siteName, ...(note ? { derived: note } : {}) };
+    const without = leftOut.length ? { note: `Saved ${r.siteName} without ${leftOut.join(", ")}: RTS refused ${leftOut.length === 1 ? "it" : "them"}. Fix and add ${leftOut.length === 1 ? "it" : "them"} in RTS by hand.`, detail: `Saved without ${leftOut.join(", ")}: RTS refused ${leftOut.length === 1 ? "it" : "them"}.`, leftOut } : {};
+    if (shown) return { status: leftOut.length ? "savedStateVerified" : "savedValueVerified", name: r.siteName, ...without, ...(note ? { derived: note } : {}) };
     const seen = listedText(root).replace(/\s+/g, " ").slice(0, 140);
     return {
       status: "savedStateVerified", name: r.siteName,

@@ -38,6 +38,17 @@
     stripQuery: { label: "Remove ?query and #fragment", params: [], run: (v) => v.split(/[?#]/)[0] },
     stripTrailingSlash: { label: "Remove trailing slash", params: [], run: (v) => v.replace(/\/+$/, "") },
     stripAt: { label: "Remove a leading @", params: [], run: (v) => v.replace(/^@+/, "") },
+    // 10 digits (or 1 + 10, or +1 + 10) become 281-941-6001. Any other number is left exactly as it is.
+    phoneUS: {
+      label: "Format as a US phone number (281-941-6001)", params: [],
+      run: (v) => {
+        const text = String(v).trim();
+        if (/^\+/.test(text) && !/^\+1\b/.test(text)) return v;
+        const digits = text.replace(/\D/g, "");
+        const ten = digits.length === 11 && digits[0] === "1" ? digits.slice(1) : digits;
+        return ten.length === 10 ? `${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}` : v;
+      }
+    },
     trim: { label: "Trim spaces", params: [], run: (v) => v.trim() },
     lowercase: { label: "Make lowercase", params: [], run: (v) => v.toLowerCase() },
     replace: {

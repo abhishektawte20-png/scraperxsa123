@@ -391,3 +391,37 @@ test("a Save that RTS finishes slowly is not interrupted: the form is not emptie
   assert.equal(state.cancelsBeforeDone, 0, "no Cancel was pressed before RTS finished");
   void doc;
 });
+
+test("a refusal shown only as red text and a box marked invalid is read, and reported in RTS's own words with the box named", async () => {
+  const { state } = setup({ rejectRed: "always" });
+  await assert.rejects(site.applySite(TEXAS), (error) => {
+    assert.match(error.message, /RTS did not accept the site\. RTS says: Phone is not in the required format/);
+    assert.match(error.message, /Boxes RTS marked as wrong: Phone/);
+    return true;
+  });
+  assert.equal(state.saves, 0);
+});
+
+test("when nothing happens after SAVE and RTS shows no message, the error still says so and names what was on screen", async () => {
+  const { state } = setup({ rejectSave: true });
+  await assert.rejects(site.applySite(TEXAS), /SAVE was pressed once.*left as it is/s);
+  assert.equal(state.saves, 0);
+});
+
+test("when RTS refuses an optional box (the phone's format), that box is left out, SAVE is pressed once more, and the site is still added; what was left out is reported", async () => {
+  const { state } = setup({ rejectRed: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(state.saves, 1, "the site was added");
+  assert.equal(state.lastForm.phone, "", "without the refused phone");
+  assert.equal(state.lastForm.email, "info@lagoonfesttexas.com", "everything else is kept");
+  assert.equal(result.status, "savedStateVerified");
+  assert.match(result.note, /Saved Texas City without Phone \(281-941-6001\): RTS refused it/);
+  assert.deepEqual(result.leftOut, ["Phone (281-941-6001)"]);
+  assert.ok(result.trace.some((t) => /RTS refused Phone.*SAVE was pressed a second time/.test(t)));
+});
+
+test("a refusal that does not point at an optional box is never worked around: it is reported", async () => {
+  const { state } = setup({ rejectSoftly: true });
+  await assert.rejects(site.applySite({ ...TEXAS, phone: "" }), /RTS did not accept the site/);
+  assert.equal(state.saves, 0);
+});

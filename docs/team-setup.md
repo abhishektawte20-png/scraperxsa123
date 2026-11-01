@@ -199,3 +199,9 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 - **Site: the form is no longer emptied or cancelled right after SAVE.** The extension used to empty the form and press Cancel as soon as Save greyed out. On a slow RTS that is still sending the values, this could cancel the save or send an empty site. Now, after SAVE, the form is left alone until there is evidence: the form closes, or the new site appears in the list. A message from RTS is reported in RTS's own words. If neither happens within 20 seconds, the form is left as it is and the card says so (nothing is cancelled).
 - **Add New Site is found whatever it is.** Any control whose words are "Add New Site" now counts (an input of any type, a link, a button or a div with a span), including the button path from your earlier mapping, with the Site block checked first.
+
+## 0.27.4
+
+- **Phone (and fax) in RTS's format.** New output-rule step **"Format as a US phone number (281-941-6001)"**. The team defaults now ship four rules that use it (phone and fax, for the report's address fields and for a `company.sites` record), so a phone such as "(281) 941-6001" or "+1 281 941 6001" reaches the preview, and RTS, as 281-941-6001. Numbers of other countries, and incomplete numbers, are never changed. Turn a rule off in Output rules if another format is needed.
+- **Site: if RTS refuses an optional box** (phone, fax, zip, email, address line 2), that box is emptied, SAVE is pressed once more, and the site is still added; the result says what was left out ("Saved Texas City without Phone (…): RTS refused it").
+- **Site: RTS's own complaint is read.** Besides messages by class name, any red text in the form and any box marked invalid are read and shown, with the box named, in the card's message.
