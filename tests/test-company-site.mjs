@@ -102,11 +102,12 @@ test("a value that is not one of RTS's choices stops the run and cancels the for
   assert.equal(doc.getElementById("siteForm").style.display, "none");
 });
 
-test("a SAVE that RTS does not accept is an error, never a success, and the form is cancelled", async () => {
-  const { state } = setup({ rejectSave: true });
-  await assert.rejects(site.applySite(TEXAS), /Save did not complete/);
+test("a SAVE that RTS ignores is an error, never a success; the form is left as it is (it may still be saving)", async () => {
+  const { state, doc } = setup({ rejectSave: true });
+  await assert.rejects(site.applySite(TEXAS), /Save did not complete: SAVE was pressed once.*left as it is/);
   assert.equal(state.saves, 0);
-  assert.equal(state.cancels, 1);
+  assert.equal(state.cancels, 0, "nothing was cancelled or emptied after SAVE");
+  assert.equal(doc.getElementById("siteForm").style.display, "", "the form is still open for a person to look at");
 });
 
 test("a missing Add New Site button is a clear error", async () => {
@@ -358,4 +359,35 @@ test("a site the Site list could not confirm is not added a second time for the 
   assert.equal(second.state.saves, 0);
   assert.equal((await site.applySite(TEXAS, { addAnyway: true })).status, "savedStateVerified");
   assert.equal(second.state.saves, 1);
+});
+
+// ---- the opener, however RTS draws it; and the form is never touched while a Save may be running ----
+test("the Add New Site button is found whatever its tag, type or classes are, if its words are Add New Site", async () => {
+  for (const [name, make] of [
+    ["an input with no type", (d) => { const e = d.createElement("input"); e.value = "Add New Site"; return e; }],
+    ["a link", (d) => { const e = d.createElement("a"); e.textContent = "Add New Site"; e.href = "#"; return e; }],
+    ["a div with a span inside", (d) => { const e = d.createElement("div"); e.setAttribute("role", "button"); e.innerHTML = "<span>Add New Site</span>"; return e; }]
+  ]) {
+    const { state, doc } = setup({ real: true });
+    const original = doc.getElementById("addSite");
+    const replacement = make(doc);
+    replacement.id = "addSite";
+    original.replaceWith(replacement);
+    replacement.addEventListener("click", () => { state.opens++; doc.getElementById("siteForm").style.display = ""; });
+    const result = await site.applySite(TEXAS);
+    assert.equal(result.status, "savedValueVerified", name);
+    assert.equal(state.opens, 1, name);
+  }
+});
+
+test("a Save that RTS finishes slowly is not interrupted: the form is not emptied or cancelled while it is still saving", async () => {
+  const { state, doc } = setup({ slowSave: true });
+  site.TIMEOUTS.settle = 4000;
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.saves, 1);
+  assert.equal(state.lastForm.name, "Texas City", "the values RTS received were complete");
+  assert.equal(state.lastForm.city, "Texas City");
+  assert.equal(state.cancelsBeforeDone, 0, "no Cancel was pressed before RTS finished");
+  void doc;
 });

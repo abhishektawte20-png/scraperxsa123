@@ -11,7 +11,7 @@
  *   - If the form ends up with an error, it is cancelled so a half-filled form is never left behind.
  */
 (() => {
-  const TIMEOUTS = { open: 4000, field: 1500, settle: 8000, list: 3000, poll: 40, section: 1500, state: 9000, after: 900 };
+  const TIMEOUTS = { open: 4000, field: 1500, settle: 20000, list: 3000, poll: 40, section: 1500, state: 9000, after: 1200 };
   const DEFAULTS = { siteType: "Primary HQ", status: "Current" };
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -146,7 +146,23 @@
     }
     return Array.from(document.querySelectorAll(BUTTONS)).find((node) => isShown(node) && key(labelOf(node)) === text) || null;
   }
-  const findOpener = () => findButton([...(taught()?.openButton?.selectors ?? []), '[sid="addNewSite"]'], key(taught()?.openButton?.text) || "add new site");
+  // The "Add New Site" button, whatever its tag or type: the one you pointed at, RTS's own known paths (including the
+  // one from your earlier mapping), then ANY control whose words are "Add New Site" (inside the Site block first).
+  function findOpener() {
+    const t = taught()?.openButton;
+    for (const selector of t?.selectors ?? []) { const hit = sb().matchAll(selector).find(isShown); if (hit) return hit; }
+    const wanted = key(t?.text) || "add new site";
+    const asButton = (n) => n.closest("input, button, a, [role=button]") || n;
+    const known = ['[sid="addNewSite"]', "#blockSite input.buttonView", '#blockSite input[value="Add New Site"]', "#blockSite > div:nth-of-type(2) > div > div:nth-of-type(1) > input:nth-of-type(4)"];
+    for (const selector of known) {
+      const hit = sb().matchAll(selector).map(asButton).find((n) => isShown(n) && key(labelOf(n)) === wanted);
+      if (hit) return hit;
+    }
+    const all = Array.from(document.querySelectorAll("input, button, a, [role=button], span, div"))
+      .filter((n) => !n.children.length || /^(input|button|a)$/i.test(n.tagName) || n.getAttribute("role") === "button")
+      .filter((n) => key(labelOf(n)) === wanted).map(asButton).filter((n, i, list) => list.indexOf(n) === i && isShown(n));
+    return all.find((n) => n.closest("#blockSite")) || all[0] || null;
+  }
   const findSave = () => findButton([...(taught()?.save?.selectors ?? []), ...SAVE.selectors], key(taught()?.save?.text) || SAVE.text);
   const findCancel = () => findButton([...(taught()?.cancel?.selectors ?? [])], key(taught()?.cancel?.text) || "cancel");
   const formOpen = () => Boolean(find("siteName"));
@@ -466,25 +482,29 @@
     }
     save.click();
     did("SAVE pressed once");
-    // RTS may close the form, or leave it open with Save back to greyed out (like its other Save buttons).
-    const settled = await waitFor(() => !formOpen() || save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
-    if (settled && formOpen()) {
-      // Greyed-out Save with the form still open: RTS is either busy saving or has refused. Give it a moment, then read
-      // what it says: a refusal is reported with RTS's own words, never as a saved site.
-      await wait(TIMEOUTS.after);
-      const refusal = formErrors();
+    // The form is NOT touched while RTS may still be saving (emptying or cancelling it then could cancel the save).
+    // Evidence of a save: the form closes, or the new site appears in the list. A message from RTS is a refusal.
+    const root = sectionRoot(findOpener() || opener);
+    const listed = () => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName });
+    let refusalSince = 0;
+    let refusal = "";
+    const evidence = await waitFor(() => {
+      if (!formOpen() || listed()) return true;
+      const said = formErrors();
+      if (said) { refusalSince = refusalSince || Date.now(); refusal = said; if (Date.now() - refusalSince > TIMEOUTS.after) return true; } else refusalSince = 0;
+      return false;
+    }, TIMEOUTS.settle);
+    if (refusal && formOpen() && !listed()) {
       await cancelForm();
-      if (refusal) throw new Error(`RTS did not accept the site. RTS says: ${refusal}`);
+      throw new Error(`RTS did not accept the site. RTS says: ${refusal}`);
     }
-    if (!settled) {
-      const why = formErrors();
-      await cancelForm();
-      throw new Error(`Save did not complete: the site form is still open.${why ? ` RTS says: ${why}` : " A required box may be empty or invalid."}`);
+    if (!evidence) {
+      throw new Error(`Save did not complete: SAVE was pressed once, but after ${Math.round(TIMEOUTS.settle / 1000)} seconds the site form is still open and the Site list does not show the site. The form was left as it is: look at it, and at the Site list, before trying again.`);
     }
+    if (formOpen()) await cancelForm();
 
     await rememberAdded(r);
-    const root = sectionRoot(findOpener() || opener);
-    const shown = await waitFor(() => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName }), TIMEOUTS.list);
+    const shown = await waitFor(listed, TIMEOUTS.list);
     const note = Object.keys(derived).length ? ` (${Object.entries(derived).map(([k, v]) => `${k} ${v}`).join(", ")} taken from the address)` : "";
     if (shown) return { status: "savedValueVerified", name: r.siteName, ...(note ? { derived: note } : {}) };
     const seen = listedText(root).replace(/\s+/g, " ").slice(0, 140);

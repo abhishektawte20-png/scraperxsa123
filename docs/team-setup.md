@@ -194,3 +194,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 - **Site: a clear result, and no false "saved".** The results screen showed "Saved Texas City; RTS now shows it as linked" once per Site field. It now shows ONE Site line. When the Site list cannot confirm the new site, it says "Saved Texas City, but the Site list does not show it yet. Check the Site list in RTS." and the card's detail shows what the list does contain. If RTS answers a Save with a message (Save greyed out, form still open), the extension reports RTS's own words and does not call it saved.
 - **No second copy.** A site the extension added to a profile (even one the Site list could not confirm) is not added again for that profile for 30 days; "Add the site even if one already exists" still adds it.
+
+## 0.27.3
+
+- **Site: the form is no longer emptied or cancelled right after SAVE.** The extension used to empty the form and press Cancel as soon as Save greyed out. On a slow RTS that is still sending the values, this could cancel the save or send an empty site. Now, after SAVE, the form is left alone until there is evidence: the form closes, or the new site appears in the list. A message from RTS is reported in RTS's own words. If neither happens within 20 seconds, the form is left as it is and the card says so (nothing is cancelled).
+- **Add New Site is found whatever it is.** Any control whose words are "Add New Site" now counts (an input of any type, a link, a button or a div with a span), including the button path from your earlier mapping, with the Site block checked first.
