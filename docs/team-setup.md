@@ -172,3 +172,14 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Lighter extension.** Removed: the **Field health** window, **Check mappings** and **Analyze page** (and the whole-form mapping they made). Industry tagging, NAICS, Site, Undo, Unmap, output rules and the automatic **weekly digest** (posted to the team channel once a week; it needs no window) stay.
 - **Site can be unmapped.** "Unmap Site" is on the Site cards in the preview and "Site · built in" is listed first in Mapped & taught fields. Unmapped, the Site fields wait for a mapping like any other field (an old taught Site mapping of your own, if you have one, becomes active again and can be unmapped from the same list). "Restore" turns the built-in Site back on.
 - **Site is more reliable.** It now (1) treats Save as done when RTS closes the form *or* leaves it open with Save greyed out again, and puts the form away; (2) waits for the state list to load after the country is chosen; (3) reads every box back before Save and fills again any that the page wiped when the country changed; (4) when the report has only a full address, takes the missing city, state, country and zip from it (what the report does give is never replaced).
+
+## 0.27.0
+
+- **Set up Site** (Mapped & taught fields > *Site · built in* > Set up; also on every Site card). Adding a site is ONE go: the extension presses the button that opens the form once, fills every box, and presses SAVE once. You never map the site's boxes one by one. In this window:
+  - **Find the Site form** opens the Site section and the form (left open) and lists, with a tick or a cross, what it found: the section, the Add New Site button, every box, the State list or box, the Primary HQ / Current choices, SAVE and Cancel. Nothing is typed or saved.
+  - A cross has **Point at it**: click the real box (or button, or the bar that opens the section) on the page and it is remembered; what you pointed at is the only thing used for that box, never a look-alike.
+  - **Try it (nothing is saved)** fills the form with sample values up to SAVE, reads everything back, empties the form and closes it. The steps done are shown.
+  - **Copy log** gives the ticks, crosses and steps to send to the developer. **Forget what I pointed at** goes back to the extension's own guesses.
+  - What was pointed at is saved in this browser and travels with **Export team defaults** (`siteSetup`), so everyone gets it from day one.
+- A failed Site now says where it stopped ("Done before this: Site section open; Add New Site pressed, form open; site name, site type").
+- Values typed by a try-run or by a run that failed are emptied when the form is put away, and text boxes the report does not fill are emptied before the next site, so nothing leaks into the next site.

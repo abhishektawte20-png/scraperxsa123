@@ -189,3 +189,83 @@ test("the built-in Site can be switched off and on, and the choice is remembered
   await site.loadFlag();
   assert.equal(site.isEnabled(), true);
 });
+
+// ---- "Set up Site": what the researcher pointed at wins; steps are named; a dry run saves nothing ----
+test("a box the researcher pointed at is used instead of the built-in guess (a look-alike earlier on the page is ignored)", async () => {
+  const { state, doc } = setup();
+  const decoy = doc.createElement("input");
+  decoy.name = "site.siteName";
+  doc.getElementById("companyTab").insertBefore(decoy, doc.getElementById("companyTab").firstChild);
+  await site.setSetup({ roles: { siteName: { selectors: ["#siteForm tr:nth-child(1) input"] } } });
+  try {
+    const result = await site.applySite(TEXAS);
+    assert.equal(result.status, "savedValueVerified");
+    assert.equal(state.lastForm.name, "Texas City");
+    assert.equal(decoy.value, "", "the look-alike was left alone");
+  } finally { await site.setSetup(null); }
+});
+
+test("the button the researcher pointed at opens the form, even when its words are different", async () => {
+  const { state, doc } = setup();
+  doc.getElementById("addSite").value = "Nuevo sitio";
+  await assert.rejects(site.applySite(TEXAS), /Site section could not be opened/);
+  await site.setSetup({ openButton: { selectors: ["#addSite"], text: "Nuevo sitio" } });
+  try {
+    assert.equal((await site.applySite(TEXAS)).status, "savedValueVerified");
+    assert.equal(state.saves, 1);
+  } finally { await site.setSetup(null); }
+});
+
+test("a failure names where it stopped: the steps that were done before it", async () => {
+  setup();
+  await assert.rejects(site.applySite({ ...TEXAS, country: "Atlantis" }), (error) => {
+    assert.match(error.message, /"Atlantis" is not one of the dropdown's choices/);
+    assert.match(error.message, /Done before this: Site section open; Add New Site pressed, form open; site name, site type\./);
+    assert.ok(Array.isArray(error.trace) && error.trace.length >= 3);
+    return true;
+  });
+});
+
+test("a dry run goes through every step up to Save, then puts the form away: nothing is saved, even for a site that is already listed", async () => {
+  const { state, doc } = setup({ existing: [{ name: "Texas City", address1: "12600 Crystal View Blvd.", city: "Texas City" }] });
+  const result = await site.applySite(TEXAS, { dryRun: true });
+  assert.equal(result.status, "checked");
+  assert.match(result.trace.join("|"), /every box read back/);
+  assert.equal(state.saves, 0);
+  assert.equal(state.cancels, 1);
+  assert.equal(doc.getElementById("siteForm").style.display, "none");
+});
+
+test("inspect: opens the Site section and the form, lists what is found, and leaves the form open for pointing", async () => {
+  const { state, doc } = setup({ real: true });
+  const { items } = await site.inspect();
+  const by = (id) => items.find((i) => i.id === id);
+  assert.ok(items.filter((i) => !["cancel"].includes(i.id)).every((i) => i.ok), JSON.stringify(items.filter((i) => !i.ok)));
+  assert.ok(by("opener").selector, "it says how the button is found");
+  assert.equal(state.opens, 1);
+  assert.equal(state.saves, 0);
+  assert.equal(doc.getElementById("siteForm").style.display, "", "the form is left open");
+  doc.querySelector('select[name="site.siteStatus.id"]').closest("tr").remove();
+  assert.equal((await site.inspect()).items.find((i) => i.id === "status").ok, false);
+  assert.equal(state.opens, 1, "an open form is not opened again");
+});
+
+test("what was pointed at is remembered across page loads and can be cleared", async () => {
+  const store = new Map();
+  global.chrome = { storage: { local: { async get(k) { return store.has(k) ? { [k]: store.get(k) } : {}; }, async set(o) { for (const [k, v] of Object.entries(o)) store.set(k, v); }, async remove(k) { store.delete(k); } } } };
+  await site.setSetup({ save: { selectors: ["#x"], text: "Save" } });
+  await site.setSetup({ ...site.getSetup(), roles: { city: { selectors: ["#c"] } } });
+  await site.loadFlag();
+  assert.deepEqual(site.getSetup().roles.city.selectors, ["#c"]);
+  await site.setSetup(null);
+  await site.loadFlag();
+  assert.equal(site.getSetup(), null);
+});
+
+test("values typed by a try-run, or by a run that failed, never end up in the next site", async () => {
+  const { state } = setup();
+  await site.applySite({ ...TEXAS, email: "sample@example.com", fax: "111", state: "Texas" }, { dryRun: true });
+  await assert.rejects(site.applySite({ ...TEXAS, country: "Atlantis", phone: "999" }));
+  await site.applySite({ city: "Austin", country: "United States", state: "California", address1: "1 Road" });
+  assert.deepEqual([state.lastForm.email, state.lastForm.fax, state.lastForm.phone, state.lastForm.zip, state.lastForm.state, state.lastForm.city], ["", "", "", "", "California", "Austin"]);
+});

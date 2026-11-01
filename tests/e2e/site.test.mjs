@@ -115,11 +115,28 @@ test("the address fields are published as one site; a listed site is not added t
     };
     const site = () => page.evaluate(() => JSON.parse(JSON.stringify({ saves: window.__site.saves, opens: window.__site.opens, form: window.__site.lastForm, sites: window.__site.sites, barClicks: window.__site.barClicks })));
 
+    // 0. Set up Site: what is found, then a try-run that saves nothing.
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".card button")].find((b) => b.textContent === "Teach new field").click());
+    await page.waitForTimeout(300);
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".teach-card button")].find((b) => b.textContent === "Set up").click());
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".teach-card button")].find((b) => b.textContent === "Find the Site form").click());
+    const cardText = () => inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-card")?.textContent || "");
+    for (let i = 0; i < 40 && !/✓ City/.test(await cardText()); i++) await page.waitForTimeout(250);
+    assert.match(await cardText(), /✓ Add New Site button/);
+    assert.match(await cardText(), /✓ SAVE button/);
+    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".teach-card button")].find((b) => b.textContent === "Try it (nothing is saved)").click());
+    for (let i = 0; i < 40 && !/Nothing was saved/.test(await cardText()); i++) await page.waitForTimeout(250);
+    assert.match(await cardText(), /The whole form can be filled\. Nothing was saved\./);
+    const tried = await page.evaluate(() => ({ saves: window.__site.saves, formShown: document.getElementById("siteForm").style.display !== "none" }));
+    assert.deepEqual(tried, { saves: 0, formShown: false });
+    await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".teach-x").click());
+    await page.waitForTimeout(300);
+
     // 1. No site yet: one form, one save, from a collapsed section.
     assert.equal(await publish(), "Saved 6 · Already in RTS 0 · Needs attention 0");
     let state = await site();
     assert.equal(state.saves, 1, "one SAVE for all six fields");
-    assert.equal(state.opens, 1);
+    assert.equal(state.opens, 2, "once while looking (the form stays open for the try-run), once for the real run");
     assert.ok(state.barClicks >= 1, "the Site section was opened");
     assert.deepEqual(state.form, { name: "Texas City", type: "Primary HQ", address1: "12600 Crystal View Blvd.", city: "Texas City", country: "United States", state: "Texas", zip: "77568", phone: "281-941-6001", fax: "", email: "", status: "Current" });
 
@@ -128,7 +145,7 @@ test("the address fields are published as one site; a listed site is not added t
     assert.equal(await publish(), "Saved 0 · Already in RTS 6 · Needs attention 0");
     state = await site();
     assert.equal(state.saves, 1, "nothing was added");
-    assert.equal(state.opens, 1, "the form was not opened again");
+    assert.equal(state.opens, 2, "the form was not opened again");
 
     // 3. "Add the site even if one already exists" adds it.
     await validate();

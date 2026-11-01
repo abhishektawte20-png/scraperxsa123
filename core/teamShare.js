@@ -15,7 +15,9 @@
   function buildData() {
     let extensionVersion = null;
     try { extensionVersion = chrome.runtime.getManifest().version; } catch { /* not in an extension page */ }
-    return { format: FORMAT, version: 1, exportedAt: new Date().toISOString(), extensionVersion, mappings: cf().exportable(), rules: rules().exportable() };
+    // What was pointed at in "Set up Site" travels with the team defaults, so everyone gets it from day one.
+    const siteSetup = globalThis.SXRTS.workflows?.companySite?.getSetup?.() ?? null;
+    return { format: FORMAT, version: 1, exportedAt: new Date().toISOString(), extensionVersion, mappings: cf().exportable(), rules: rules().exportable(), ...(siteSetup ? { siteSetup } : {}) };
   }
 
   function buildFile(data = buildData()) {
@@ -65,6 +67,7 @@ globalThis.SXRTS.teamDefaults = ${JSON.stringify(data, null, 2)};
   async function importData(data) {
     const mappings = await cf().importDefinitions(data.mappings);
     const imported = await rules().importRules(data.rules);
+    if (data.siteSetup && typeof data.siteSetup === "object") await globalThis.SXRTS.workflows?.companySite?.setSetup?.(data.siteSetup);
     return { imported: mappings.imported + imported.imported, skipped: [...mappings.skipped, ...imported.skipped] };
   }
 

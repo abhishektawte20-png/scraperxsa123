@@ -40,8 +40,10 @@
     document.body.insertAdjacentHTML("beforeend", html);
     var $ = function (id) { return document.getElementById(id); };
     var form = $("siteForm");
+    // The page's own bookkeeping finds a row by its original words, so a test may change the words that are shown.
+    Array.prototype.forEach.call(form.querySelectorAll("tr > td:first-child"), function (td) { td.setAttribute("data-l", td.textContent); });
     var field = function (label) {
-      var cell = Array.prototype.find.call(form.querySelectorAll("td"), function (td) { return td.textContent.indexOf(label) === 0; });
+      var cell = Array.prototype.find.call(form.querySelectorAll("td"), function (td) { return (td.getAttribute("data-l") || td.textContent).indexOf(label) === 0; });
       return cell.nextElementSibling.querySelector("input:not([style*='none']), select:not([style*='none'])");
     };
     $("tabCompany").addEventListener("click", function () { state.tabClicks++; $("companyTab").style.display = ""; $("entityTab").style.display = "none"; });

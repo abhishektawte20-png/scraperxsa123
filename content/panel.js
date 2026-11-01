@@ -719,7 +719,9 @@
           regeneratePrompt();
           revalidate();
         });
-        if (on ? action.executionStatus === "pending" : true) mapRow.push(element("div", { className: "map-row" }, [toggle, element("span", { className: "why", text: on ? "Built in: opens the Site section, fills the whole form, saves once." : "Site is unmapped. Restore the built-in Site, or map this field by hand." })]));
+        const setupSite = element("button", { className: "btn", text: "Set up Site", type: "button", tip: "See what the extension finds in the Site form, try it without saving, and point at anything it missed." });
+        setupSite.addEventListener("click", () => teach?.open({ site: true }));
+        if (on ? action.executionStatus === "pending" : true) mapRow.push(element("div", { className: "map-row" }, [...(on ? [setupSite] : []), toggle, element("span", { className: "why", text: on ? "Built in: opens the Site section, fills the whole form, saves once." : "Site is unmapped. Restore the built-in Site, or map this field by hand." })]));
       }
       // A mapped field can be unmapped right here (for example when RTS changed its page).
       if (action.customKey && globalThis.SXRTS.customFields?.getDefinition(action.customKey)) {

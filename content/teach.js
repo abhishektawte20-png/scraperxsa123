@@ -318,13 +318,15 @@
           onChange?.();
           render();
         });
+        const setupBtn = tipped(el("button", { className: "teach-btn", text: "Set up", type: "button" }), "See what the extension finds in the Site form, try it without saving, and point at anything it missed.");
+        setupBtn.addEventListener("click", () => { siteState.items = null; siteState.log = []; siteState.note = ""; siteState.error = ""; view = "site"; render(); });
         card.appendChild(el("div", { className: "teach-item" }, [
           el("div", {}, [
             el("div", { text: `Site  ·  built in${on ? "" : "  ·  unmapped"}` }),
             el("div", { className: "teach-muted", text: "Opens the Site section, presses Add New Site, fills the whole form (site type Primary HQ, status Current, site name = city) and saves once. Address, city, state, country, postcode, phone, fax and site email come from the report." }),
             el("div", { className: on ? "teach-ok" : "teach-warn", text: on ? "✓ On" : "Off: the Site fields wait for a mapping" })
           ]),
-          el("div", { className: "teach-row" }, [toggle])
+          el("div", { className: "teach-row" }, [setupBtn, toggle])
         ]));
       }
 
@@ -1248,8 +1250,116 @@
       card.appendChild(footer("Save taught field"));
     }
 
+    // ---------- "Set up Site": see what the extension finds in the Site form, and point at anything it missed ----------
+    const siteState = { items: null, log: [], busy: false, note: "", error: "" };
+    const SITE_SAMPLE = { city: "Sample City", country: "United States", state: "Texas", address1: "1 Sample Street", zip: "77001", phone: "281-000-0000", email: "sample@example.com" };
+    const siteWf = () => globalThis.SXRTS.workflows?.companySite;
+    // Which part of the setup a row can be pointed at: { kind, key }.
+    const POINTABLE = {
+      section: { kind: "bar", key: "bar", label: "the Site bar (the title bar you click to open the section)" },
+      opener: { kind: "button", key: "openButton", label: "the Add New Site button" },
+      siteName: { kind: "control", key: "siteName", label: "Site name box" }, siteType: { kind: "control", key: "siteType", label: "Site type dropdown" },
+      address1: { kind: "control", key: "address1", label: "Address line 1 box" }, city: { kind: "control", key: "city", label: "City box" },
+      country: { kind: "control", key: "country", label: "Country dropdown" }, zip: { kind: "control", key: "zip", label: "Zip box" },
+      phone: { kind: "control", key: "phone", label: "Phone box" }, fax: { kind: "control", key: "fax", label: "Fax box" },
+      email: { kind: "control", key: "email", label: "Email box" }, status: { kind: "control", key: "status", label: "Status dropdown" },
+      save: { kind: "button", key: "save", label: "SAVE button of the form" }, cancel: { kind: "button", key: "cancel", label: "Cancel button of the form" }
+    };
+
+    async function siteRun(task) {
+      siteState.busy = true; siteState.error = ""; siteState.note = ""; render();
+      try { await task(); } catch (error) { siteState.error = error.message; }
+      siteState.busy = false; render();
+    }
+    const siteInspect = () => siteRun(async () => { siteState.items = (await siteWf().inspect()).items; });
+
+    async function pointAt(spec, label) {
+      siteState.error = "";
+      const target = await pickElement(`Click ${label}`);
+      if (!target) return render();
+      const next = { ...(siteWf().getSetup() || {}) };
+      if (spec.kind === "control") {
+        const control = target.closest("input, select, textarea") || (target.tagName === "LABEL" && target.htmlFor ? document.getElementById(target.htmlFor) : null) || target.querySelector?.("input, select, textarea");
+        if (!control) { siteState.error = "That is not a box or a dropdown. Click the box itself."; return render(); }
+        const info = sb().inspectControl(control, {});
+        if (!info.selectors?.length) { siteState.error = info.reason || "Nothing on that box can identify it."; return render(); }
+        next.roles = { ...(next.roles || {}), [spec.key]: { selectors: info.selectors } };
+      } else if (spec.kind === "button") {
+        const button = target.closest(BUTTON_QUERY);
+        if (!button) { siteState.error = "That is not the button itself (you may have clicked the space beside it)."; return render(); }
+        const info = sb().inspectButton(button, {});
+        if (!info.selectors.length && !info.text) { siteState.error = "Nothing on that button can identify it."; return render(); }
+        next[spec.key] = { selectors: info.selectors, text: info.text };
+      } else {
+        const built = sb().buildSelectors(target, { preferStable: true });
+        if (!built.selectors.length) { siteState.error = "Nothing on that element can identify it."; return render(); }
+        next.bar = { selectors: built.selectors };
+      }
+      await siteWf().setSetup(next);
+      await siteInspect();
+    }
+
+    function renderSite() {
+      card.replaceChildren();
+      const close_ = el("button", { className: "teach-x", text: "×", type: "button", title: "Close" });
+      close_.addEventListener("click", close);
+      card.appendChild(el("div", { className: "teach-head" }, [el("h2", { text: "Set up Site" }), close_]));
+      card.appendChild(el("p", { className: "teach-muted", text: "Adding a site is one go: the extension presses the button that opens the form once, fills every box, and presses SAVE once. It finds the button and the boxes by itself. Press \"Find the Site form\" to see what it finds; if something is missing, point at it on the page and it is remembered. \"Try it\" runs everything up to SAVE with sample values and then closes the form: nothing is saved." }));
+      const find = tipped(el("button", { className: "teach-btn", text: siteState.busy ? "Working…" : "Find the Site form", type: "button" }), "Opens the Site section and the form (the form is left open so you can point at anything missing). Nothing is typed or saved.");
+      find.disabled = siteState.busy;
+      find.addEventListener("click", siteInspect);
+      const dry = tipped(el("button", { className: "teach-btn secondary", text: "Try it (nothing is saved)", type: "button" }), "Fills the form with sample values, checks every box, then closes the form without saving.");
+      dry.disabled = siteState.busy;
+      dry.addEventListener("click", () => siteRun(async () => {
+        try { const result = await siteWf().applySite(SITE_SAMPLE, { dryRun: true }); siteState.log = result.trace; siteState.note = "The whole form can be filled. Nothing was saved."; }
+        catch (error) { siteState.log = error.trace || []; throw error; }
+      }));
+      const away = el("button", { className: "teach-btn secondary", text: "Close the form", type: "button" });
+      away.addEventListener("click", () => siteRun(async () => { await siteWf().cancelForm(); }));
+      const back = el("button", { className: "teach-btn secondary", text: "Back", type: "button" });
+      back.addEventListener("click", () => { view = "list"; render(); });
+      card.appendChild(el("div", { className: "teach-row" }, [find, dry, away, back]));
+      if (siteState.error) card.appendChild(el("div", { className: "teach-warn", text: siteState.error }));
+      if (siteState.note) card.appendChild(el("div", { className: "teach-note", text: siteState.note }));
+      if (siteState.log.length) card.appendChild(el("div", { className: "teach-muted", text: `Steps done: ${siteState.log.join(" → ")}` }));
+
+      for (const item of siteState.items ?? []) {
+        const spec = POINTABLE[item.id];
+        const actions = [];
+        const point = (s, label, text) => { const b = el("button", { className: "teach-btn secondary", text, type: "button" }); b.addEventListener("click", () => pointAt(s, label)); actions.push(b); };
+        if (spec) point(spec, spec.label, item.ok ? "Point again" : "Point at it");
+        if (item.id === "state") {
+          point({ kind: "control", key: "stateSelect" }, "the State dropdown (shown for the United States: choose United States first)", "Point at the list");
+          point({ kind: "control", key: "province" }, "the State / province box (shown for other countries)", "Point at the box");
+        }
+        card.appendChild(el("div", { className: "teach-item" }, [
+          el("div", {}, [
+            el("div", { className: item.ok ? "teach-ok" : "teach-warn", text: `${item.ok ? "✓" : "✗"} ${item.label}${item.selector ? `  ·  ${item.selector}` : ""}` }),
+            ...(item.note ? [el("div", { className: "teach-muted", text: item.note })] : [])
+          ]),
+          el("div", { className: "teach-row" }, actions)
+        ]));
+      }
+      const mine = siteWf().getSetup();
+      if (mine && Object.keys(mine).length) {
+        const forget = el("button", { className: "teach-btn danger", text: "Forget what I pointed at", type: "button" });
+        forget.addEventListener("click", async () => { await siteWf().setSetup(null); siteState.items = null; siteState.note = "Back to the extension's own guesses."; render(); });
+        card.appendChild(el("div", { className: "teach-row" }, [forget]));
+      }
+      if (siteState.items) {
+        const copy = el("button", { className: "teach-btn secondary", text: "Copy log", type: "button" });
+        copy.addEventListener("click", async () => {
+          const text = [...siteState.items.map((i) => `${i.ok ? "OK  " : "MISS"} ${i.label}${i.selector ? ` · ${i.selector}` : ""}${i.note ? ` — ${i.note}` : ""}`), siteState.log.length ? `Steps: ${siteState.log.join(" → ")}` : "", siteState.error ? `Error: ${siteState.error}` : ""].filter(Boolean).join("\n");
+          try { await navigator.clipboard.writeText(text); siteState.note = "Log copied."; } catch { siteState.note = "Copy was blocked by the browser."; }
+          render();
+        });
+        card.appendChild(el("div", { className: "teach-row" }, [copy]));
+      }
+    }
+
     function render() {
       if (view === "wizard") renderWizard();
+      else if (view === "site") renderSite();
       else renderList();
     }
 
@@ -1258,6 +1368,13 @@
       // Appended on first use, after the panel, so it stacks above it (both
       // sit at the browser's maximum z-index; DOM order breaks the tie).
       if (!modal.isConnected) shadow.appendChild(modal);
+      if (options.site && siteWf()) {
+        siteState.items = null; siteState.log = []; siteState.note = ""; siteState.error = "";
+        view = "site";
+        render();
+        modal.classList.add("open");
+        return;
+      }
       if (options.bindPath && globalThis.SXRTS.outputFields?.get(options.bindPath)) {
         draft = boundDraft(options.bindPath, options.samples ?? []);
         view = "wizard";

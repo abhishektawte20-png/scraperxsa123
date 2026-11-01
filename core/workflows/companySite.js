@@ -54,8 +54,16 @@
   };
   const SAVE = { selectors: ["#saveSiteInfoButton"], text: "save" };
 
+  // What this researcher pointed at in "Set up Site" wins over the built-in guesses above:
+  // { bar?, openButton?, save?, cancel?, roles?: { siteName: { selectors }, ... } }.
+  const SETUP_KEY = "sxrts_site_setup";
+  let setup = null;
+  const taught = () => setup || globalThis.SXRTS.teamDefaults?.siteSetup || null;
+
+  // A box the researcher pointed at is the only one used for that role (a look-alike is never guessed instead).
   function find(name) {
-    for (const selector of SPEC[name]) {
+    const pointed = taught()?.roles?.[name]?.selectors;
+    for (const selector of pointed?.length ? pointed : SPEC[name]) {
       const hit = sb().matchAll(selector).find(isShown);
       if (hit) return hit;
     }
@@ -70,7 +78,9 @@
     }
     return Array.from(document.querySelectorAll(BUTTONS)).find((node) => isShown(node) && key(labelOf(node)) === text) || null;
   }
-  const findOpener = () => findButton(['[sid="addNewSite"]'], "add new site");
+  const findOpener = () => findButton([...(taught()?.openButton?.selectors ?? []), '[sid="addNewSite"]'], key(taught()?.openButton?.text) || "add new site");
+  const findSave = () => findButton([...(taught()?.save?.selectors ?? []), ...SAVE.selectors], key(taught()?.save?.text) || SAVE.text);
+  const findCancel = () => findButton([...(taught()?.cancel?.selectors ?? [])], key(taught()?.cancel?.text) || "cancel");
   const formOpen = () => Boolean(find("siteName"));
 
   // ---- values ----
@@ -128,6 +138,7 @@
   function siteBars() {
     const out = [];
     const add = (node) => { if (node && isShown(node) && !out.includes(node)) out.push(node); };
+    for (const selector of taught()?.bar?.selectors ?? []) for (const node of sb().matchAll(selector)) add(node);
     const titleOf = (node) => key(node.textContent) === "site" || key(node.textContent) === "sites";
     const block = document.getElementById("blockSite");
     const head = block?.firstElementChild;
@@ -183,8 +194,23 @@
     return Array.from(new Set(found)).slice(0, 3).join(" ");
   }
 
+  // Empties what was typed and chosen, so values of a cancelled try (or a failed run) can never end up in the next site.
+  async function clearForm() {
+    const adapters = globalThis.SXRTS.adapters;
+    for (const name of ["siteName", "address1", "address2", "city", "province", "zip", "phone", "fax", "email"]) {
+      const box = find(name);
+      if (box && box.value) { try { await adapters.textField.applyText(box, ""); } catch { /* best effort */ } }
+    }
+    for (const name of ["siteType", "stateSelect", "country", "status"]) {
+      const select = find(name);
+      const blank = select && Array.from(select.options).find((o) => o.value === "" || !squash(o.textContent));
+      if (blank && select.selectedOptions[0] !== blank) { try { await adapters.nativeSelect.selectNativeOption(select, blank.textContent.trim()); } catch { /* best effort */ } }
+    }
+  }
+
   async function cancelForm() {
-    const cancel = findButton([], "cancel");
+    await clearForm();
+    const cancel = findCancel();
     if (cancel) { cancel.click(); await wait(200); }
   }
 
@@ -193,8 +219,17 @@
   let off = false;
   const isEnabled = () => !off;
   async function loadFlag() {
-    try { off = Boolean((await chrome.storage.local.get(FLAG_KEY))?.[FLAG_KEY]); } catch { off = false; }
+    try {
+      off = Boolean((await chrome.storage.local.get(FLAG_KEY))?.[FLAG_KEY]);
+      const taughtStored = (await chrome.storage.local.get(SETUP_KEY))?.[SETUP_KEY];
+      setup = taughtStored && typeof taughtStored === "object" ? taughtStored : null;
+    } catch { off = false; }
     return !off;
+  }
+  const getSetup = () => taught();
+  async function setSetup(next) {
+    setup = next && Object.keys(next).length ? next : null;
+    try { if (setup) await chrome.storage.local.set({ [SETUP_KEY]: setup }); else await chrome.storage.local.remove(SETUP_KEY); } catch { /* the choice still holds for this page */ }
   }
   async function setEnabled(on) {
     off = !on;
@@ -247,7 +282,8 @@
    * record: { city, country, state, address1, address2, zip, phone, fax, email, siteName? }
    * options: { addAnyway }
    */
-  async function applySite(record, options = {}) {
+  async function runSite(record, options, trace) {
+    const did = (text) => trace.push(text);
     const r = {};
     for (const k of ["siteName", "address1", "address2", "city", "country", "state", "zip", "phone", "fax", "email"]) r[k] = squash(record[k]);
     // The report may give only a full address: take what is missing from it.
@@ -261,26 +297,30 @@
     if (!r.city || !r.country) return { status: "failed", reason: `Site: RTS needs a ${[!r.city && "city", !r.country && "country"].filter(Boolean).join(" and ")} to add a site, and the report has none.` };
 
     const opener = await reveal();
+    if (opener || formOpen()) did("Site section open");
     if (!formOpen()) {
       if (!opener) throw new Error("The Site section could not be opened by the extension: the Add New Site button did not appear. Open the Site section by hand (click its bar), then publish again.");
       if (opener.disabled || opener.getAttribute("aria-disabled") === "true") throw new Error("The Add New Site button is disabled right now.");
-      if (!options.addAnyway && alreadyListed(sectionRoot(opener), r)) {
+      if (!options.addAnyway && !options.dryRun && alreadyListed(sectionRoot(opener), r)) {
         return { status: "skipped", reason: `Site already exists in RTS (${r.address1 || r.city}). Nothing was added. Tick "Add the site even if one exists" to add it anyway.` };
       }
       opener.click();
       if (!(await waitFor(formOpen, TIMEOUTS.open))) throw new Error('The site form did not open after clicking "Add New Site".');
     }
+    did("Add New Site pressed, form open");
 
     try {
       await setText("Site name", find("siteName"), r.siteName);
       const type = find("siteType");
       if (!type) throw new Error("Site type: the dropdown was not found in the form.");
       await setSelect("Site type", type, DEFAULTS.siteType);
+      did("site name, site type");
       if (r.address1) { const box = find("address1"); if (!box) throw new Error("Address line 1: the box was not found."); await setText("Address line 1", box, r.address1); }
       if (r.address2) { const box = find("address2"); if (box) await setText("Address line 2", box, r.address2); }
       const country = find("country");
       if (!country) throw new Error("Country: the dropdown was not found in the form.");
       await setSelect("Country", country, r.country, COUNTRY_ALIASES);
+      did("address, country");
       // The state box can change when the country does (a list for the US, a text box elsewhere).
       if (r.state) {
         await settleState(r.country);
@@ -292,11 +332,12 @@
           await setText("State", box, r.state);
         }
       }
+      did("state");
       const city = find("city");
       if (!city) throw new Error("City: the box was not found in the form.");
       await setText("City", city, r.city);
       for (const [name, label, value] of [["zip", "Zip", r.zip], ["phone", "Phone", r.phone], ["fax", "Fax", r.fax], ["email", "Email", r.email]]) {
-        if (!value) continue;
+        if (!value) { const stale = find(name); if (stale && stale.value) await globalThis.SXRTS.adapters.textField.applyText(stale, ""); continue; }
         const box = find(name);
         if (!box) throw new Error(`${label}: the box was not found in the form.`);
         await setText(label, box, value);
@@ -304,6 +345,7 @@
       const status = find("status");
       if (!status) throw new Error("Status: the dropdown was not found in the form.");
       await setSelect("Status", status, DEFAULTS.status);
+      did("city, zip, phone, email, status");
       // A page that redraws the form when a choice changes can wipe boxes filled earlier: read them back, fill again once.
       const wanted = [["siteName", "Site name", r.siteName], ["address1", "Address line 1", r.address1], ["address2", "Address line 2", r.address2], ["city", "City", r.city], ["zip", "Zip", r.zip], ["phone", "Phone", r.phone], ["fax", "Fax", r.fax], ["email", "Email", r.email]];
       for (const [name, label, value] of wanted) {
@@ -321,7 +363,9 @@
       throw error;
     }
 
-    const save = findButton(SAVE.selectors, SAVE.text);
+    did("every box read back");
+    if (options.dryRun) { await cancelForm(); return { status: "checked", trace }; }
+    const save = findSave();
     if (!save) { await cancelForm(); throw new Error("The site form's SAVE button was not found."); }
     if (!(await waitFor(() => !save.disabled && save.getAttribute("aria-disabled") !== "true", TIMEOUTS.field))) {
       const why = formErrors();
@@ -329,6 +373,7 @@
       throw new Error(`The site form's SAVE button stayed disabled, so RTS did not accept the values.${why ? ` RTS says: ${why}` : ""}`);
     }
     save.click();
+    did("SAVE pressed once");
     // RTS may close the form, or leave it open with Save back to greyed out (like its other Save buttons).
     const settled = await waitFor(() => !formOpen() || save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
     if (settled && formOpen()) await cancelForm();
@@ -345,7 +390,48 @@
     return { status: "savedStateVerified", name: r.siteName, detail: `Saved. The Site section does not list "${r.address1 || r.city}" on the page, so it could not be read back; check the Site list in RTS.` };
   }
 
+  // Adds the steps that were done to any failure, so a message says exactly where it stopped.
+  async function applySite(record, options = {}) {
+    const trace = [];
+    try {
+      const result = await runSite(record, options, trace);
+      return { ...result, trace };
+    } catch (error) {
+      if (!error.traced) { if (trace.length) error.message += ` (Done before this: ${trace.join("; ")}.)`; error.traced = true; }
+      error.trace = trace;
+      throw error;
+    }
+  }
+
+  // "Set up Site": what the extension finds on the page right now. It opens the Site section and the form (and leaves
+  // the form open so a missing box can be pointed at). Nothing is typed or saved.
+  async function inspect() {
+    const items = [];
+    const add = (id, label, ok, selector = "", note = "") => items.push({ id, label, ok, selector, note });
+    const hitSelector = (node) => { try { return sb().inspectButton(node, {}).selectors?.[0] || ""; } catch { return ""; } };
+    const opener = await reveal();
+    add("section", "Site section opens", Boolean(opener || formOpen()), "", opener || formOpen() ? "" : "The Add New Site button did not appear. Point at the Site bar, or open the section by hand.");
+    add("opener", "Add New Site button", Boolean(opener || formOpen()), opener ? hitSelector(opener) : "");
+    if (!formOpen() && opener && !opener.disabled) { opener.click(); await waitFor(formOpen, TIMEOUTS.open); }
+    add("form", "The form opens", formOpen());
+    const boxes = [["siteName", "Site name"], ["siteType", "Site type"], ["address1", "Address line 1"], ["city", "City"], ["country", "Country"], ["zip", "Zip"], ["phone", "Phone"], ["fax", "Fax"], ["email", "Email"], ["status", "Status"]];
+    for (const [id, label] of boxes) { const node = find(id); add(id, label, Boolean(node), node ? hitSelector(node) : ""); }
+    const stateList = find("stateSelect");
+    const stateBox = find("province");
+    const stateNode = stateList || stateBox;
+    add("state", "State (a list for the US, a box elsewhere)", Boolean(stateNode), stateNode ? hitSelector(stateNode) : "", stateNode ? "" : "Neither the list nor the box for the state is on screen (it can depend on the country).");
+    const type = find("siteType");
+    add("typeChoice", 'Site type offers "Primary HQ"', Boolean(type && optionFor(type, DEFAULTS.siteType)));
+    const status = find("status");
+    add("statusChoice", 'Status offers "Current"', Boolean(status && optionFor(status, DEFAULTS.status)));
+    const save = findSave();
+    add("save", "SAVE button", Boolean(save), save ? hitSelector(save) : "");
+    const cancel = findCancel();
+    add("cancel", "Cancel button", Boolean(cancel), cancel ? hitSelector(cancel) : "", cancel ? "" : "Optional: used to put the form away after an error.");
+    return { items };
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.companySite = { applySite, reveal, TIMEOUTS, DEFAULTS, optionFor, alreadyListed, deriveFromAddress, isEnabled, setEnabled, loadFlag };
+  globalThis.SXRTS.workflows.companySite = { applySite, inspect, reveal, cancelForm, TIMEOUTS, DEFAULTS, optionFor, alreadyListed, deriveFromAddress, isEnabled, setEnabled, loadFlag, getSetup, setSetup };
 })();
