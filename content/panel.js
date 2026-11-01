@@ -1251,8 +1251,10 @@
           recordResult(entry.action.jsonPath, { status: "error", error: "This taught field no longer exists." });
           continue;
         }
+        // A window-based field starts from a page that has finished its previous save: a short pause, never a race.
+        if (def.window || def.tree) await new Promise((resolve) => setTimeout(resolve, 800));
         try {
-          const result = await lookAgain(() => globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value)));
+          const result = await (def.window || def.tree ? (run) => run() : lookAgain)(() => globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value)));
           recordResult(entry.action.jsonPath, result);
           keepForUndo(entry, value, result, { treeWindow: Boolean(def.window?.tree), single: def.kind === "single" && !def.window && !def.tree });
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }

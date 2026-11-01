@@ -230,3 +230,7 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **ANC mark.** Every profile gets `AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research` appended to Research Notes. The row is always there, marked "required", and cannot be unticked or edited. Existing notes are never removed.
 - **Native names.** A name is "Native Other Name" only if it really contains non-Latin letters; a Latin-letter name stays "Other Name" even when the agent writes a script.
 - **Quieter validation.** Notes about outside pages (registries, magazines) are no longer listed. Data aggregators (e.g. ZoomInfo, RevenueBase, Prospeo) and staging/hosting addresses (netlify.app, vercel.app, …) are still warnings.
+
+## 0.28.1
+
+- **Industry window.** (a) RTS windows opened by the extension are no longer given the dialog guard (they run exactly as in 0.27.x; the guard stays on the main RTS page). (b) After a window job the worker waits until that window is really gone before the next job can start, so a window that is closing is never mistaken for a new one. (c) A window that closes the moment the choice is ticked is read back by reopening it, instead of being reported as an error. (d) After three windows go away without reporting, one more window is opened only to READ the tick: ticked means "saved (read back from RTS)", otherwise it stays an error. (e) The error now names the last step the window reached. (f) Window-based fields are never re-run by the "look again" check, and wait 0.8 s for the previous save to finish.

@@ -430,8 +430,20 @@
         result = await runInWindow(opener, job);
         break;
       } catch (error) {
-        if (!tree || attempt >= 2 || !/Frame with ID|was removed|No tab with id|closed before it reported back/i.test(String(error?.message))) throw error;
+        if (!tree || !/Frame with ID|was removed|No tab with id|closed before it reported back/i.test(String(error?.message))) throw error;
         const next = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+        if (attempt >= 2) {
+          // Three windows went away without reporting. Before calling it a failure, open the window once more only to
+          // READ whether the choice is ticked: if RTS did save it, that is a real read-back, not a guess.
+          if (next && !next.disabled) {
+            try {
+              const look = await runInWindow(next, { tree: job.tree, value: job.value, verifyOnly: true });
+              const wanted = job.untick !== true;
+              if (look?.status === "verified" && look.checked === wanted) return { status: "savedStateVerified", name: def.key, detail: `${name}: the window kept closing before it could report, but RTS shows the choice ${wanted ? "ticked" : "not ticked"}.` };
+            } catch { /* fall through to the original error */ }
+          }
+          throw error;
+        }
         if (!next || next.disabled) throw error;
         opener = next;
       }

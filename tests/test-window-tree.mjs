@@ -114,7 +114,7 @@ for (const dynamic of [false, true]) {
     assert.deepEqual(result, { status: "saved", fieldRetained: true });
     assert.equal(state.saves, 1);
     assert.deepEqual(ticked(doc).sort(), ["Application Software", "IT Consulting and Outsourcing"]);
-    assert.deepEqual(state.stages, ["saveClicked"]);
+    assert.deepEqual(state.stages, ["choiceFound", "tickClicking", "saveClicked"]);
   });
 
   test(`a branch that was already open is not left closed, and the choice inside it is found (${how})`, async () => {
@@ -130,7 +130,7 @@ for (const dynamic of [false, true]) {
     assert.equal(result.status, "skipped");
     assert.match(result.reason, /already ticked/);
     assert.equal(state.saves, 0);
-    assert.deepEqual(state.stages, []);
+    assert.deepEqual(state.stages, ["choiceFound"]);
   });
 }
 
@@ -226,7 +226,9 @@ test("the 'Save clicked' note is acknowledged by the worker BEFORE Save is press
   document.getElementById("save").addEventListener("click", () => order.push("save pressed"));
   const result = await run(job());
   assert.equal(result.status, "saved");
-  assert.deepEqual(order, ["note acknowledged", "save pressed"]);
+  assert.equal(order.at(-1), "save pressed");
+  assert.ok(order.slice(0, -1).every((entry) => entry === "note acknowledged"), "every note is acknowledged before Save is pressed");
+  assert.ok(order.length >= 2);
 });
 
 test("a worker that never answers does not hold Save back for more than half a second", async () => {

@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "" } = {}) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "", guard = false } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -48,7 +48,7 @@ const MAIN = `<!doctype html><body style="font:14px sans-serif">
   window.profile = { getSection: (x) => x };
   // RTS opens this window under a fixed name, so a second press reuses a window that is still open.
   // With focus on: a window that is still open is only brought to the front (no navigation, no new window), like RTS can do.
-  window.openIndustries = () => { window.opens++; if (${focus ? "true" : "false"} && window.w && !window.w.closed) { window.w.focus(); return; } window.w = window.open("/tree.html?mode=${mode}", "${reuse || focus ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
+  window.openIndustries = () => { if (window.confirmOnOpen && !confirm("Data is not saved.")) return; window.opens++; if (${focus ? "true" : "false"} && window.w && !window.w.closed) { window.w.focus(); return; } window.w = window.open("/tree.html?mode=${mode}", "${reuse || focus ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
   window.markIndustry = (names) => { window.industries = names; window.saves++; };
 <\/script></body>`;
 const GROUPS = [
@@ -72,7 +72,10 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   const where = (box) => box.closest("ul").closest("li").querySelector(":scope > span").textContent + " > " + box.closest("li").querySelector(":scope > span").textContent;
   for (const box of document.querySelectorAll('[id^="industryControlCode"][id$="CheckBox"]')) { if ((window.opener.industries || []).includes(where(box))) box.className = "controls_checkBox_checked"; }
   document.getElementById("root").addEventListener("click", (e) => {
-    if (/CheckBox$/.test(e.target.id) && /^industryControlCode/.test(e.target.id)) { e.target.className = e.target.className === "controls_checkBox" ? "controls_checkBox_checked" : "controls_checkBox"; document.getElementById("saveIndustryButton").disabled = false; return; }
+    if (/CheckBox$/.test(e.target.id) && /^industryControlCode/.test(e.target.id)) { e.target.className = e.target.className === "controls_checkBox" ? "controls_checkBox_checked" : "controls_checkBox"; document.getElementById("saveIndustryButton").disabled = false;
+      // "tickcloses": this form saves the moment a choice is ticked and closes itself, so Save is never pressed.
+      if (q.get("mode") === "tickcloses") { window.opener.markIndustry([...document.querySelectorAll(".controls_checkBox_checked")].map(where)); window.close(); }
+      return; }
     const t = e.target.closest(".sub-section__icon-expand"); if (!t) return;
     const list = t.parentElement.querySelector(":scope > ul"); list.style.display = list.style.display === "none" ? "block" : "none";
   });
@@ -92,7 +95,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus);
+    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus, guard);
   } finally {
     await ctx.close();
     server.close();
@@ -100,11 +103,18 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code, auto, reuse, undo = false, focus = "") {
+async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", guard = false) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
-  page.on("dialog", (d) => d.accept());
+  const dialogsShown = [];
+  page.on("dialog", (d) => { dialogsShown.push(d.message()); d.accept(); });
   await page.goto(`${base}/main.html`);
+  if (guard) {
+    // What the toolbar button does: the page itself gets the guard, and the page asks before it opens the window.
+    const gid = await worker.evaluate(async (b) => (await chrome.tabs.query({ url: `${b}/main*` }))[0]?.id, base);
+    await worker.evaluate(async (id) => { await chrome.scripting.executeScript({ target: { tabId: id, allFrames: true }, files: [DIALOG_GUARD], world: "MAIN" }); }, gid);
+    await page.evaluate(() => { window.confirmOnOpen = true; });
+  }
   const files = await worker.evaluate(() => ASSISTANT_FILES.filter((f) => f !== "content/bootstrap.js"));
   const tabId = await worker.evaluate(async (b) => (await chrome.tabs.query({ url: `${b}/main*` }))[0]?.id, base);
   await worker.evaluate(async ({ tabId, files }) => {
@@ -266,7 +276,8 @@ async function drive(ctx, base, code, auto, reuse, undo = false, focus = "") {
     industries: await inPanel(() => window.industries),
     saves: await inPanel(() => window.saves),
     opens: await inPanel(() => window.opens),
-    openWindows: ctx.pages().filter((p) => p.url().includes("/tree.html")).length
+    openWindows: ctx.pages().filter((p) => p.url().includes("/tree.html")).length,
+    dialogsShown
   };
 }
 
@@ -357,4 +368,18 @@ test("the open window holds an old page (not the tree): it is closed and a clean
   assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
   assert.equal(result.saves, 1);
+});
+
+test("RTS asks 'Data is not saved.' before opening the window: nobody has to press OK, and the choice is still ticked and saved", { timeout: 150000 }, async () => {
+  const result = await scenario("close", "2.1.2 — Clothing", { auto: true, guard: true });
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  const fromPublish = result.dialogsShown.slice(result.dialogsShown.findIndex((m) => /^Publish \d+ field/.test(m)) + 1);
+  assert.ok(!fromPublish.some((m) => /Data is not saved/.test(m)), `RTS's own box was answered by the guard during the run, but these still reached a person: ${fromPublish.join(" | ")}`);
+});
+
+test("a form that saves and closes itself the moment the choice is ticked is read back, not reported as 'closed before it reported back'", { timeout: 150000 }, async () => {
+  const result = await scenario("tickcloses", "2.1.2 — Clothing", { auto: true, guard: true });
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
 });

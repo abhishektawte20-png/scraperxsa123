@@ -133,6 +133,8 @@ const WINDOW_RUN_FILES = [
 const WINDOW_PICK_FILES = ["core/selectorBuilder.js", "core/pageCapture.js", "content/popupPicker.js"];
 const WINDOW_OPEN_TIMEOUT = 10000;
 const lastStage = new Map();
+// A window that goes away after the choice was clicked or Save was pressed is not a failure by itself: the page reopens it and reads the tick back.
+const WENT_AWAY_STAGES = ["tickClicking", "saveClicked"];
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === "sx-window-stage" && sender.tab) lastStage.set(sender.tab.id, message.stage);
@@ -218,10 +220,25 @@ async function waitUntilLoaded(tabId, origin) {
   throw new Error("The popup window opened but did not finish loading.");
 }
 
+// A window that finished its job closes itself a moment later. The next job must not find that dying window and
+// take it for its own, so after a job the worker waits until the window is really gone (at most a few seconds).
+async function waitUntilGone(tabId, limit = 3500) {
+  const deadline = Date.now() + limit;
+  while (Date.now() < deadline) {
+    try { await chrome.tabs.get(tabId); } catch { return true; }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+  return false;
+}
+
 async function runInWindow(tabId, job) {
+  const result = await runInWindowOnce(tabId, job);
+  if (result?.status === "saved" || result?.status === "verified" || result?.status === "skipped") await waitUntilGone(tabId);
+  return result;
+}
+
+async function runInWindowOnce(tabId, job) {
   lastStage.delete(tabId);
-  await chrome.scripting.executeScript({ target: { tabId }, files: [DIALOG_GUARD], world: "MAIN" }).catch(() => {});
-  await chrome.scripting.executeScript({ target: { tabId }, func: () => document.documentElement.setAttribute("data-sx-run", "1") }).catch(() => {});
   await chrome.scripting.executeScript({ target: { tabId }, files: WINDOW_RUN_FILES });
   try {
     const [injection] = await chrome.scripting.executeScript({
@@ -232,13 +249,13 @@ async function runInWindow(tabId, job) {
     // A page that navigates or closes itself as soon as Save is accepted (RTS submits the industry form)
     // ends the script without a result: that is "the window went away after Save", not a value.
     if (injection?.result === undefined || injection?.result === null) {
-      if (lastStage.get(tabId) === "saveClicked") return { status: "windowClosedAfterSave" };
-      throw new Error("The window closed before it reported back. Nothing was confirmed.");
+      if (WENT_AWAY_STAGES.includes(lastStage.get(tabId))) return { status: "windowClosedAfterSave" };
+      throw new Error(`The window closed before it reported back (last step it reached: ${lastStage.get(tabId) || "none, it closed while it was still loading or being read"}). Nothing was confirmed.`);
     }
     return injection.result;
   } catch (error) {
     // The page may close its own window as soon as Save is accepted.
-    if (lastStage.get(tabId) === "saveClicked") return { status: "windowClosedAfterSave" };
+    if (WENT_AWAY_STAGES.includes(lastStage.get(tabId))) return { status: "windowClosedAfterSave" };
     throw error;
   }
 }

@@ -349,6 +349,7 @@
     }
     if (hits.length > 1) throw new Error(`More than one choice in the tree is called "${choice.name}", so the right one cannot be told apart. Tick it by hand.`);
     const box = hits[0];
+    await report("choiceFound");
 
     // Undo: the same job, but the choice is unticked instead of ticked.
     const wantTick = !job.untick;
@@ -362,6 +363,7 @@
       return { status: "skipped", reason: `"${choice.name}" is already ${wantTick ? "ticked" : "not ticked"} in RTS.` };
     }
 
+    await report("tickClicking");
     box.click();
     if (!(await waitFor(() => box.isConnected && isTicked(box, job.tree.leaf) === wantTick, TIMEOUTS.button))) throw new Error(`"${choice.name}" did not stay ${wantTick ? "ticked" : "unticked"} when it was clicked.`);
 
