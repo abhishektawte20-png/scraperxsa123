@@ -24,7 +24,7 @@
     for (const entry of log) counts.set(entry.message, (counts.get(entry.message) ?? 0) + 1);
     return Array.from(counts, ([message, times]) => ({ message, times }));
   }
-  const saw = (pattern) => peek().some((entry) => pattern.test(entry.message));
+  const saw = (pattern, from = 0) => peek().slice(from).some((entry) => pattern.test(entry.message));
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.dialogLog = { begin, peek, end, summarize, saw };
 })();

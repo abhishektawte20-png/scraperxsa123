@@ -14,6 +14,7 @@ import "../core/outputFields.js";
 import "../core/customFields.js";
 import "../core/selectorBuilder.js";
 import "../core/workflows/customField.js";
+globalThis.SXRTS.workflows.customField.TIMEOUTS.retryPause = 0;
 
 const cf = globalThis.SXRTS.customFields;
 const treeDef = {
@@ -99,8 +100,8 @@ test("a window that goes away before reporting is opened again and the whole job
 test("a window that keeps going away is an error after 3 tries, never a success", async () => {
   const state = setup(() => ({ type: "error", error: "Frame with ID 0 was removed." }));
   await assert.rejects(run(), /Frame with ID 0/);
-  assert.equal(state.jobs.length, 4, "three tries, then one last look that only READS the tick");
-  assert.equal(state.jobs[3].verifyOnly, true);
+  assert.equal(state.jobs.length, 5, "four tries, then one last look that only READS the tick");
+  assert.equal(state.jobs[4].verifyOnly, true);
 });
 
 test("after three windows went away, a last read-back that shows the choice ticked is reported as saved by state, not as an error", async () => {

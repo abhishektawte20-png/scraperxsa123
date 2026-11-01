@@ -234,3 +234,9 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 ## 0.28.1
 
 - **Industry window.** (a) RTS windows opened by the extension are no longer given the dialog guard (they run exactly as in 0.27.x; the guard stays on the main RTS page). (b) After a window job the worker waits until that window is really gone before the next job can start, so a window that is closing is never mistaken for a new one. (c) A window that closes the moment the choice is ticked is read back by reopening it, instead of being reported as an error. (d) After three windows go away without reporting, one more window is opened only to READ the tick: ticked means "saved (read back from RTS)", otherwise it stays an error. (e) The error now names the last step the window reached. (f) Window-based fields are never re-run by the "look again" check, and wait 0.8 s for the previous save to finish.
+
+## 0.29.0
+
+- **Progress bar.** While Publish runs, a bar shows "N of M fields done", the step in progress, time so far and a rough time left. It turns green ("Done · all N fields processed") when everything went through and amber ("Finished · … need attention") when something needs a look, with the time taken and the counts.
+- **Two Primary HQs.** A new tick box on the Site card, on by default: "If another site is already Primary HQ, add this one as Regional HQ". When RTS refuses because another site is already Current Primary HQ, the new site is saved with Site Type "Regional HQ" (the existing one is not touched) and the result says so. Unticked: the site is not added and the message says why.
+- **Industry window.** Each retry now waits longer than the one before (1.2 s, 2.4 s, 3.6 s), there are four tries instead of three, the dying window is waited for before the next try, and the final error lists every step the window reached with its timing ("choiceFound +1.2s → tickClicking +1.4s …"). Send that line if Industry ever fails again.

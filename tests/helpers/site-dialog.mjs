@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 
+import "../../core/dialogLog.js";
 import "../../core/identityLock.js";
 import "../../core/adapters/textField.js";
 import "../../core/adapters/nativeSelect.js";
@@ -26,6 +27,8 @@ export function setup(options = {}) {
   // A fresh browser storage for every page: nothing remembered by one test reaches the next.
   const store = new Map();
   global.chrome = { storage: { local: { async get(k) { return store.has(k) ? { [k]: JSON.parse(JSON.stringify(store.get(k))) } : {}; }, async set(o) { for (const [k, v] of Object.entries(o)) store.set(k, JSON.parse(JSON.stringify(v))); }, async remove(k) { store.delete(k); } } } };
+  // What the dialog guard does during a run: a message box is answered at once and written down.
+  window.alert = (message) => { const root = window.document.documentElement; const log = JSON.parse(root.getAttribute("data-sx-dialogs") || "[]"); log.push({ kind: "alert", message: String(message) }); root.setAttribute("data-sx-dialogs", JSON.stringify(log)); };
   window.eval(pageScript);
   const raw = window.installSitePage(options);
   const state = new Proxy(raw, { get: (target, key) => (Array.isArray(target[key]) ? Array.from(target[key]) : target[key]) });

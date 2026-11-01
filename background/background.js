@@ -133,11 +133,18 @@ const WINDOW_RUN_FILES = [
 const WINDOW_PICK_FILES = ["core/selectorBuilder.js", "core/pageCapture.js", "content/popupPicker.js"];
 const WINDOW_OPEN_TIMEOUT = 10000;
 const lastStage = new Map();
+const stageTrail = new Map();
+const trailText = (tabId) => { const trail = stageTrail.get(tabId) ?? []; const t0 = trail[0]?.[1] ?? 0; return trail.length ? trail.map(([stage, at]) => `${stage} +${((at - t0) / 1000).toFixed(1)}s`).join(" → ") : "none"; };
 // A window that goes away after the choice was clicked or Save was pressed is not a failure by itself: the page reopens it and reads the tick back.
 const WENT_AWAY_STAGES = ["tickClicking", "saveClicked"];
 
 chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type === "sx-window-stage" && sender.tab) lastStage.set(sender.tab.id, message.stage);
+  if (message?.type === "sx-window-stage" && sender.tab) {
+    lastStage.set(sender.tab.id, message.stage);
+    const trail = stageTrail.get(sender.tab.id) ?? [];
+    trail.push([message.stage, Date.now()]);
+    stageTrail.set(sender.tab.id, trail);
+  }
 });
 
 // Pop-up windows of the RTS site other than the one the opener tab lives in (newest-used first).
@@ -239,6 +246,7 @@ async function runInWindow(tabId, job) {
 
 async function runInWindowOnce(tabId, job) {
   lastStage.delete(tabId);
+  stageTrail.delete(tabId);
   await chrome.scripting.executeScript({ target: { tabId }, files: WINDOW_RUN_FILES });
   try {
     const [injection] = await chrome.scripting.executeScript({
@@ -250,7 +258,9 @@ async function runInWindowOnce(tabId, job) {
     // ends the script without a result: that is "the window went away after Save", not a value.
     if (injection?.result === undefined || injection?.result === null) {
       if (WENT_AWAY_STAGES.includes(lastStage.get(tabId))) return { status: "windowClosedAfterSave" };
-      throw new Error(`The window closed before it reported back (last step it reached: ${lastStage.get(tabId) || "none, it closed while it was still loading or being read"}). Nothing was confirmed.`);
+      // Let the dying window finish going away before anything else can look for a window.
+      await waitUntilGone(tabId, 2500);
+      throw new Error(`The window closed before it reported back (steps it reached: ${trailText(tabId)}; "none" means it closed while it was still loading or being read). Nothing was confirmed.`);
     }
     return injection.result;
   } catch (error) {

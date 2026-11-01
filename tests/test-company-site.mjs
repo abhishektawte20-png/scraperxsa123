@@ -497,3 +497,28 @@ test("a form with no Format links is filled and saved as before", async () => {
   assert.equal((await site.applySite(TEXAS)).status, "savedValueVerified");
   assert.equal(state.lastForm.phone, "281-941-6001");
 });
+
+test("another site already holds Primary HQ: the new site is added as Regional HQ, saved once, and the result says so", async () => {
+  const { state } = setup({ hqTaken: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedStateVerified");
+  assert.equal(result.asRegional, "Regional HQ");
+  assert.match(result.note, /another site is already the Primary HQ/);
+  assert.equal(state.saves, 1, "added exactly once");
+  assert.equal(state.lastForm.type, "Regional HQ");
+  assert.equal(state.lastForm.status, "Current");
+});
+
+test("with the Regional HQ choice unticked, a taken Primary HQ means the site is not added and the message says why", async () => {
+  const { state } = setup({ hqTaken: true });
+  await assert.rejects(site.applySite(TEXAS, { hqFallback: false }), /already set as Current Primary HQ/);
+  assert.equal(state.saves, 0);
+});
+
+test("when Primary HQ is free the site is added as Primary HQ exactly as before", async () => {
+  const { state } = setup({ hqTaken: false });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.lastForm.type, "Primary HQ");
+  assert.equal(result.asRegional, undefined);
+});

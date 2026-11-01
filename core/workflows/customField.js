@@ -27,7 +27,7 @@
 
   // How long to wait for the popup to appear / disappear. Exposed so tests
   // do not have to sit through the real waits.
-  const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000 };
+  const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000, retryPause: 1200 };
 
   // jsdom and real pages both: hidden by the attribute, display:none or
   // visibility:hidden on the element or any ancestor.
@@ -432,7 +432,7 @@
       } catch (error) {
         if (!tree || !/Frame with ID|was removed|No tab with id|closed before it reported back/i.test(String(error?.message))) throw error;
         const next = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
-        if (attempt >= 2) {
+        if (attempt >= 3) {
           // Three windows went away without reporting. Before calling it a failure, open the window once more only to
           // READ whether the choice is ticked: if RTS did save it, that is a real read-back, not a guess.
           if (next && !next.disabled) {
@@ -445,6 +445,8 @@
           throw error;
         }
         if (!next || next.disabled) throw error;
+        // Slower on purpose: each new try waits a little longer, so a window that RTS is still closing or reloading is finished first.
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.retryPause * (attempt + 1)));
         opener = next;
       }
     }

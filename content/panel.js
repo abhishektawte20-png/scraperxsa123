@@ -136,6 +136,13 @@
       button.btn.map:hover:not(:disabled) { background: var(--warn-soft); box-shadow: none; }
       button.btn:disabled { opacity: .45; cursor: not-allowed; }
 
+      .pbar { margin: 10px 0 4px; }
+      .pbar-label { font-size: 12px; font-weight: 600; color: #1b2a47; margin-bottom: 5px; }
+      .pbar-track { height: 10px; background: #e3e8f2; border-radius: 6px; overflow: hidden; }
+      .pbar-fill { height: 100%; width: 0; background: #1e5fb5; border-radius: 6px; transition: width .35s ease; }
+      .pbar.done .pbar-fill { background: #2a9d5c; }
+      .pbar.warn .pbar-fill { background: #d99a1c; }
+      .pbar-note { font-size: 11px; color: #5a6783; margin-top: 4px; }
       .status { min-height: 18px; margin: 8px 0 0; color: #47536b; white-space: pre-wrap; font-size: 12px; }
       .status.error { color: var(--bad); }
       .status.success { color: var(--ok); }
@@ -395,11 +402,55 @@
     const siteAnywayRow = element("label", { className: "hidden" }, [siteAnywayBox, document.createTextNode(" Add the site even if one already exists")]);
     siteAnywayRow.style.margin = "6px 0";
     siteAnywayRow.style.fontSize = "12px";
+    const siteRegionalBox = element("input", { type: "checkbox", checked: true });
+    const siteRegionalRow = element("label", { className: "hidden" }, [siteRegionalBox, document.createTextNode(" If another site is already Primary HQ, add this one as Regional HQ")]);
+    siteRegionalRow.style.margin = "6px 0";
+    siteRegionalRow.style.fontSize = "12px";
+    siteRegionalRow.title = "Two sites cannot both be the Current Primary HQ. On: the new site is added as a Regional HQ and the existing one is left alone. Off: the site is not added and the message says why.";
     siteAnywayRow.title = "Off: a site whose address (or city) is already listed is reported as Already in RTS and nothing is added. On: it is added anyway.";
     const undoButton = element("button", { className: "btn secondary", text: "Undo", type: "button", tip: "Takes back what a publish saved to RTS: unticks the industry choice, restores a replaced website or email structure, and lists exactly what to delete by hand for added rows." });
     undoButton.addEventListener("click", () => undoUi?.open());
     previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, undoButton, captureHtmlButton, clearCacheButton]));
     previewCard.appendChild(siteAnywayRow);
+    previewCard.appendChild(siteRegionalRow);
+    // Progress of a publish: which step, how many are done, and about how long is left.
+    const progressLabel = element("div", { className: "pbar-label" });
+    const progressFill = element("div", { className: "pbar-fill" });
+    const progressNote = element("div", { className: "pbar-note" });
+    const progressBox = element("div", { className: "pbar hidden" }, [progressLabel, element("div", { className: "pbar-track" }, [progressFill]), progressNote]);
+    const progress = {
+      active: false, total: 0, done: 0, startedAt: 0, now: "", timer: null,
+      clock(ms) { const s = Math.max(0, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s` : `${s} s`; },
+      render() {
+        if (!this.active) return;
+        const pct = this.total ? Math.min(100, Math.round((this.done / this.total) * 100)) : 0;
+        progressFill.style.width = `${pct}%`;
+        progressLabel.textContent = `Publishing · ${this.done} of ${this.total} fields done${this.now ? ` · now: ${this.now}` : ""}`;
+        const elapsed = Date.now() - this.startedAt;
+        progressNote.textContent = this.done > 0 && this.done < this.total
+          ? `${this.clock(elapsed)} so far · about ${this.clock((elapsed / this.done) * (this.total - this.done))} left (a rough guess; some steps are slower)`
+          : `${this.clock(elapsed)} so far · working out how long is left…`;
+      },
+      start(total) {
+        clearInterval(this.timer);
+        Object.assign(this, { active: true, total, done: 0, startedAt: Date.now(), now: "" });
+        progressBox.className = "pbar";
+        this.render();
+        this.timer = setInterval(() => this.render(), 1000);
+      },
+      doing(text) { this.now = text; this.render(); },
+      step() { if (!this.active) return; this.done = Math.min(this.total, this.done + 1); this.render(); },
+      finish(saved, skipped, failed) {
+        if (!this.active) return;
+        clearInterval(this.timer);
+        this.active = false;
+        progressFill.style.width = "100%";
+        progressBox.className = `pbar ${failed ? "warn" : "done"}`;
+        progressLabel.textContent = failed ? `Finished · ${this.total} of ${this.total} fields processed · ${failed} need attention` : `Done · all ${this.total} fields processed`;
+        progressNote.textContent = `Took ${this.clock(Date.now() - this.startedAt)} · saved ${saved} · already in RTS or skipped ${skipped}${failed ? ` · needs attention ${failed}` : ""}`;
+      }
+    };
+    previewCard.appendChild(progressBox);
     const publishStatus = element("div", { className: "status" });
     previewCard.appendChild(publishStatus);
     body.appendChild(previewCard);
@@ -762,6 +813,7 @@
       entry.checkbox.checked = false;
       entry.checkbox.disabled = true;
       entry.editor.setDisabled(true);
+      progress.step();
     }
 
     async function persistToCache() {
@@ -779,6 +831,7 @@
     function buildPlan() {
       lastActions = globalThis.SXRTS.executionPlan.buildExecutionPlan(lastValidated);
       siteAnywayRow.classList.toggle("hidden", !lastActions.some((a) => a.siteGroup || a.jsonPath === "company.sites"));
+      siteRegionalRow.classList.toggle("hidden", !lastActions.some((a) => a.siteGroup || a.jsonPath === "company.sites"));
       rowsByActionId.clear();
       actionList.replaceChildren();
       const ready = lastActions.filter((a) => a.executionStatus === "pending");
@@ -1038,6 +1091,7 @@
       try { await globalThis.SXRTS.navigation?.expandAll(); } catch { /* a page without the control simply carries on */ }
       // From here until the results, a message box from RTS is answered at once (and written down) instead of waiting for OK.
       globalThis.SXRTS.dialogLog?.begin();
+      progress.start(selected.length);
 
       let applied = 0, skipped = 0, failed = 0;
       const allResults = {};
@@ -1123,6 +1177,7 @@
 
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {
+        progress.doing("Name variations");
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         try {
@@ -1140,6 +1195,7 @@
       const generalJsonPaths = ["businessEntity.websiteAddresses", "businessEntity.emailDefaultStructure", "businessEntity.researchNotes"];
       const generalEntries = selected.filter((entry) => generalJsonPaths.includes(entry.action.jsonPath));
       if (generalEntries.length) {
+        progress.doing("Website, email and research notes");
         const fields = {};
         const validEntries = [];
         for (const entry of generalEntries) {
@@ -1185,6 +1241,7 @@
 
       const sicEntries = selected.filter((entry) => entry.action.jsonPath === "company.sicCodes");
       for (const entry of sicEntries) {
+        progress.doing("SIC codes");
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         try {
@@ -1203,10 +1260,12 @@
       const siteExtras = selected.filter((entry) => entry.action.siteGroup);
       const siteJson = selected.filter((entry) => entry.action.jsonPath === "company.sites" && !entry.action.customKey);
       const addAnyway = Boolean(siteAnywayBox.checked);
+      const hqFallback = Boolean(siteRegionalBox.checked);
       async function publishSite(entries, record) {
+        progress.doing("Site (opens the form, fills it, saves once)");
         const statusOf = (result) => (result.status === "failed" ? "failed" : result.status === "skipped" ? "skipped" : "savedValueVerified");
         try {
-          const result = await globalThis.SXRTS.workflows.companySite.applySite(record, { addAnyway });
+          const result = await globalThis.SXRTS.workflows.companySite.applySite(record, { addAnyway, hqFallback });
           const message = result.reason || result.detail || "";
           const kind = statusOf(result);
           // One line on the results screen for the one site (its cards each show their own status).
@@ -1246,6 +1305,7 @@
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
+        progress.doing(def?.label || entry.action.section || "Mapped field");
         if (!def) {
           failed++; setRowStatus(entry.action.actionId, "failed", "This taught field no longer exists.");
           recordResult(entry.action.jsonPath, { status: "error", error: "This taught field no longer exists." });
@@ -1266,6 +1326,7 @@
         }
       }
 
+      progress.finish(applied, skipped, failed);
       const rtsSaid = globalThis.SXRTS.dialogLog?.summarize(globalThis.SXRTS.dialogLog.end()) ?? [];
       const summary = globalThis.SXRTS.resultsSummary.buildSummary(allResults);
       const warningText = identityResult.reasons.length ? `\nIdentity warnings:\n${identityResult.reasons.join("\n")}` : "";

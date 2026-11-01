@@ -607,11 +607,29 @@
         outcome = await watchSave();
       }
     }
-    const hqConflict = () => Boolean(globalThis.SXRTS.dialogLog?.saw?.(/already set as Current Primary HQ/i));
-    const HQ_MESSAGE = "Not added: another site is already set as Current Primary HQ. Change that site in RTS (or add this one with a different Site Type), then add this one.";
+    let logFrom = 0;
+    const hqConflict = () => Boolean(globalThis.SXRTS.dialogLog?.saw?.(/already set as Current Primary HQ/i, logFrom));
+    const HQ_MESSAGE = "Not added: another site is already set as Current Primary HQ. Tick \"If another site is already Primary HQ, add this one as Regional HQ\", or change that site in RTS, then add this one.";
+    let asRegional = "";
     if (formOpen() && !listed() && hqConflict()) {
-      await cancelForm();
-      throw new Error(HQ_MESSAGE);
+      // Two sites cannot both be the Current Primary HQ. By default the new site is added as a Regional HQ instead
+      // (the existing Primary HQ is never touched). Unticked: the site is not added and the message says why.
+      const type = find("siteType");
+      const regional = type && Array.from(type.options).find((o) => /regional/i.test(o.textContent) && /h\.?q|headquarter/i.test(o.textContent));
+      if (options.hqFallback === false || !regional) {
+        await cancelForm();
+        throw new Error(options.hqFallback === false ? HQ_MESSAGE : `${HQ_MESSAGE} (This form's Site Type has no Regional HQ choice: ${Array.from(type?.options ?? []).map((o) => o.textContent.trim()).filter(Boolean).join(", ") || "none found"}.)`);
+      }
+      logFrom = globalThis.SXRTS.dialogLog.peek().length;
+      await globalThis.SXRTS.adapters.nativeSelect.selectNativeOption(type, regional.textContent.trim());
+      if (type.selectedOptions[0] !== regional) { await cancelForm(); throw new Error(`Site type: RTS did not keep "${regional.textContent.trim()}".`); }
+      asRegional = regional.textContent.trim();
+      did(`another site is already Primary HQ; Site Type changed to "${asRegional}" and SAVE pressed again`);
+      const again = findSave();
+      if (!again || !(await waitFor(() => !again.disabled, TIMEOUTS.field))) { await cancelForm(); throw new Error(`Site type was changed to "${asRegional}", but SAVE did not wake up.`); }
+      press(again);
+      outcome = await watchSave();
+      if (formOpen() && !listed() && hqConflict()) { await cancelForm(); throw new Error(`RTS still refused the site as "${asRegional}": ${HQ_MESSAGE}`); }
     }
     if (outcome.refusal && formOpen() && !listed()) {
       await cancelForm();
@@ -645,7 +663,8 @@
     const shown = await waitFor(listed, TIMEOUTS.list);
     const note = Object.keys(derived).length ? ` (${Object.entries(derived).map(([k, v]) => `${k} ${v}`).join(", ")} taken from the address)` : "";
     const without = leftOut.length ? { note: `Saved ${r.siteName} without ${leftOut.join(", ")}: RTS refused ${leftOut.length === 1 ? "it" : "them"}. Fix and add ${leftOut.length === 1 ? "it" : "them"} in RTS by hand.`, detail: `Saved without ${leftOut.join(", ")}: RTS refused ${leftOut.length === 1 ? "it" : "them"}.`, leftOut } : {};
-    if (shown) return { status: leftOut.length ? "savedStateVerified" : "savedValueVerified", name: r.siteName, ...without, ...(note ? { derived: note } : {}) };
+    const regionalNote = asRegional ? { note: `Saved ${r.siteName} as "${asRegional}": another site is already the Primary HQ, so this one was added as a regional one.`, detail: `Added as "${asRegional}" (another site is already Primary HQ).` } : {};
+    if (shown) return { status: (leftOut.length || asRegional) ? "savedStateVerified" : "savedValueVerified", name: r.siteName, ...regionalNote, ...without, ...(asRegional ? { asRegional } : {}), ...(note ? { derived: note } : {}) };
     const seen = listedText(root).replace(/\s+/g, " ").slice(0, 140);
     return {
       status: "savedStateVerified", name: r.siteName,

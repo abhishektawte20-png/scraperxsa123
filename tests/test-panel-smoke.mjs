@@ -319,6 +319,12 @@ test("publishing Email Default Structure actually writes and saves it end to end
   const statuses = shadow.querySelectorAll(".status");
   assert.match(statuses[statuses.length - 1].textContent, /Saved 2 · Already in RTS 0 · Needs attention 0/, "the email plus the always-added ANC mark");
   assert.match(document.querySelector(".highlight-textarea").textContent, /AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research/);
+  const bar = shadow.querySelector(".pbar");
+  assert.ok(!bar.classList.contains("hidden"), "the progress bar is shown after a publish");
+  assert.ok(bar.classList.contains("done"), "and it is green when everything went through");
+  assert.match(bar.querySelector(".pbar-label").textContent, /Done · all 2 fields processed/);
+  assert.equal(bar.querySelector(".pbar-fill").style.width, "100%");
+  assert.match(bar.querySelector(".pbar-note").textContent, /Took .* · saved 2/);
 });
 
 test("an invalid manual edit is caught by real schema re-validation before any workflow runs", async () => {
@@ -366,4 +372,24 @@ test("the ANC mark row is ticked, marked required, and cannot be unticked or edi
   box.click();
   assert.equal(box.checked, true, "clicking does not untick it");
   assert.ok(Array.from(card.querySelectorAll("input[type=text], textarea")).every((i) => i.disabled), "its text cannot be edited");
+});
+
+test("the progress bar is hidden before a publish and amber, with the count of problems, when a field needs attention", async () => {
+  const { shadow } = setupDom();
+  assert.ok(shadow.querySelector(".pbar").classList.contains("hidden"));
+  addIdentityWithNoStrongMatch();
+  const responseArea = shadow.querySelector("#sxrts-response");
+  responseArea.value = JSON.stringify({
+    schemaVersion: "1.0",
+    profileIdentity: { companyName: "Best Supply Partners", domain: "bsp.com" },
+    businessEntity: { emailDefaultStructure: { value: "FirstInitialLastName@domain.com", action: "addIfMissing" } }
+  });
+  responseArea.dispatchEvent(new window.Event("input", { bubbles: true }));
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Validate JSON").click();
+  window.confirm = () => true;
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save").click();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const bar = shadow.querySelector(".pbar");
+  assert.ok(bar.classList.contains("warn"), "nothing on this page can be saved, so the bar is amber");
+  assert.match(bar.querySelector(".pbar-label").textContent, /Finished · 2 of 2 fields processed · 2 need attention/);
 });
