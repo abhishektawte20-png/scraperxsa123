@@ -199,11 +199,12 @@ test("when validation fails, the warnings are shown in the same pass, and the co
   button(shadow, "Validate JSON").click();
   assert.equal(shadow.querySelectorAll(".issue.err").length, 1);
   assert.ok(shadow.querySelectorAll(".issue.warn").length >= 4, "warnings are listed under the error");
-  assert.match(shadow.querySelector(".status").textContent, /\[EXTERNAL_SOURCE\] www\.esas\.org/);
+  assert.match(shadow.querySelector(".status").textContent, /\[EXTERNAL_SOURCE\] prospeo\.io/);
+  assert.doesNotMatch(shadow.querySelector(".status").textContent, /esas\.org: \d+ field/, "an ordinary outside page is not shown as a warning");
   button(shadow, "Copy correction prompt").click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(copied[0], /Also fix these/);
-  assert.match(copied[0], /\[EXTERNAL_SOURCE\] www\.esas\.org/);
+  assert.match(copied[0], /\[EXTERNAL_SOURCE\] prospeo\.io/);
   assert.match(copied[0], /\[EMPLOYEE_DATE\] employee_count\.current\.date/);
   assert.match(copied[0], /How to fix: Use a page on the official website/);
 });
@@ -277,7 +278,7 @@ test("simple JSON slips are repaired and said so; valid JSON with no field mappi
 test("a valid output that still breaks methodology rules can be sent back for a cleaner run", async () => {
   const { shadow, copied } = setup();
   const out = validOutput();
-  out.employee_count.source_1 = "https://www.linkedin.com/company/acme";
+  out.employee_count.source_1 = "https://acme.netlify.app/team";
   paste(shadow, out);
   button(shadow, "Validate JSON").click();
   assert.match(shadow.querySelector(".status").textContent, /Valid/);

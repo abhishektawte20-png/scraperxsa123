@@ -221,3 +221,12 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 - **Phone by country.** New step "Format the phone for the country": the number is written for the country of the same record (the site's own country, else the report's country). US and Canada are built in (`281-941-6001`). For any other country, add `Country=pattern` pairs in the step, e.g. `Germany=+49 ## ########; India=+91 ##### #####` (`#` = one digit). A country with no pattern is left exactly as it is; an incomplete number is never guessed.
 - **Your own steps.** In Output rules > Add rule, pick any field and add conditions: *if the number is between … and …* (e.g. employee count 2–10 → `2-10`), *if equals / contains / starts with / ends with*, and *replace values from a list* (`a=b; c=d`). Steps run in order.
+
+## 0.28.0
+
+- **No waiting for OK.** While a publish runs, RTS's own message boxes ("Data is not saved.", "Another site is already set as Current Primary HQ.", …) are answered at once and listed under the results ("RTS showed … answered automatically"). A confirm is answered OK, except one that mentions deleting/removing/discarding, which is answered Cancel. Outside a publish, nothing changes. These boxes used to freeze the page until someone pressed OK, which made saves that had worked look like failures.
+- **Save looked unfinished → look again.** If a save reports "not observed in time / did not complete" the field is re-checked once; a value that is already in RTS is reported as "already in RTS" (never added twice).
+- **Primary HQ.** If another site already holds Current Primary HQ, the site is not added and the message says so plainly. (Moving HQ from the old site to the new one needs the existing site's edit form; not built yet.)
+- **ANC mark.** Every profile gets `AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research` appended to Research Notes. The row is always there, marked "required", and cannot be unticked or edited. Existing notes are never removed.
+- **Native names.** A name is "Native Other Name" only if it really contains non-Latin letters; a Latin-letter name stays "Other Name" even when the agent writes a script.
+- **Quieter validation.** Notes about outside pages (registries, magazines) are no longer listed. Data aggregators (e.g. ZoomInfo, RevenueBase, Prospeo) and staging/hosting addresses (netlify.app, vercel.app, …) are still warnings.

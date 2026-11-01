@@ -100,7 +100,7 @@
       changed = true;
     }
 
-    if (!changed) return { status: "skipped", reason: "No new research notes to add." };
+    if (!changed) return { status: "skipped", reason: "Research Notes already has this text; nothing new to add." };
 
     await globalThis.SXRTS.adapters.contentEditable.applyContentEditable(editable, finalText);
     if (!globalThis.SXRTS.adapters.contentEditable.verifyContentEditable(editable, finalText)) {

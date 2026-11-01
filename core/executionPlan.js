@@ -32,10 +32,21 @@
   // The built-in Site is used unless it was unmapped ("Unmap" on a Site card or in Mapped & taught fields).
   const hasSiteWorkflow = () => { const w = globalThis.SXRTS.workflows?.companySite; return Boolean(w) && (w.isEnabled ? w.isEnabled() : true); };
 
+  // The monitoring mark: every profile worked with the tool carries it in Research Notes. It is always added (never
+  // removed from the plan, never unticked) and only ever appended to what the notes already say.
+  const ANC_CODE = "AIGEN_SRX_V1_Y";
+  const ANC_TEXT = `${ANC_CODE} - Used ScraperX UI Automation Tool for research`;
+
   function buildExecutionPlan(validated) {
     const registry = globalThis.SXRTS.registry;
     const actions = [];
     let counter = 0;
+
+    validated.businessEntity = validated.businessEntity ?? {};
+    const notes = Array.isArray(validated.businessEntity.researchNotes) ? validated.businessEntity.researchNotes : [];
+    if (!notes.some((note) => note?.text === ANC_TEXT)) {
+      validated.businessEntity.researchNotes = [...notes, { text: ANC_TEXT, action: "addIfMissing", source: null }];
+    }
 
     for (const source of FIELD_SOURCES) {
       const value = source.get(validated);
@@ -67,6 +78,7 @@
 
         actions.push({
           actionId: `A${counter}`,
+          mandatory: record?.text === ANC_TEXT || undefined,
           profileIdentity: validated.profileIdentity,
           area: bound ? "Mapped field" : (registryEntry?.area ?? null),
           section: bound ? bound.label : (registryEntry?.section ?? null),
@@ -160,5 +172,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.executionPlan = { buildExecutionPlan, FIELD_SOURCES, SITE_EXTRAS };
+  globalThis.SXRTS.executionPlan = { buildExecutionPlan, FIELD_SOURCES, SITE_EXTRAS, ANC_CODE, ANC_TEXT };
 })();

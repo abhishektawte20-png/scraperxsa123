@@ -494,7 +494,7 @@
       if (!note.url || !targetDomain) continue;
       const host = hosts(note.url);
       if (host && !C().hostMatches(host, targetDomain) && !/^FUNDING/.test(note.path)) {
-        C().issue(issues, "warning", "EXTERNAL_SOURCE", note.path, `is sourced from ${host}, not the official website (${targetDomain}); external sources are only for fields missing from the website.`);
+        C().issue(issues, C().externalSeverity(host), C().externalCode(host), note.path, `is sourced from ${host}, not the official website (${targetDomain}); external sources are only for fields missing from the website.`);
       }
       if (HEDGES.test(note.text || "") && !/^FUNDING/.test(note.path)) {
         C().issue(issues, "warning", "HEDGED_VALUE", note.path, "the agent's own note hedges this value (\"appears\", \"likely\", \"legacy\"...): verify before relying on it.");

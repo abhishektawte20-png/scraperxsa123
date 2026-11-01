@@ -91,7 +91,7 @@ test("validating a valid response builds a preview with the expected row count",
   validateButton.click();
 
   const rows = shadow.querySelectorAll(".action-card");
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 3, "the two fields plus the always-present ANC mark");
   const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   assert.equal(publishButton.disabled, false);
 });
@@ -195,7 +195,10 @@ test("insufficient identity proceeds to publish once manually confirmed", async 
     </div>
     <input type="button" value="Add New Name Variation" class="btn" id="addNameVariation">
     <input type="button" value="Save" id="saveBusinessEntityNameVariation">
+    <div class="highlight-textarea" contenteditable=""></div>
+    <input type="button" id="saveBusinessEntityButton">
   `);
+  document.getElementById("saveBusinessEntityButton").addEventListener("click", () => { setTimeout(() => { document.getElementById("saveBusinessEntityButton").disabled = true; }, 10); });
   const nameInputs = () => document.querySelectorAll(".businessEntityName");
   document.getElementById("addNameVariation").addEventListener("click", () => {
     const row = document.createElement("div");
@@ -224,7 +227,7 @@ test("insufficient identity proceeds to publish once manually confirmed", async 
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   const statuses = shadow.querySelectorAll(".status");
-  assert.match(statuses[statuses.length - 1].textContent, /Saved 1 · Already in RTS 0 · Needs attention 0/);
+  assert.match(statuses[statuses.length - 1].textContent, /Saved 2 · Already in RTS 0 · Needs attention 0/);
 });
 
 test("clear cache button does not throw when no cache exists yet", async () => {
@@ -314,7 +317,8 @@ test("publishing Email Default Structure actually writes and saves it end to end
 
   assert.equal(emailSelect.value, "2");
   const statuses = shadow.querySelectorAll(".status");
-  assert.match(statuses[statuses.length - 1].textContent, /Saved 1 · Already in RTS 0 · Needs attention 0/);
+  assert.match(statuses[statuses.length - 1].textContent, /Saved 2 · Already in RTS 0 · Needs attention 0/, "the email plus the always-added ANC mark");
+  assert.match(document.querySelector(".highlight-textarea").textContent, /AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research/);
 });
 
 test("an invalid manual edit is caught by real schema re-validation before any workflow runs", async () => {
@@ -342,4 +346,24 @@ test("an invalid manual edit is caught by real schema re-validation before any w
   const reason = card.querySelector(".action-reason").textContent;
   assert.match(reason, /must be a non-empty string/);
   assert.ok(!/Add New Name Variation/.test(reason), "the workflow (and its live DOM lookup) must never run once re-validation rejects the edit");
+});
+
+test("the ANC mark row is ticked, marked required, and cannot be unticked or edited", () => {
+  const { shadow } = setupDom();
+  const responseArea = shadow.querySelector("#sxrts-response");
+  responseArea.value = JSON.stringify({
+    schemaVersion: "1.0",
+    profileIdentity: { companyName: "Psypher", pbId: "PB-1", domain: "psypher.in" },
+    businessEntity: { websiteAddresses: [{ value: "www.psypher.in", action: "addIfMissing" }] }
+  });
+  responseArea.dispatchEvent(new window.Event("input", { bubbles: true }));
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Validate JSON").click();
+  const card = Array.from(shadow.querySelectorAll(".action-card")).find((c) => /researchNotes/.test(c.textContent));
+  assert.ok(card, "the ANC row is there even though the report did not mention it");
+  assert.match(card.textContent, /required/);
+  const box = card.querySelector('input[type="checkbox"]');
+  assert.equal(box.checked, true);
+  box.click();
+  assert.equal(box.checked, true, "clicking does not untick it");
+  assert.ok(Array.from(card.querySelectorAll("input[type=text], textarea")).every((i) => i.disabled), "its text cannot be edited");
 });

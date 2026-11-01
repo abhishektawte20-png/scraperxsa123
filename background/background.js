@@ -1,6 +1,7 @@
 "use strict";
 
 const ASSISTANT_FILES = [
+  "core/dialogLog.js",
   "core/jsonRepair.js",
   "core/rovoContract.js",
   "core/rovoText.js",
@@ -103,6 +104,8 @@ chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
 
   try {
+    // RTS's own message boxes are answered by a small script that runs in the page itself.
+    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: [DIALOG_GUARD], world: "MAIN" }).catch(() => {});
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ASSISTANT_FILES
@@ -119,6 +122,7 @@ chrome.action.onClicked.addListener(async (tab) => {
  * click opens, and then to run the fill (or the field picker) inside it.
  * The page talks to us over a port named "sx-window".
  */
+const DIALOG_GUARD = "core/dialogGuardMain.js";
 const WINDOW_RUN_FILES = [
   "core/identityLock.js",
   "core/adapters/textField.js",
@@ -216,6 +220,8 @@ async function waitUntilLoaded(tabId, origin) {
 
 async function runInWindow(tabId, job) {
   lastStage.delete(tabId);
+  await chrome.scripting.executeScript({ target: { tabId }, files: [DIALOG_GUARD], world: "MAIN" }).catch(() => {});
+  await chrome.scripting.executeScript({ target: { tabId }, func: () => document.documentElement.setAttribute("data-sx-run", "1") }).catch(() => {});
   await chrome.scripting.executeScript({ target: { tabId }, files: WINDOW_RUN_FILES });
   try {
     const [injection] = await chrome.scripting.executeScript({

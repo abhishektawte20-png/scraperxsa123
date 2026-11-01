@@ -607,6 +607,12 @@
         outcome = await watchSave();
       }
     }
+    const hqConflict = () => Boolean(globalThis.SXRTS.dialogLog?.saw?.(/already set as Current Primary HQ/i));
+    const HQ_MESSAGE = "Not added: another site is already set as Current Primary HQ. Change that site in RTS (or add this one with a different Site Type), then add this one.";
+    if (formOpen() && !listed() && hqConflict()) {
+      await cancelForm();
+      throw new Error(HQ_MESSAGE);
+    }
     if (outcome.refusal && formOpen() && !listed()) {
       await cancelForm();
       throw new Error(`RTS did not accept the site. RTS says: ${outcome.refusal}${leftOut.length ? ` (also tried without ${leftOut.join(", ")})` : ""}`);
@@ -624,6 +630,10 @@
           outcome = await watchSave();
         }
       }
+    }
+    if (!outcome.evidence && hqConflict()) {
+      await cancelForm();
+      throw new Error(HQ_MESSAGE);
     }
     if (!outcome.evidence) {
       const said = formErrors();

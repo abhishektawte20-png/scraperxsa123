@@ -149,6 +149,11 @@
     }
   }
 
+  // Data aggregators, lead lists and staging/hosting addresses are never allowed as a source (the methodology says so): those stay a warning.
+  // Any other outside page (a registry, a trade magazine) is allowed for a field missing from the website, so it is only a quiet note.
+  const AGGREGATOR = /(^|\.)(pitchbook|tracxn|atlassian|prospeo|apollo|zoominfo|crunchbase|revenuebase|rocketreach|cbinsights|owler|growjo|leadiq|dnb|craft)\.|confluence|(^|\.)(netlify\.app|vercel\.app|github\.io|pages\.dev|herokuapp\.com|azurewebsites\.net|wixsite\.com|webflow\.io|blogspot\.com)$/i;
+  const externalCode = (host) => (AGGREGATOR.test(host) ? "EXTERNAL_SOURCE" : "SOURCE_NOTE");
+  const externalSeverity = (host) => (AGGREGATOR.test(host) ? "warning" : "info");
   function hostMatches(host, domain) {
     return host === domain || host === `www.${domain}` || host.endsWith(`.${domain}`);
   }
@@ -410,7 +415,7 @@
     visit(src, "");
     for (const [host, paths] of byHost) {
       const shown = paths.slice(0, 4).join(", ") + (paths.length > 4 ? `, +${paths.length - 4} more` : "");
-      issue(issues, "warning", "EXTERNAL_SOURCE", host, `${paths.length} field(s) are sourced from ${host}, not the official website (${target}): ${shown}. External sources are only for fields missing from the website, and the page must belong to this company. Check it is not another organisation's page.`);
+      issue(issues, externalSeverity(host), externalCode(host), host, `${paths.length} field(s) are sourced from ${host}, not the official website (${target}): ${shown}. External sources are only for fields missing from the website, and the page must belong to this company. Check it is not another organisation's page.`);
     }
     (src.website_links?.pages_traversed || []).forEach((url, index) => {
       const host = typeof url === "string" ? hostOf(url) : null;
@@ -573,7 +578,9 @@
       if (!name) continue;
       // A name in another script is RTS's "Native Other Name"; a Latin-script
       // variant is "Other Name". The preview shows the type for confirmation.
-      const type = real(other.script) ? "Native Other Name" : "Other Name";
+      // Only a name that really contains letters of another script is native; "Latin" or "English" written in
+      // `script` does not make an ordinary name native.
+      const type = real(other.script) && /\p{L}/u.test(name.replace(/\p{Script=Latin}/gu, "")) ? "Native Other Name" : "Other Name";
       variations.push({ name, type, action: act, source: other.source_url ?? null, confidence: null });
     }
     if (variations.length) doc.businessEntity.nameVariations = variations;
@@ -828,5 +835,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, toHandle, settings: SETTINGS, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
+  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, toHandle, settings: SETTINGS, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, externalCode, externalSeverity, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
 })();

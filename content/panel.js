@@ -678,7 +678,12 @@
       const isRunnable = action.executionStatus === "pending";
       const checkbox = element("input", { type: "checkbox", checked: isRunnable, disabled: !isRunnable });
       const editor = buildValueEditor(action.proposedValue, action.jsonPath);
-      if (!isRunnable) editor.setDisabled(true);
+      if (!isRunnable || action.mandatory) editor.setDisabled(true);
+      // The ANC mark is compulsory: it is ticked and cannot be unticked.
+      if (action.mandatory) {
+        checkbox.checked = true;
+        checkbox.addEventListener("change", () => { checkbox.checked = true; });
+      }
 
       const waitingForEvidence = !isRunnable && /registry entry|evidence for this field/i.test(action.skipReason || "");
       const statusBadge = element("span", { className: `badge badge-${isRunnable ? "pending" : waitingForEvidence ? "waiting" : "skipped"}`, text: waitingForEvidence ? "waiting for RTS evidence" : action.executionStatus });
@@ -690,6 +695,7 @@
           element("div", { className: "action-card-field", text: `${action.jsonPath}${action.recordIndex !== null ? `[${action.recordIndex}]` : ""}` }),
           element("div", { className: "action-card-area", text: (() => { const cat = globalThis.SXRTS.outputFields?.get(action.jsonPath); return cat ? `${action.area || cat.area} · ${cat.label}` : (action.area || "(unregistered)"); })() })
         ]),
+        ...(action.mandatory ? [element("span", { className: "badge badge-pending", text: "required" })] : []),
         statusBadge
       ]);
 
@@ -898,7 +904,8 @@
         }
         globalThis.SXRTS.cache.setLastJson(lastJsonIdentity(), textarea.value).catch(() => {});
         saveRun("valid", lastValidated.rovo?.format, lastValidated.warnings, 0, lastValidated);
-        const lines = lastValidated.warnings.map((text) => ({ kind: lineKind(text), text }));
+        // Source notes about outside pages the methodology allows are not shown; only real warnings are.
+        const lines = lastValidated.warnings.filter((text) => !/^\[SOURCE_NOTE\]/.test(text)).map((text) => ({ kind: lineKind(text), text }));
         // Valid, but the methodology warnings can still be sent back for a cleaner run.
         if (lastValidated.rovo && globalThis.SXRTS.rovoContract.reviewIssues(lastValidated.rovo.issues).length) {
           lastIssues = lastValidated.rovo.issues;
@@ -941,7 +948,7 @@
           // Show everything in one pass: the blocking errors first, then the
           // warnings, so a re-run is never needed just to discover the rest.
           const contract = globalThis.SXRTS.rovoContract;
-          const extra = (error.issues ?? []).filter((item) => item.severity !== "error").map((item) => ({ kind: item.severity === "warning" ? "warn" : "info", text: contract.formatIssue(item) }));
+          const extra = (error.issues ?? []).filter((item) => item.severity !== "error" && item.code !== "SOURCE_NOTE").map((item) => ({ kind: item.severity === "warning" ? "warn" : "info", text: contract.formatIssue(item) }));
           const syntax = error.syntax;
           const errorLines = syntax
             ? [{ kind: "err", text: `[JSON_SYNTAX] ${syntax.text}` }, ...(syntax.near ? [{ kind: "info", text: `Near: ${syntax.near}` }] : []), { kind: "info", text: "Simple mistakes (a comma before a closing bracket, curly quotes, raw line breaks in text) are fixed automatically. This one needs the agent to send the JSON again: press Generate Correct JSON Prompt." }]
@@ -1029,6 +1036,8 @@
 
       // Open every section of the current tab once, so a field is not missed only because its section is collapsed.
       try { await globalThis.SXRTS.navigation?.expandAll(); } catch { /* a page without the control simply carries on */ }
+      // From here until the results, a message box from RTS is answered at once (and written down) instead of waiting for OK.
+      globalThis.SXRTS.dialogLog?.begin();
 
       let applied = 0, skipped = 0, failed = 0;
       const allResults = {};
@@ -1081,6 +1090,25 @@
         allResults[jsonPath].push(result);
       }
 
+      // A save that RTS did finish can still look unfinished (a slow page, a message box). When the failure is of that kind,
+      // look again once: the workflows check for the value first, so a value that is already there is reported as already
+      // in RTS and is never added twice.
+      const UNFINISHED = /signal was not observed|did not complete|stayed open|never returned|still open|did not appear/i;
+      async function lookAgain(run) {
+        let result, thrown;
+        try { result = await run(); } catch (error) { thrown = error; }
+        const message = thrown ? thrown.message : (result?.status === "failed" ? (result.reason || result.detail || "") : "");
+        if ((thrown || result?.status === "failed") && UNFINISHED.test(message)) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          try {
+            const again = await run();
+            if (again && again.status !== "failed") return again;
+          } catch { /* keep the first answer */ }
+        }
+        if (thrown) throw thrown;
+        return result;
+      }
+
       // Every value that really reached RTS goes in the undo ledger (what, and what was there before).
       const ledgerItems = [];
       const textOf = (value) => (typeof value === "string" ? value : value?.value ?? value?.name ?? value?.handle ?? JSON.stringify(value));
@@ -1098,7 +1126,7 @@
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         try {
-          const result = await globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation(value);
+          const result = await lookAgain(() => globalThis.SXRTS.workflows.businessEntityNameVariations.applyNameVariation(value));
           recordResult(entry.action.jsonPath, result);
           keepForUndo(entry, value, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
@@ -1160,7 +1188,7 @@
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         try {
-          const result = await globalThis.SXRTS.workflows.companySic.applySicCode(value);
+          const result = await lookAgain(() => globalThis.SXRTS.workflows.companySic.applySicCode(value));
           recordResult(entry.action.jsonPath, result);
           keepForUndo(entry, value, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
@@ -1224,7 +1252,7 @@
           continue;
         }
         try {
-          const result = await globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value));
+          const result = await lookAgain(() => globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value)));
           recordResult(entry.action.jsonPath, result);
           keepForUndo(entry, value, result, { treeWindow: Boolean(def.window?.tree), single: def.kind === "single" && !def.window && !def.tree });
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
@@ -1236,6 +1264,7 @@
         }
       }
 
+      const rtsSaid = globalThis.SXRTS.dialogLog?.summarize(globalThis.SXRTS.dialogLog.end()) ?? [];
       const summary = globalThis.SXRTS.resultsSummary.buildSummary(allResults);
       const warningText = identityResult.reasons.length ? `\nIdentity warnings:\n${identityResult.reasons.join("\n")}` : "";
 
@@ -1244,6 +1273,12 @@
       publishStatus.textContent = "";
       publishStatus.appendChild(summaryDiv);
       publishStatus.className = `status ${failed ? "error" : "success"}`;
+      if (rtsSaid.length) {
+        const said = document.createElement("div");
+        said.className = "helptext";
+        said.textContent = `RTS showed ${rtsSaid.length === 1 ? "a message" : "messages"} while saving; ${rtsSaid.length === 1 ? "it was" : "they were"} answered automatically: ${rtsSaid.map((m) => `"${m.message}"${m.times > 1 ? ` ×${m.times}` : ""}`).join(", ")}`;
+        publishStatus.appendChild(said);
+      }
       if (warningText) {
         const warningDiv = document.createElement("div");
         warningDiv.className = "summary-warning";

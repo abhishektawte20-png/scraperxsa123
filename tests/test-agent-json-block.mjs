@@ -209,8 +209,10 @@ test("with the researcher's domain, the dropped header is filled in, and the REA
   assert.deepEqual(error.issues.filter((i) => i.severity === "error").map((i) => i.code), ["PROHIBITED_SOURCE"]);
   assert.match(error.errors[0], /employee_count\.current\.source_url: uses prospeo\.io/);
   const warnings = error.issues.filter((i) => i.severity === "warning").map((i) => i.code);
-  for (const code of ["HEADER_MISSING", "EXTERNAL_SOURCE", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "DESCRIPTION_RULE"]) assert.ok(warnings.includes(code), code);
-  const external = error.issues.find((i) => i.code === "EXTERNAL_SOURCE" && /esas\.org/.test(i.path));
+  for (const code of ["HEADER_MISSING", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "DESCRIPTION_RULE"]) assert.ok(warnings.includes(code), code);
+  assert.ok(warnings.includes("EXTERNAL_SOURCE"), "the aggregator (prospeo.io) is still a warning");
+  const external = error.issues.find((i) => i.code === "SOURCE_NOTE" && /esas\.org/.test(i.path));
+  assert.equal(external.severity, "info", "an ordinary outside page is only a quiet note");
   assert.match(external.message, /8 field\(s\) are sourced from www\.esas\.org, not the official website \(dmcspain\.com\)/);
 });
 
@@ -220,7 +222,7 @@ test("once the prohibited source is removed, the output validates, with the cros
   const validated = globalThis.SXRTS.schema.validate(JSON.stringify(fixed), { domain: "dmcspain.com" });
   assert.equal(validated.profileIdentity.domain, "dmcspain.com");
   assert.ok(validated.warnings.some((w) => /\[HEADER_MISSING\]/.test(w)));
-  assert.ok(validated.warnings.some((w) => /\[EXTERNAL_SOURCE\] www\.esas\.org/.test(w)));
+  assert.ok(validated.warnings.some((w) => /\[SOURCE_NOTE\] www\.esas\.org/.test(w)));
 });
 
 test("the domain entered in the panel is the authority: a different TLD than the agent's sources is a hard block", () => {

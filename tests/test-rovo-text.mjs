@@ -41,8 +41,6 @@ test("the real agent output reads cleanly: no errors; only genuine warnings", ()
   assert.deepEqual(result.issues.filter((i) => i.severity === "error"), []);
   const warnings = result.issues.filter((i) => i.severity === "warning").map((i) => `${i.code}@${i.path}`).sort();
   assert.deepEqual(warnings, [
-    "EXTERNAL_SOURCE@social_media_identifiers.facebook",
-    "EXTERNAL_SOURCE@social_media_identifiers.instagram",
     "HEDGED_VALUE@social_media_identifiers.instagram"
   ]);
   assert.ok(result.document);
