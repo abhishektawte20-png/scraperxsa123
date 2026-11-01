@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, wipeOnCountry: false, keepOpenAfterSave: false }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "" }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -27,7 +27,7 @@
       '<tr><td>Address Line 2</td><td><input type="text"' + nm("site.address2") + '></td></tr>',
       '<tr><td>City*</td><td><input type="text"' + nm("site.city") + '></td></tr>',
       '<tr><td>Country*</td><td><select' + nm("site.countryCode.id") + '>' + opt(COUNTRIES) + '</select></td></tr>',
-      '<tr id="stateRow"><td>State*</td><td><select id="stateSel">' + opt(STATES) + '</select><input type="text" id="provinceInput"' + nm("site.province") + ' style="display:none"></td></tr>',
+      '<tr id="stateRow"><td>' + o.stateLabel + '</td><td><select id="stateSel"' + (o.stateName ? ' name="' + o.stateName + '"' : "") + '>' + opt(STATES) + '</select><input type="text" id="provinceInput"' + nm("site.province") + ' style="display:none"></td></tr>',
       '<tr><td>Zip <a>(Format)</a></td><td><input type="text"' + nm("site.zip") + '></td></tr>',
       '<tr><td>Phone <a>(Format)</a></td><td><input type="text"' + nm("site.phone") + '></td></tr>',
       '<tr><td>Fax <a>(Format)</a></td><td><input type="text"' + nm("site.fax") + '></td></tr>',
@@ -59,7 +59,7 @@
         if (o.slowStates) {
           var sel = $("stateSel");
           sel.innerHTML = "";
-          setTimeout(function () { sel.innerHTML = opt(STATES); refresh(); }, 250);
+          setTimeout(function () { sel.innerHTML = opt(STATES); refresh(); }, o.slowMs);
         }
         if (o.wipeOnCountry) { field("Zip").value = ""; field("Phone").value = ""; }
       });
@@ -67,9 +67,9 @@
     function refresh() {
       var country = field("Country*").value;
       var us = country === "United States";
-      $("stateSel").style.display = us ? "" : "none";
-      $("provinceInput").style.display = us ? "none" : "";
-      var ok = field("Site name*").value && field("Site Type*").value && field("City*").value && country && field("Status*").value && (us ? $("stateSel").value : true);
+      if ($("stateSel")) $("stateSel").style.display = us ? "" : "none";
+      if ($("provinceInput")) $("provinceInput").style.display = us ? "none" : "";
+      var ok = field("Site name*").value && field("Site Type*").value && field("City*").value && country && field("Status*").value && (us ? ($("stateSel") && $("stateSel").value) : true);
       $("saveSiteInfoButton").disabled = !ok;
     }
     form.addEventListener("input", refresh);
@@ -80,7 +80,7 @@
       var us = field("Country*").value === "United States";
       state.lastForm = {
         name: field("Site name*").value, type: field("Site Type*").value, address1: field("Address Line 1").value, city: field("City*").value,
-        country: field("Country*").value, state: us ? $("stateSel").value : $("provinceInput").value, zip: field("Zip").value, phone: field("Phone").value,
+        country: field("Country*").value, state: us ? ($("stateSel") ? $("stateSel").value : "") : ($("provinceInput") ? $("provinceInput").value : ""), zip: field("Zip").value, phone: field("Phone").value,
         fax: field("Fax").value, email: field("Email").value, status: field("Status*").value
       };
       state.saves++;

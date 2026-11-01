@@ -11,7 +11,7 @@
  *   - If the form ends up with an error, it is cancelled so a half-filled form is never left behind.
  */
 (() => {
-  const TIMEOUTS = { open: 4000, field: 1500, settle: 8000, list: 3000, poll: 40, section: 1500 };
+  const TIMEOUTS = { open: 4000, field: 1500, settle: 8000, list: 3000, poll: 40, section: 1500, state: 9000 };
   const DEFAULTS = { siteType: "Primary HQ", status: "Current" };
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,14 +60,82 @@
   let setup = null;
   const taught = () => setup || globalThis.SXRTS.teamDefaults?.siteSetup || null;
 
+  // The open form: the nearest block around SAVE that holds the form's boxes (null while the form is closed).
+  const FIELD_BOXES = "input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=checkbox]):not([type=radio]):not([type=image]), select, textarea";
+  function formRoot() {
+    const save = findSave();
+    if (!save) return null;
+    for (let node = save.parentElement; node && node !== document.body; node = node.parentElement) {
+      if (node.querySelectorAll(FIELD_BOXES).length >= 5) return node;
+    }
+    return null;
+  }
+
+  // The words printed beside each box, whatever RTS calls the box itself.
+  const LABELS = {
+    siteName: /^site name\b/, siteType: /^site type\b/, address1: /^address line 1\b/, address2: /^address line 2\b/, city: /^city\b/, country: /^country\b/,
+    zip: /^(zip|postal)\b/, phone: /^(phone|telephone)\b/, fax: /^fax\b/, email: /^e ?mail\b/, status: /^status\b/, state: /^(state|province|region)\b/
+  };
+  const WANTS = { siteType: "select", country: "select", status: "select", stateSelect: "select", province: "input" };
+  function byLabel(name) {
+    const root = formRoot();
+    if (!root) return null;
+    const pattern = LABELS[name === "stateSelect" || name === "province" ? "state" : name];
+    if (!pattern) return null;
+    const controls = Array.from(root.querySelectorAll(FIELD_BOXES)).filter(isShown);
+    const labels = Array.from(root.querySelectorAll("td, th, label, span, div, b, strong, p")).filter((n) => {
+      if (!isShown(n) || n.querySelector("input, select, textarea")) return false;
+      const t = key(n.textContent);
+      return t && t.length <= 30 && pattern.test(t);
+    });
+    for (const label of labels) {
+      const control = controls.find((c) => !label.contains(c) && (label.compareDocumentPosition(c) & 4));
+      if (!control) continue;
+      const tag = control.tagName.toLowerCase();
+      const want = WANTS[name];
+      if (want ? tag !== want : /^(siteName|address1|address2|city|zip|phone|fax|email)$/.test(name) && tag === "select") continue;
+      return control;
+    }
+    return null;
+  }
+
   // A box the researcher pointed at is the only one used for that role (a look-alike is never guessed instead).
+  // Otherwise: RTS's own names, then the words printed beside the box.
   function find(name) {
     const pointed = taught()?.roles?.[name]?.selectors;
     for (const selector of pointed?.length ? pointed : SPEC[name]) {
       const hit = sb().matchAll(selector).find(isShown);
       if (hit) return hit;
     }
-    return null;
+    return pointed?.length ? null : byLabel(name);
+  }
+
+  // The state box, however RTS draws it: a dropdown holding the state (found by its label, its name, or by the choice
+  // it offers) or a plain box (by label or name). Returns { node, kind } or null.
+  function findState(wanted) {
+    const named = find("stateSelect");
+    if (named && (!wanted || optionFor(named, wanted))) return { node: named, kind: "select" };
+    const root = formRoot();
+    if (root && wanted) {
+      const taken = new Set(["siteType", "country", "status"].map(find).filter(Boolean));
+      const holder = Array.from(root.querySelectorAll("select")).filter((n) => isShown(n) && !taken.has(n)).find((n) => optionFor(n, wanted));
+      if (holder) return { node: holder, kind: "select" };
+    }
+    if (named) return { node: named, kind: "select" };
+    const box = find("province") || (root && Array.from(root.querySelectorAll("input")).filter(isShown).find((n) => /province|state|region/i.test(`${n.name} ${n.id}`)));
+    return box ? { node: box, kind: "input" } : null;
+  }
+
+  // What the form shows, for a message that says what was not found.
+  function seenBoxes() {
+    const root = formRoot();
+    if (!root) return "";
+    const labels = Array.from(root.querySelectorAll(FIELD_BOXES)).filter(isShown).map((c) => {
+      const cell = c.closest("td, div, label");
+      const before = c.closest("td")?.previousElementSibling || cell?.previousElementSibling;
+      return squash(before?.textContent) || c.name || c.id || c.tagName.toLowerCase();
+    });
+    return labels.slice(0, 14).join(", ");
   }
 
   const BUTTONS = 'input[type=button], input[type=submit], button, [role=button]';
@@ -185,7 +253,12 @@
 
   const alreadyListed = (root, record) => {
     const text = listedText(root);
-    if (record.address1) return text.includes(key(record.address1));
+    if (record.address1) {
+      if (text.includes(key(record.address1))) return true;
+      // The list may show only the street ("12600 Crystal View Blvd.") while the report gives the whole address.
+      const street = key(record.address1.split(",")[0]);
+      return street.length >= 6 && text.includes(street) && (!record.city || text.includes(key(record.city)));
+    }
     return Boolean(record.city) && text.includes(key(record.city));
   };
 
@@ -267,17 +340,6 @@
     return out;
   }
 
-  // After the country is chosen the state box may change (a list for the US, a text box elsewhere) and its choices
-  // may load a moment later: wait until it has settled.
-  async function settleState(country) {
-    const wantsList = /^(united states|canada)$/i.test(squash(country));
-    await waitFor(() => {
-      const list = find("stateSelect");
-      if (list && list.options.length > 1) return true;
-      return !wantsList && Boolean(find("province"));
-    }, TIMEOUTS.field);
-  }
-
   /*
    * record: { city, country, state, address1, address2, zip, phone, fax, email, siteName? }
    * options: { addAnyway }
@@ -309,6 +371,7 @@
     }
     did("Add New Site pressed, form open");
 
+    let stateNote = "";
     try {
       await setText("Site name", find("siteName"), r.siteName);
       const type = find("siteType");
@@ -323,16 +386,18 @@
       did("address, country");
       // The state box can change when the country does (a list for the US, a text box elsewhere).
       if (r.state) {
-        await settleState(r.country);
-        const list = find("stateSelect");
-        if (list) await setSelect("State", list, r.state);
+        // RTS may load the state list a moment after the country is chosen: wait for it.
+        await waitFor(() => { const f = findState(r.state); return Boolean(f && (f.kind === "input" || optionFor(f.node, r.state))); }, TIMEOUTS.state);
+        const found = findState(r.state);
+        if (found?.kind === "select") await setSelect("State", found.node, r.state);
+        else if (found) await setText("State", found.node, r.state);
         else {
-          const box = find("province");
-          if (!box) throw new Error("State: neither a dropdown nor a box was found in the form.");
-          await setText("State", box, r.state);
+          // Not every country asks for a state: carry on, and say so if Save then refuses.
+          stateNote = `the State box was not found in the form (boxes on screen: ${seenBoxes() || "none"})`;
+          did("state box not found, skipped");
         }
       }
-      did("state");
+      if (!stateNote) did("state");
       const city = find("city");
       if (!city) throw new Error("City: the box was not found in the form.");
       await setText("City", city, r.city);
@@ -370,7 +435,7 @@
     if (!(await waitFor(() => !save.disabled && save.getAttribute("aria-disabled") !== "true", TIMEOUTS.field))) {
       const why = formErrors();
       await cancelForm();
-      throw new Error(`The site form's SAVE button stayed disabled, so RTS did not accept the values.${why ? ` RTS says: ${why}` : ""}`);
+      throw new Error(`The site form's SAVE button stayed disabled, so RTS did not accept the values.${stateNote ? ` Likely cause: ${stateNote}.` : ""}${why ? ` RTS says: ${why}` : ""}`);
     }
     save.click();
     did("SAVE pressed once");
@@ -416,9 +481,7 @@
     add("form", "The form opens", formOpen());
     const boxes = [["siteName", "Site name"], ["siteType", "Site type"], ["address1", "Address line 1"], ["city", "City"], ["country", "Country"], ["zip", "Zip"], ["phone", "Phone"], ["fax", "Fax"], ["email", "Email"], ["status", "Status"]];
     for (const [id, label] of boxes) { const node = find(id); add(id, label, Boolean(node), node ? hitSelector(node) : ""); }
-    const stateList = find("stateSelect");
-    const stateBox = find("province");
-    const stateNode = stateList || stateBox;
+    const stateNode = findState("")?.node;
     add("state", "State (a list for the US, a box elsewhere)", Boolean(stateNode), stateNode ? hitSelector(stateNode) : "", stateNode ? "" : "Neither the list nor the box for the state is on screen (it can depend on the country).");
     const type = find("siteType");
     add("typeChoice", 'Site type offers "Primary HQ"', Boolean(type && optionFor(type, DEFAULTS.siteType)));

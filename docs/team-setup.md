@@ -183,3 +183,9 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
   - What was pointed at is saved in this browser and travels with **Export team defaults** (`siteSetup`), so everyone gets it from day one.
 - A failed Site now says where it stopped ("Done before this: Site section open; Add New Site pressed, form open; site name, site type").
 - Values typed by a try-run or by a run that failed are emptied when the form is put away, and text boxes the report does not fill are emptied before the next site, so nothing leaks into the next site.
+
+## 0.27.1
+
+- **Site: the State box.** A real run stopped at "State: neither a dropdown nor a box was found in the form" (after site name, site type, address and country were filled). The State box is now found by its name, by the words printed beside it ("State", "Province", "Region"), by the choice it offers (a dropdown that lists the state), or as a plain box; and its choices are waited for up to 9 seconds after the country is chosen (RTS loads them late). If no State box exists at all, the site is still tried (outside the US it is not needed); if RTS then refuses Save, the message says the State box was not found and lists the boxes that are on screen.
+- All other Site boxes are also found by their printed words when RTS gives them other names.
+- A site listed with only its street is recognised when the report gives the whole address (same street and same city).

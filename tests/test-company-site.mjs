@@ -269,3 +269,56 @@ test("values typed by a try-run, or by a run that failed, never end up in the ne
   await site.applySite({ city: "Austin", country: "United States", state: "California", address1: "1 Road" });
   assert.deepEqual([state.lastForm.email, state.lastForm.fax, state.lastForm.phone, state.lastForm.zip, state.lastForm.state, state.lastForm.city], ["", "", "", "", "California", "Austin"]);
 });
+
+// ---- the failure seen on the real RTS: "State: neither a dropdown nor a box was found in the form" ----
+test("a State dropdown with other words and another name, whose choices load a second after the country, is found and filled", async () => {
+  const { state } = setup({ slowStates: true, slowMs: 1000, stateLabel: "State / Province*", stateName: "site.stateProvinceCode" });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.lastForm.state, "Texas");
+});
+
+test("a State dropdown whose label is unknown is found by the choice it offers (Texas)", async () => {
+  const { state } = setup({ stateLabel: "Prefecture*", stateName: "x_12" });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.lastForm.state, "Texas");
+});
+
+test("when no State box exists at all and RTS then refuses Save, the message says the State box was not found and lists what is on screen", async () => {
+  const { doc } = setup();
+  doc.getElementById("addSite").addEventListener("click", () => doc.getElementById("stateRow")?.remove());
+  await assert.rejects(site.applySite(TEXAS), (error) => {
+    assert.match(error.message, /SAVE button stayed disabled/);
+    assert.match(error.message, /the State box was not found in the form \(boxes on screen: .*Site name.*City.*\)/);
+    assert.match(error.message, /Done before this:.*state box not found, skipped/);
+    return true;
+  });
+});
+
+test("outside the US a missing State box does not stop the site", async () => {
+  const { doc, state } = setup();
+  doc.getElementById("addSite").addEventListener("click", () => doc.getElementById("stateRow")?.remove());
+  const result = await site.applySite({ city: "Pune", country: "India", state: "Maharashtra", address1: "1 MG Road" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.saves, 1);
+});
+
+test("boxes are found by their printed words when RTS gives them other names", async () => {
+  const { doc, state } = setup();
+  for (const el of doc.querySelectorAll("#siteForm [name]")) el.setAttribute("name", `x_${Math.random().toString(36).slice(2, 7)}`);
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.deepEqual([state.lastForm.city, state.lastForm.zip, state.lastForm.phone, state.lastForm.email, state.lastForm.type, state.lastForm.status], ["Texas City", "77568", "281-941-6001", "info@lagoonfesttexas.com", "Primary HQ", "Current"]);
+});
+
+test("a site listed with only its street is still recognised when the report gives the whole address", async () => {
+  const { state } = setup({ existing: [{ name: "Texas City", address1: "12600 Crystal View Blvd.", city: "Texas City" }] });
+  const result = await site.applySite({ ...TEXAS, address1: "12600 Crystal View Blvd., Texas City, TX 77568" });
+  assert.equal(result.status, "skipped");
+  assert.equal(state.saves, 0);
+  // the same street name in another city is a new site
+  const other = setup({ existing: [{ name: "Houston", address1: "12600 Crystal View Blvd.", city: "Houston" }] });
+  assert.equal((await site.applySite({ ...TEXAS, address1: "12600 Crystal View Blvd., Texas City, TX 77568" })).status, "savedValueVerified");
+  assert.equal(other.state.saves, 1);
+});
