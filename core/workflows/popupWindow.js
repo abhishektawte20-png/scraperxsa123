@@ -387,8 +387,42 @@
     return { status: "saved", fieldRetained: retained };
   }
 
+  // Read-only ("Check mappings"): which parts of this window are found. Nothing is typed, ticked or saved.
+  async function checkWindow(job) {
+    const parts = [];
+    const add = (name, ok, note = "") => parts.push({ name, ok, note });
+    if (job.tree) {
+      await waitFor(() => treeShownAll(job.tree.expander?.selectors).length || treeShown(job.tree.leaf.selectors).length, Math.min(TIMEOUTS.fields, 4000));
+      const expanders = treeShownAll(job.tree.expander?.selectors);
+      add("+ buttons", expanders.length > 0, `${expanders.length} found`);
+      let leaves = treeShown(job.tree.leaf.selectors);
+      // Open branches (only the page's own + buttons, nothing is ticked) until a choice shows.
+      const tried = new Set();
+      for (let pass = 0; pass < 8 && !leaves.length; pass++) {
+        const next = treeShownAll(job.tree.expander?.selectors).find((e) => !tried.has(e));
+        if (!next) break;
+        tried.add(next);
+        next.click();
+        await wait(250);
+        leaves = treeShown(job.tree.leaf.selectors);
+      }
+      add("Choices (tick boxes)", leaves.length > 0, leaves.length ? `${leaves.length} found` : "none showed after opening branches");
+    } else {
+      await waitFor(() => (job.fields || []).every((field) => shownMatches(field.selectors).length), Math.min(TIMEOUTS.fields, 4000));
+      for (const field of job.fields || []) {
+        const n = shownMatches(field.selectors).length;
+        add(field.label || field.key || "Box", n > 0, n > 1 ? `${n} match; the first is used` : n ? "" : "not found in the window");
+      }
+    }
+    for (const button of job.preSave || []) add(`Press first: ${button.text || "button"}`, Boolean(findButton(button)));
+    add("Save button", Boolean(findButton(job.saveButton)));
+    window.setTimeout(() => window.close(), 150);
+    return { status: "checked", parts };
+  }
+
   // job: { replace, fields: [{ selectors, kind, value }], preSave: [button], saveButton }
   async function run(job) {
+    if (job.check) return checkWindow(job);
     if (job.tree) return runTree(job);
     const present = await waitFor(() => job.fields.every((field) => shownMatches(field.selectors).length), TIMEOUTS.fields);
     if (!present) throw new Error("The popup window opened, but the mapped fields were not found in it. Re-map the field.");

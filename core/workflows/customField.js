@@ -502,7 +502,88 @@
     return def.kind === "single" ? applySingle(def, record) : applyRecord(def, record);
   }
 
+  // ---- "Check mappings": is every part of this field's mapping on the page? Read-only: nothing is typed,
+  // ticked or saved. Windows and dialogs are opened and closed again. Returns { parts: [{ name, ok, note }],
+  // notOnScreen? } where notOnScreen means the section or tab holding the field is not showing. ----
+  const mk = (name, ok, note = "") => ({ name, ok, note });
+
+  async function checkHere(def) {
+    const sbd = globalThis.SXRTS.selectorBuilder;
+    if (def.tree) return globalThis.SXRTS.workflows.treePicker.check(def);
+    const opening = def.openButton?.text || "Opening";
+
+    if (def.window) {
+      let opener = null;
+      if (def.rowBy) {
+        const rows = shownIn([def.rowBy.rowSelector]);
+        if (!rows.length) return { notOnScreen: true, parts: [mk("Rows", false, "no rows found: open the section")] };
+        opener = rows.map((row) => rowOpener(def, row)).find((node) => node && !node.disabled) || null;
+        if (!opener) return { parts: [mk(`${opening} button`, true, "every row already has an entry, so no window could be opened to check the rest")], partial: true };
+      } else {
+        opener = sbd.resolveButtonByDefinition(def.openButton);
+        if (!opener) return { notOnScreen: true, parts: [mk(`${opening} button`, false, "not on this page")] };
+        if (opener.disabled) return { parts: [mk(`${opening} button`, false, "greyed out right now")] };
+      }
+      const tree = def.window.tree;
+      const job = {
+        check: true,
+        ...(tree ? { tree: { expander: tree.expander || null, leaf: tree.leaf } } : { fields: def.fields.map((f) => ({ selectors: f.selectors, kind: f.kind, label: f.label || f.key })) }),
+        preSave: def.window.preSave || [],
+        saveButton: def.saveButton
+      };
+      try {
+        const result = await runInWindow(opener, job);
+        return { parts: [mk(`${opening} button`, true), ...(result?.parts || [mk("Window", false, "it did not report back")])] };
+      } catch (error) {
+        return { parts: [mk(`${opening} button`, true), mk("Window opens", false, error.message)] };
+      }
+    }
+
+    if (def.openButton) {
+      const parts = [];
+      let weOpened = false;
+      try {
+        weOpened = await ensureOpen(def);
+        parts.push(mk(`${opening} button`, true));
+        for (const field of def.fields) parts.push(mk(field.label || field.key, shownControls(def, field).length > 0, shownControls(def, field).length ? "" : "not found in the opened form"));
+        parts.push(mk("Save button", Boolean(findButton(def, def.saveButton))));
+      } catch (error) {
+        return { notOnScreen: NOT_ON_SCREEN.test(String(error.message)), parts: [...parts, mk(`${opening} button`, false, error.message)] };
+      } finally {
+        if (weOpened) await closePopup(def);
+      }
+      return { parts };
+    }
+
+    // A form on the page itself.
+    const parts = [];
+    let missing = false;
+    for (const field of def.fields) {
+      const n = sbd.resolveAll(field.selectors).length;
+      if (!n) missing = true;
+      parts.push(mk(field.label || field.key, n > 0, n > 1 ? `${n} match; the first is used` : n ? "" : "not found"));
+    }
+    if (def.addButton) parts.push(mk("Add box / button", Boolean(sbd.resolveButtonByDefinition(def.addButton))));
+    parts.push(mk("Save button", Boolean(sbd.resolveButtonByDefinition(def.saveButton))));
+    return { parts, notOnScreen: missing };
+  }
+
+  // Tries the page as it is, then the other tabs of the profile, the way publishing does.
+  async function checkField(def) {
+    const attempt = (fn) => fn().catch((error) => ({ parts: [mk("Check", false, error.message)], notOnScreen: NOT_ON_SCREEN.test(String(error.message)) }));
+    let result = await attempt(() => checkHere(def));
+    const nav = globalThis.SXRTS.navigation;
+    if (result.notOnScreen && nav?.navigateToSection) {
+      for (const tab of ["Business Entity", "Company"]) {
+        await nav.navigateToSection(tab);
+        const again = await attempt(() => checkHere(def));
+        if (!again.notOnScreen) { result = again; break; }
+      }
+    }
+    return result;
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS };
+  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, checkField, rowsOf, TIMEOUTS };
 })();

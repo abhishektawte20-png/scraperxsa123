@@ -256,3 +256,25 @@ test("undo: read-back of an untick reports the box as not ticked", async () => {
   const result = await run(job("6.4.1 — IT Consulting and Outsourcing", { verifyOnly: true, untick: true }));
   assert.deepEqual(result, { status: "verified", checked: true }, "still ticked (nothing was undone yet)");
 });
+
+test("check job: reports the parts of the window and leaves everything alone (nothing ticked, nothing saved), then closes", async () => {
+  const { doc, state } = setup();
+  const result = await run(job("", { check: true }));
+  assert.equal(result.status, "checked");
+  assert.ok(result.parts.every((p) => p.ok), JSON.stringify(result.parts));
+  assert.deepEqual(result.parts.map((p) => p.name), ["+ buttons", "Choices (tick boxes)", "Save button"]);
+  assert.equal(state.saves, 0);
+  assert.deepEqual(ticked(doc).sort(), ["IT Consulting and Outsourcing"], "only the choice that was ticked before");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.ok(state.closed >= 1, "the window closes itself");
+});
+
+test("check job: a choice selector that matches nothing, and a missing Save button, are named", async () => {
+  setup();
+  const bad = job("", { check: true });
+  bad.tree.leaf.selectors = ["input.nothing"];
+  bad.saveButton = { selectors: ["#nope"], text: "Nope" };
+  const result = await run(bad);
+  assert.equal(result.parts.find((p) => p.name === "Choices (tick boxes)").ok, false);
+  assert.equal(result.parts.find((p) => p.name === "Save button").ok, false);
+});

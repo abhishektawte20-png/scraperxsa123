@@ -153,3 +153,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
   - Updating an existing site is not included yet (it needs RTS's edit form).
   - The 8 separate site mappings in earlier team defaults are no longer needed (they would have saved one site per field); they are removed from the shipped defaults, and a built-in Site always wins over a taught one.
 - **Output rules: "Applies to" is now built from the report's fields.** Employee count, address, city, state, country, postcode, phone, industry code, NAICS, verticals and every other field of the report (and any field you teach) can carry a rule, and a new field appears by itself. Existing rules keep working.
+
+## 0.24.0
+
+- **Check mappings** (button next to Field health). Looks on the open profile for every button, box, tick box and Save button the extension uses (your mappings, the team's, and the built-in ones including Site) and says for each part whether it is found, with a green / amber / red result per mapping and a "Copy report" for the developer. It **writes nothing**: no value is typed, nothing is ticked or saved. Windows and dialogs it needs (Industry, NAICS, Site, Social) are opened and closed again by themselves; a mapping whose section is not showing is looked for on the profile's other tabs, then the tab you were on is shown again. Run it before a batch of work to find a broken mapping early.
+- **Team defaults: the Industry code mapping no longer has a "press first" Save.** It pressed Save Changes twice (once as a "press first" button, once as the real Save), which could close the window under the script ("Frame with ID 0 was removed"). No code of the Industry flow changed.

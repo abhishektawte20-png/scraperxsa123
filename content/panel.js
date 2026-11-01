@@ -344,6 +344,7 @@
     const historyUi = globalThis.SXRTS.historyUi?.mount(shadow);
     const healthUi = globalThis.SXRTS.healthUi?.mount(shadow);
     const undoUi = globalThis.SXRTS.undoUi?.mount(shadow);
+    const checkUi = globalThis.SXRTS.checkUi?.mount(shadow);
     const feedbackUi = globalThis.SXRTS.feedbackUi?.mount(shadow, {
       getContext: () => {
         refreshReport();
@@ -354,6 +355,8 @@
     historyButton.addEventListener("click", () => historyUi?.open());
     const healthButton = element("button", { className: "btn secondary", text: "Field health", type: "button", tip: "How often each field is saved or fails, the most common errors, and the weekly digest that goes to the team channel." });
     healthButton.addEventListener("click", () => healthUi?.open());
+    const checkButton = element("button", { className: "btn secondary", text: "Check mappings", type: "button", tip: "Looks on the open profile for every button, box, tick box and Save button the extension uses, and says which are found. Writes nothing." });
+    checkButton.addEventListener("click", () => checkUi?.open());
     const feedbackButton = element("button", { className: "btn secondary", text: "Feedback", type: "button", tip: "Sends the issue report to the person who maintains this tool, in one click." });
     feedbackButton.addEventListener("click", () => feedbackUi?.open());
     const gameUi = globalThis.SXRTS.gameUi?.mount(shadow);
@@ -362,7 +365,7 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, healthButton, feedbackButton, gameButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, healthButton, checkButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 

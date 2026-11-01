@@ -233,7 +233,31 @@
     return { status: "savedStateVerified", name: r.siteName, detail: `Saved. The Site section does not list "${r.address1 || r.city}" on the page, so it could not be read back; check the Site list in RTS.` };
   }
 
+  // Read-only ("Check mappings"): the Site form is opened, every box is looked for, and the form is cancelled.
+  async function check() {
+    const parts = [];
+    const add = (name, ok, note = "") => parts.push({ name, ok, note });
+    const opener = await reveal();
+    if (!opener && !formOpen()) return { notOnScreen: true, parts: [{ name: "Add New Site button", ok: false, note: "not on this page" }] };
+    add("Add New Site button", true);
+    let weOpened = false;
+    if (!formOpen()) {
+      opener.click();
+      weOpened = true;
+      if (!(await waitFor(formOpen, TIMEOUTS.open))) { add("Site form opens", false, "the form did not open"); return { parts }; }
+    }
+    for (const [name, label] of [["siteName", "Site name"], ["siteType", "Site type"], ["address1", "Address line 1"], ["city", "City"], ["country", "Country"], ["zip", "Zip"], ["phone", "Phone"], ["fax", "Fax"], ["email", "Email"], ["status", "Status"]]) add(label, Boolean(find(name)));
+    add("State (list or box)", Boolean(find("stateSelect") || find("province")));
+    const type = find("siteType");
+    add('Site type offers "Primary HQ"', Boolean(type && optionFor(type, DEFAULTS.siteType)));
+    const status = find("status");
+    add('Status offers "Current"', Boolean(status && optionFor(status, DEFAULTS.status)));
+    add("SAVE button", Boolean(findButton(SAVE.selectors, SAVE.text)));
+    if (weOpened) await cancelForm();
+    return { parts };
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.companySite = { applySite, TIMEOUTS, DEFAULTS, optionFor, alreadyListed };
+  globalThis.SXRTS.workflows.companySite = { applySite, check, reveal, TIMEOUTS, DEFAULTS, optionFor, alreadyListed };
 })();

@@ -323,6 +323,37 @@
     };
   }
 
+  // Read-only ("Check mappings"): is every part of the NAICS mapping found? The dialog is opened and closed
+  // again with Cancel; nothing is chosen or saved.
+  async function check(def) {
+    const parts = [];
+    const add = (name, ok, note = "") => parts.push({ name, ok, note });
+    const opener = findOpener(def);
+    if (!opener) return { notOnScreen: true, parts: [{ name: `${def.openButton.text || "Add"} button`, ok: false, note: "not on this page" }] };
+    add(`${def.openButton.text || "Add"} button`, true);
+    add("Section's Save Changes", Boolean(scopeFor(opener, def.tree.sectionSave)), "beside the Add button");
+    let weOpened = false;
+    if (!expanders(def).length) {
+      if (!isEnabled(opener)) { add("Dialog opens", false, "the Add button is disabled right now"); return { parts }; }
+      opener.click();
+      weOpened = true;
+      if (!(await waitFor(() => expanders(def).length > 0, TIMEOUTS.open))) { add("Dialog opens", false, "no + buttons showed after pressing the button"); return { parts }; }
+    }
+    add("+ buttons", expanders(def).length > 0, `${expanders(def).length} found`);
+    await revealLeaf({ tree: { expander: def.tree.expander } });
+    add("Code radio buttons", radios(def).length > 0, `${radios(def).length} found`);
+    add("Dialog's Save button", Boolean(findDialogSave(def)));
+    const cancel = Array.from(document.querySelectorAll(BUTTONS)).find((n) => isShown(n) && /^(cancel|close)$/i.test(labelOf(n)));
+    if (weOpened || expanders(def).length) {
+      if (cancel) {
+        cancel.click();
+        const closed = await waitFor(() => !expanders(def).length, TIMEOUTS.save);
+        if (!closed) add("Dialog closes with Cancel", false, "it stayed open: close it yourself");
+      } else add("Dialog closes with Cancel", false, "no Cancel button found: close the dialog yourself");
+    }
+    return { parts };
+  }
+
   // ---- one-click mapping ----
   // Starting from the Add NAICS button, opens the dialog and finds every other part by itself: a + button,
   // a code's radio button, the dialog's Save, and the section's Save Changes beside the Add button.
@@ -404,5 +435,5 @@
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.treePicker = { apply, detect, findRadio, revealLeaf, scopeFor, isOpen: (def) => expanders(def).length > 0, SECTORS, TIMEOUTS };
+  globalThis.SXRTS.workflows.treePicker = { apply, check, detect, findRadio, revealLeaf, scopeFor, isOpen: (def) => expanders(def).length > 0, SECTORS, TIMEOUTS };
 })();
