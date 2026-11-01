@@ -247,6 +247,10 @@ async function runInWindow(tabId, job) {
 async function runInWindowOnce(tabId, job) {
   lastStage.delete(tabId);
   stageTrail.delete(tabId);
+  // RTS's own message boxes in the window (for example the confirmation it asks before saving an industry group) are
+  // answered at once, so nobody has to be at the computer. Never fatal: without it the boxes simply wait for a person.
+  await chrome.scripting.executeScript({ target: { tabId }, files: [DIALOG_GUARD], world: "MAIN" }).catch(() => {});
+  await chrome.scripting.executeScript({ target: { tabId }, func: () => document.documentElement.setAttribute("data-sx-run", "1") }).catch(() => {});
   await chrome.scripting.executeScript({ target: { tabId }, files: WINDOW_RUN_FILES });
   try {
     const [injection] = await chrome.scripting.executeScript({
@@ -264,8 +268,10 @@ async function runInWindowOnce(tabId, job) {
     }
     return injection.result;
   } catch (error) {
-    // The page may close its own window as soon as Save is accepted.
-    if (WENT_AWAY_STAGES.includes(lastStage.get(tabId))) return { status: "windowClosedAfterSave" };
+    // The page may close its own window as soon as Save is accepted. Only an error that says the window or frame went
+    // away counts as that; a real message from the job (for example "RTS did not accept the save") is passed on.
+    const wentAway = /Frame with ID|frame was removed|No tab with id|tab was closed|was removed|Cannot access|detached|No frame/i.test(String(error?.message));
+    if (wentAway && WENT_AWAY_STAGES.includes(lastStage.get(tabId))) return { status: "windowClosedAfterSave" };
     throw error;
   }
 }

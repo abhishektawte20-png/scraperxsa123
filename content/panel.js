@@ -1091,6 +1091,7 @@
       try { await globalThis.SXRTS.navigation?.expandEverything(); } catch { /* a page without the control simply carries on */ }
       // From here until the results, a message box from RTS is answered at once (and written down) instead of waiting for OK.
       progress.start(selected.length);
+      globalThis.SXRTS.dialogLog?.begin();
 
       let applied = 0, skipped = 0, failed = 0;
       const allResults = {};
@@ -1177,8 +1178,6 @@
       const isWindowField = (entry) => { const d = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey); return Boolean(d && (d.window || d.tree)); };
       const customEntries = selected.filter((entry) => entry.action.customKey);
       for (const entry of customEntries.filter(isWindowField)) await publishCustom(entry);
-      // The message-box guard starts after the window fields, which run exactly as they always did.
-      globalThis.SXRTS.dialogLog?.begin();
 
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {

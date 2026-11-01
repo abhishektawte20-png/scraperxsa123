@@ -99,7 +99,7 @@ function setup({ dynamic = false, closeOnSave = false, saveNeverSettles = false 
     if (closeOnSave) doc.getElementById("root").remove();
     if (!saveNeverSettles) save.disabled = true;
   });
-  Object.assign(globalThis.SXRTS.workflows.popupWindow.TIMEOUTS, { fields: 400, button: 400, settle: 400, after: 20, branch: 120, poll: 5, search: 5000 });
+  Object.assign(globalThis.SXRTS.workflows.popupWindow.TIMEOUTS, { fields: 400, button: 400, settle: 400, after: 20, branch: 120, poll: 5, search: 5000, afterSave: 60 });
   return { doc, state };
 }
 const run = (override) => globalThis.SXRTS.workflows.popupWindow.run(override);

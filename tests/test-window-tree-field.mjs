@@ -58,6 +58,8 @@ function setup(replyFor) {
 }
 const run = (record) => globalThis.SXRTS.workflows.customField.applyCustomField(treeDef, { action: "addIfMissing", value: "6.5.1 — Application Software", ...record });
 const result = (r) => ({ type: "result", result: r });
+// The window says "saved"; the page then opens it again and reads the tick back, which is the proof.
+const savedThenVerified = (job) => (job.verifyOnly ? result({ status: "verified", checked: true }) : result({ status: "saved", fieldRetained: true }));
 
 test("a tree definition is valid, and one with no checkbox picked or the wrong kind is not", () => {
   assert.deepEqual(cf.validateDefinition(treeDef), []);
@@ -70,11 +72,12 @@ test("a tree definition is valid, and one with no checkbox picked or the wrong k
 });
 
 test("the window gets the tree, the report's value and the Save button, and a read-back tick is a verified value", async () => {
-  const state = setup(() => result({ status: "saved", fieldRetained: true }));
+  const state = setup(savedThenVerified);
   const out = await run();
   assert.deepEqual(out, { status: "savedValueVerified", name: "industryTagging" });
-  assert.equal(state.opened, 1);
-  assert.equal(state.jobs.length, 1);
+  assert.equal(state.opened, 2, "opened once to save and once more to read the tick back");
+  assert.equal(state.jobs.length, 2);
+  assert.equal(state.jobs[1].verifyOnly, true);
   assert.deepEqual(state.jobs[0], { tree: { expander: treeDef.window.tree.expander, leaf: treeDef.window.tree.leaf }, value: "6.5.1 — Application Software", preSave: [], saveButton: treeDef.saveButton });
 });
 
@@ -91,11 +94,12 @@ test("a window that goes away before reporting is opened again and the whole job
   let first = true;
   const state = setup((job) => {
     if (first) { first = false; return { type: "error", error: "Frame with ID 0 was removed." }; }
-    return result({ status: "saved", fieldRetained: true });
+    return savedThenVerified(job);
   });
   assert.equal((await run()).status, "savedValueVerified");
-  assert.equal(state.jobs.length, 2);
+  assert.equal(state.jobs.length, 3);
   assert.equal(state.jobs[1].verifyOnly, undefined, "the full job is repeated, nothing is assumed saved");
+  assert.equal(state.jobs[2].verifyOnly, true);
 });
 
 test("a window that keeps going away is an error after 3 tries, never a success", async () => {
@@ -122,7 +126,7 @@ test("undo: the job asks for an untick, and success needs the read-back to show 
 });
 
 test("a normal publish never sends an untick", async () => {
-  const state = setup((job) => result({ status: "saved", fieldRetained: true }));
+  const state = setup(savedThenVerified);
   await run();
   assert.equal(state.jobs[0].untick, undefined);
 });
@@ -146,7 +150,7 @@ test("errors from the window (not found, ambiguous, save stuck) are passed throu
 });
 
 test("no value proposed is a skip and the window is never opened", async () => {
-  const state = setup(() => result({ status: "saved", fieldRetained: true }));
+  const state = setup(savedThenVerified);
   const out = await run({ value: "" });
   assert.equal(out.status, "skipped");
   assert.equal(state.opened, 0);
@@ -158,7 +162,7 @@ test("a window that ends without any result is a clear error, never a crash on n
 });
 
 test("the opening button sits inside a closed 'Industries and Verticals' section: the section is opened first, then the window", async () => {
-  const state = setup(() => result({ status: "saved", fieldRetained: true }));
+  const state = setup(savedThenVerified);
   // the button is not on the page until the section's bar is clicked, as on RTS
   document.getElementById("addIndustry").remove();
   document.body.insertAdjacentHTML("beforeend", '<div id="bar">Industries and Verticals</div><div id="body"></div>');
@@ -171,11 +175,16 @@ test("the opening button sits inside a closed 'Industries and Verticals' section
   const out = await run();
   assert.equal(out.status, "savedValueVerified");
   assert.equal(barClicks, 1, "the section was opened once");
-  assert.equal(state.opened, 1);
+  assert.equal(state.opened, 2, "once to save, once to read the tick back");
 });
 
 test("a section that is already open is not touched, and a button that never appears is an error that says so", async () => {
-  setup(() => result({ status: "saved", fieldRetained: true }));
+  setup(savedThenVerified);
   document.getElementById("addIndustry").remove();
   await assert.rejects(run(), /was not found on this page, even after opening the "Industries and Verticals" section/);
+});
+
+test("a window that says 'saved' is never trusted on its own: if the read-back shows the choice NOT ticked, it is an error", async () => {
+  setup((job) => (job.verifyOnly ? result({ status: "verified", checked: false }) : result({ status: "saved", fieldRetained: true })));
+  await assert.rejects(run(), /the choice is not ticked/);
 });

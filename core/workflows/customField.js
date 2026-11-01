@@ -471,8 +471,8 @@
     if (result.status === "skipped") return { status: "skipped", reason: result.reason };
 
     if (tree) {
-      if (result.fieldRetained === true) return { status: "savedValueVerified", name: def.key };
-      // The window closed itself (or could not be read): open it again and read the tick back.
+      // What the window shows right after Save is not proof: RTS may not have received the save yet (or at all). The
+      // window is always opened again and the tick read back from what RTS loads, which is the only real proof.
       if (result.status !== "saved" && result.status !== "windowClosedAfterSave") throw new Error(`${name}: the window ended unexpectedly (${result.status}).`);
       const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
       if (!again || again.disabled) return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };

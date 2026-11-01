@@ -11,7 +11,7 @@
 (() => {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   // Exposed so tests do not have to sit through the real waits.
-  const TIMEOUTS = { fields: 12000, button: 8000, settle: 8000, after: 700, branch: 1500, poll: 40, search: 60000 };
+  const TIMEOUTS = { fields: 12000, button: 8000, settle: 8000, after: 700, branch: 1500, poll: 40, search: 60000, afterSave: 15000 };
 
   async function waitFor(check, timeout) {
     const deadline = Date.now() + timeout;
@@ -387,7 +387,23 @@
     const settled = await waitFor(() => save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
     if (!settled) throw new Error("Save did not complete in the window: the Save button stayed enabled.");
 
-    // Still here? Then the tick can be read straight away; if the window closed itself, the page reopens it to check.
+    // Save greys out at once, but RTS is only starting: it asks the server to validate, then posts the save, and
+    // closes the window itself half a second after that succeeded. Closing the window here would cut the save off
+    // (RTS would never receive it), so the window is left alone until RTS closes it, or it is clear it will not.
+    // A Save that comes back on means RTS refused it.
+    const until = Date.now() + TIMEOUTS.afterSave;
+    while (Date.now() < until) {
+      await wait(100);
+      if (!save.isConnected || !isShown(save)) break;
+      if (!save.disabled) {
+        let said = "";
+        try { said = JSON.parse(document.documentElement.getAttribute("data-sx-dialogs") || "[]").map((entry) => `"${entry.message}"`).join(", "); } catch { /* no log */ }
+        throw new Error(`RTS did not accept the save: the Save button came back on after it was pressed.${said ? ` RTS said: ${said}.` : " Read the message RTS showed in the window."}`);
+      }
+    }
+
+    // Still here: the window did not close itself. Whether the choice reached RTS is decided by the page, which opens
+    // the window again and reads the tick back; this note is only what this window shows.
     const retained = box.isConnected ? isTicked(box, job.tree.leaf) === wantTick : null;
     window.setTimeout(() => window.close(), 250);
     return { status: "saved", fieldRetained: retained };

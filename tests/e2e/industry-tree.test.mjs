@@ -373,7 +373,7 @@ test("the open window holds an old page (not the tree): it is closed and a clean
   assert.equal(result.saves, 1);
 });
 
-test("RTS asks 'Data is not saved.' before opening the window: the window fields run before the message-box guard starts, and the choice is still ticked and saved", { timeout: 150000 }, async () => {
+test("RTS asks 'Data is not saved.' before opening the window: the message-box guard answers it, and the choice is still ticked and saved", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.2 — Clothing", { auto: true, guard: true });
   assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
