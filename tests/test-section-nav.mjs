@@ -46,17 +46,38 @@ test("a title that is not on the page is ignored, and a longer text that merely 
   assert.ok(doc);
 });
 
-test("expandEverything opens the sections of BOTH tabs, never collapses an open one, and puts the page back where it was", async () => {
+function tabs() {
   const doc = setup(`<button class="navigation__button" id="be">Business Entity</button><button class="navigation__button" id="co">Company</button>
-    <div id="tabBE"><a id="expBE" href="#">Expand</a></div><div id="tabCO" style="display:none"><a id="expCO" href="#">Expand</a></div>`);
+    <div id="tabBE"><input id="webURL"><a id="expBE" href="#">Expand</a></div><div id="tabCO" style="display:none"><div id="containerIndustryGroup"></div><a id="expCO" href="#">Expand</a></div>`);
   const open = { be: false, co: false };
   const show = (which) => { doc.getElementById("tabBE").style.display = which === "be" ? "block" : "none"; doc.getElementById("tabCO").style.display = which === "co" ? "block" : "none"; };
   doc.getElementById("be").addEventListener("click", () => show("be"));
   doc.getElementById("co").addEventListener("click", () => show("co"));
   for (const [id, key] of [["expBE", "be"], ["expCO", "co"]]) doc.getElementById(id).addEventListener("click", (event) => { event.preventDefault(); open[key] = true; event.currentTarget.textContent = "Collapse"; });
+  return { doc, open, show, front: () => (doc.getElementById("tabBE").style.display === "none" ? "co" : "be") };
+}
+
+test("expandEverything opens the sections of BOTH tabs, never collapses an open one, and puts the tab that was in front back in front", async () => {
+  const t = tabs();
   assert.equal(await nav().expandEverything(), 2);
-  assert.deepEqual(open, { be: true, co: true });
-  // a second time: the links now say Collapse, so nothing is pressed and nothing is collapsed
+  assert.deepEqual(t.open, { be: true, co: true });
+  assert.equal(t.front(), "be", "the Business Entity tab was in front at the start, so it is in front again");
   await nav().expandEverything();
-  assert.deepEqual(open, { be: true, co: true });
+  assert.deepEqual(t.open, { be: true, co: true });
+  // started on Company: ends on Company
+  t.show("co");
+  await nav().expandEverything();
+  assert.equal(t.front(), "co");
+});
+
+test("showTab brings a tab in front only when it is not, so each group of fields is published with its own tab shown", async () => {
+  const t = tabs();
+  assert.equal(await nav().showTab("Business Entity"), true);
+  assert.equal(t.front(), "be");
+  assert.equal(await nav().showTab("Company"), true);
+  assert.equal(t.front(), "co");
+  assert.equal(nav().currentTab(), "Company");
+  assert.equal(await nav().showTab("Company"), true, "already in front: nothing is clicked");
+  assert.equal(await nav().showTab("Business Entity"), true);
+  assert.equal(nav().currentTab(), "Business Entity");
 });

@@ -29,7 +29,7 @@
   // do not have to sit through the real waits.
   // Sections of the Company tab whose bar is opened when a field's opening button is missing.
   const SECTION_TITLES = ["Industries and Verticals", "Industry Group", "Industry Tagging"];
-  const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000, retryPause: 1200 };
+  const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000, retryPause: 1200, enable: 8000 };
 
   // jsdom and real pages both: hidden by the attribute, display:none or
   // visibility:hidden on the element or any ancestor.
@@ -410,6 +410,7 @@
       }
       if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page, even after opening the "Industries and Verticals" section. Open the right tab/section, or re-map the field.`);
     }
+    if (opener.disabled) await waitFor(() => !opener.disabled, TIMEOUTS.enable);
     if (opener.disabled) throw new Error(`The button that opens the popup window for ${def.label} is disabled right now.`);
 
     const tree = def.window.tree;

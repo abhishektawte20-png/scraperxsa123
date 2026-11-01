@@ -1090,7 +1090,6 @@
       // Open every section of the current tab once, so a field is not missed only because its section is collapsed.
       try { await globalThis.SXRTS.navigation?.expandEverything(); } catch { /* a page without the control simply carries on */ }
       // From here until the results, a message box from RTS is answered at once (and written down) instead of waiting for OK.
-      globalThis.SXRTS.dialogLog?.begin();
       progress.start(selected.length);
 
       let applied = 0, skipped = 0, failed = 0;
@@ -1178,10 +1177,13 @@
       const isWindowField = (entry) => { const d = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey); return Boolean(d && (d.window || d.tree)); };
       const customEntries = selected.filter((entry) => entry.action.customKey);
       for (const entry of customEntries.filter(isWindowField)) await publishCustom(entry);
+      // The message-box guard starts after the window fields, which run exactly as they always did.
+      globalThis.SXRTS.dialogLog?.begin();
 
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {
         progress.doing("Name variations");
+        await globalThis.SXRTS.navigation?.showTab("Business Entity");
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         try {
@@ -1200,6 +1202,7 @@
       const generalEntries = selected.filter((entry) => generalJsonPaths.includes(entry.action.jsonPath));
       if (generalEntries.length) {
         progress.doing("Website, email and research notes");
+        await globalThis.SXRTS.navigation?.showTab("Business Entity");
         const fields = {};
         const validEntries = [];
         for (const entry of generalEntries) {
@@ -1246,6 +1249,7 @@
       const sicEntries = selected.filter((entry) => entry.action.jsonPath === "company.sicCodes");
       for (const entry of sicEntries) {
         progress.doing("SIC codes");
+        await globalThis.SXRTS.navigation?.showTab("Company");
         const value = validatedValueFor(entry);
         if (value === undefined) continue;
         try {
@@ -1267,6 +1271,7 @@
       const hqFallback = Boolean(siteRegionalBox.checked);
       async function publishSite(entries, record) {
         progress.doing("Site (opens the form, fills it, saves once)");
+        await globalThis.SXRTS.navigation?.showTab("Company");
         const statusOf = (result) => (result.status === "failed" ? "failed" : result.status === "skipped" ? "skipped" : "savedValueVerified");
         try {
           const result = await globalThis.SXRTS.workflows.companySite.applySite(record, { addAnyway, hqFallback });
@@ -1311,6 +1316,8 @@
         if (value === undefined) return;
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
         progress.doing(def?.label || entry.action.section || "Mapped field");
+        // The tab this field lives on is put in front first (names, website, social media, start date: Business Entity).
+        await globalThis.SXRTS.navigation?.showTab(/^businessEntity\.|^extras\.startDate$/.test(entry.action.jsonPath) ? "Business Entity" : "Company");
         if (!def) {
           failed++; setRowStatus(entry.action.actionId, "failed", "This taught field no longer exists.");
           recordResult(entry.action.jsonPath, { status: "error", error: "This taught field no longer exists." });

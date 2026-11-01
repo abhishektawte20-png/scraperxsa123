@@ -285,7 +285,9 @@
 
     // The dialog may already be open (left open by the researcher).
     if (!expanders(def).length) {
-      if (!isEnabled(opener)) throw new Error(`The "${def.openButton.text || "Add"}" button is disabled right now.`);
+      // A button that is greyed out for a moment (RTS is still saving the section) is waited for, not given up on.
+      if (!isEnabled(opener)) await waitFor(() => isEnabled(opener), 8000);
+      if (!isEnabled(opener)) throw new Error(`The "${def.openButton.text || "Add"}" button is disabled right now, even after waiting 8 seconds. Something else in the section may still be unsaved: look at the section in RTS.`);
       opener.click();
       if (!(await waitFor(() => expanders(def).length > 0, TIMEOUTS.open))) {
         throw new Error(`The NAICS dialog did not open after clicking "${def.openButton.text || "the button"}".`);

@@ -253,3 +253,9 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 ## 0.29.3
 
 - **"The button that opens the popup window for Industry code was not found."** The Industry button sits inside the "Industries and Verticals" section. Until 0.29.1 that section happened to be opened by the SIC step, which ran first; 0.29.2 ran the window fields first, so the section was still closed. A mapped field that opens a window now opens its section itself when the button is missing (and never collapses anything). No re-mapping is needed.
+
+## 0.29.4
+
+- **Business Entity fields "not found" (website, email, research notes).** Found from the issue report: only the tab in front has its fields on screen, and 0.29.1's "expand both tabs" left the Company tab in front, so every Business Entity field was hidden. Now (a) the tab that was in front is put back after expanding, and (b) every group of fields is published with its own tab shown: name variations, website, email, notes, social media and start date with Business Entity; SIC, Industry, NAICS, keywords, descriptions, Site and employee count with Company.
+- **Industry window.** The message-box guard now starts after the window fields (Industry, NAICS), so those run exactly as they did when Industry last worked.
+- **Greyed-out buttons.** "Add NAICS" / window-opening buttons that are greyed out for a moment are waited for (up to 8 s) instead of failing at once; the error now says to look for something unsaved in the section.

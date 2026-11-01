@@ -87,24 +87,47 @@
     return true;
   }
 
+  // The two tabs of a profile. Only the tab being shown has its fields on screen, so each group of fields is
+  // published with its own tab in front: "Business Entity" (names, website, email, notes, social media, start date) or
+  // "Company" (industry, SIC, NAICS, keywords, descriptions, sites, employees).
+  const TAB_MARKERS = {
+    "Business Entity": ["#webURL", 'input[name="formalNameVariations"]', "#businessEntity\\.entityName"],
+    Company: ["#containerIndustryGroup", 'input[placeholder="Enter or paste keywords"]']
+  };
+  const tabShown = (name) => (TAB_MARKERS[name] || []).some((selector) => { try { return Array.from(document.querySelectorAll(selector)).some(isShown); } catch { return false; } });
+  const currentTab = () => ["Business Entity", "Company"].find(tabShown) || null;
+
+  // Brings a tab to the front (only when it is not already) and opens its sections. Returns true when its fields are on screen.
+  async function showTab(name) {
+    if (tabShown(name)) return true;
+    const button = Array.from(document.querySelectorAll("button.navigation__button")).find((btn) => btn.textContent.includes(name));
+    if (!button) return false;
+    button.click();
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && !tabShown(name)) await wait(60);
+    await expandAll();
+    return tabShown(name);
+  }
+
   // Opens every section of BOTH tabs (Business Entity and Company), so a control is never missing only because its
-  // section was collapsed or its tab was not the one being shown. "Expand" is only pressed where it says Expand, so a
-  // tab that is already open is never collapsed. The page is scrolled back to where it was.
+  // section was collapsed. "Expand" is only pressed where it says Expand, so nothing already open is collapsed.
+  // The tab that was in front at the start is put back in front at the end.
   async function expandEverything() {
+    const start = currentTab();
     const startY = window.scrollY || 0;
     let opened = 0;
     for (const name of ["Business Entity", "Company"]) {
       const button = Array.from(document.querySelectorAll("button.navigation__button")).find((btn) => btn.textContent.includes(name));
       if (!button) continue;
-      button.click();
-      await wait(300);
+      if (!tabShown(name)) { button.click(); await wait(300); }
       if (await expandAll()) opened += 1;
     }
     if (!opened) await expandAll();
+    if (start && !tabShown(start)) await showTab(start);
     try { window.scrollTo(0, startY); } catch { /* a page that cannot scroll simply stays */ }
     return opened;
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.navigation = { expandEverything, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
+  globalThis.SXRTS.navigation = { expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
 })();
