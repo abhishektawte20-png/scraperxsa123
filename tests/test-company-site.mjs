@@ -458,3 +458,42 @@ test("the new site is recognised in the list by its name appearing once more, ev
   assert.equal(result.status, "savedValueVerified");
   assert.equal(state.sites.length, 2);
 });
+
+// ---- the "(Format)" links beside Zip, Phone and Fax ----
+test("the Format links of the boxes that hold a value are pressed before SAVE (an empty Fax is skipped), and a value RTS reformats is kept as reformatted", async () => {
+  const { state } = setup({ formatMode: "reformat" });
+  const result = await site.applySite({ ...TEXAS, phone: "(281) 941-6001" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.deepEqual(Array.from(state.formatClicks), ["Zip:77568", "Phone:(281) 941-6001"]);
+  assert.equal(state.lastForm.phone, "281-941-6001", "the value RTS gave back is the one saved");
+  assert.ok(result.trace.some((t) => /Format pressed for Phone: "\(281\) 941-6001" became "281-941-6001"/.test(t)));
+});
+
+test("a value RTS marks as wrong after Format is emptied, the site is saved without it, and the result says so", async () => {
+  const { state } = setup({ formatMode: "mark" });
+  const result = await site.applySite({ ...TEXAS, phone: "941 6001" });
+  assert.equal(state.saves, 1);
+  assert.equal(state.lastForm.phone, "", "the wrong phone was left out");
+  assert.equal(state.lastForm.zip, "77568", "the good zip was kept");
+  assert.equal(result.status, "savedStateVerified");
+  assert.match(result.note, /Saved Texas City without Phone \(941 6001\)/);
+  assert.ok(result.trace.some((t) => /RTS marked "941 6001" wrong, so it was emptied/.test(t)));
+});
+
+test("when SAVE does nothing and RTS says nothing, zip, phone and fax are emptied, SAVE is pressed once more, and the site is still added", async () => {
+  const { state } = setup({ silentFailWith: "Phone" });
+  const result = await site.applySite(TEXAS);
+  assert.equal(state.saves, 1);
+  assert.equal(state.lastForm.phone, "");
+  assert.equal(state.lastForm.zip, "", "zip is left out too: all three format-checked boxes");
+  assert.equal(state.lastForm.email, "info@lagoonfesttexas.com", "the other boxes are kept");
+  assert.match(result.note, /without Zip \(77568\), Phone \(281-941-6001\)/);
+  assert.ok(result.trace.some((t) => /SAVE did nothing; .* emptied and SAVE pressed a second time/.test(t)));
+});
+
+test("a form with no Format links is filled and saved as before", async () => {
+  const { state, doc } = setup();
+  for (const link of doc.querySelectorAll(".formatZip, .formatPhone")) link.remove();
+  assert.equal((await site.applySite(TEXAS)).status, "savedValueVerified");
+  assert.equal(state.lastForm.phone, "281-941-6001");
+});

@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false, rejectRed: false, needsKeyup: false, previewRow: false }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false, rejectRed: false, needsKeyup: false, previewRow: false, formatMode: "", silentFailWith: "" }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -28,9 +28,9 @@
       '<tr><td>City*</td><td><input type="text"' + nm("site.city") + '></td></tr>',
       '<tr><td>Country*</td><td><select' + nm("site.countryCode.id") + '>' + opt(COUNTRIES) + '</select></td></tr>',
       '<tr id="stateRow"><td>' + o.stateLabel + '</td><td><select id="stateSel"' + (o.stateName ? ' name="' + o.stateName + '"' : "") + '>' + opt(STATES) + '</select><input type="text" id="provinceInput"' + nm("site.province") + ' style="display:none"></td></tr>',
-      '<tr><td>Zip <a>(Format)</a></td><td><input type="text"' + nm("site.zip") + '></td></tr>',
-      '<tr><td>Phone <a>(Format)</a></td><td><input type="text"' + nm("site.phone") + '></td></tr>',
-      '<tr><td>Fax <a>(Format)</a></td><td><input type="text"' + nm("site.fax") + '></td></tr>',
+      '<tr><td>Zip <span class="formatZip text_link">(Format)</span></td><td><input type="text"' + nm("site.zip") + '></td></tr>',
+      '<tr><td>Phone <span class="formatPhone text_link">(Format)</span></td><td><input type="text"' + nm("site.phone") + '></td></tr>',
+      '<tr><td>Fax <span class="formatPhone text_link">(Format)</span></td><td><input type="text"' + nm("site.fax") + '></td></tr>',
       '<tr><td>Email</td><td><input type="text"' + nm("site.coEmailAddr") + '></td></tr>',
       '<tr><td>Status*</td><td><select' + nm("site.siteStatus.id") + '>' + opt(["", "Current", "Former"]) + '</select></td></tr>',
       o.previewRow ? '<tr><td><b>Address Preview</b></td><td id="addrPreview"></td></tr>' : "",
@@ -74,6 +74,20 @@
       if (o.needsKeyup) ok = ok && keyed[field("Site name*").name || field("Site name*").id || "INPUT"] && keyed[field("City*").name || field("City*").id || "INPUT"];
       $("saveSiteInfoButton").disabled = !ok;
     }
+    // The "(Format)" links: "reformat" rewrites a phone/fax to 281-941-6001; "mark" flags a value that is not in that shape.
+    state.formatClicks = [];
+    Array.prototype.forEach.call(form.querySelectorAll(".formatZip, .formatPhone"), function (link) {
+      link.addEventListener("click", function () {
+        var box = link.closest("tr").querySelector("input");
+        state.formatClicks.push(link.closest("tr").firstElementChild.getAttribute("data-l").trim().split(" ")[0] + ":" + box.value);
+        var digits = box.value.replace(/\D/g, "");
+        if (o.formatMode === "reformat" && link.className.indexOf("formatPhone") >= 0 && digits.length === 10) box.value = digits.slice(0, 3) + "-" + digits.slice(3, 6) + "-" + digits.slice(6);
+        if (o.formatMode === "mark" && box.value && !/^\d{3}-\d{3}-\d{4}$|^\d{5}$/.test(box.value)) {
+          box.setAttribute("aria-invalid", "true");
+          if (!box.parentElement.querySelector("span")) box.parentElement.insertAdjacentHTML("beforeend", '<span style="color: rgb(200, 30, 30)">Invalid format</span>');
+        }
+      });
+    });
     // Like RTS: the form reacts to KEYS (it builds the Address Preview and wakes Save from them), not to "input" alone.
     var keyed = {};
     if (o.needsKeyup) {
@@ -120,6 +134,7 @@
         phone.removeAttribute("aria-invalid");
         var old = phone.parentElement.querySelector("span"); if (old) old.remove();
       }
+      if (o.silentFailWith && field(o.silentFailWith).value) return; // Save does nothing at all while that box holds a value
       if (o.rejectSave) return;
       if (o.rejectSoftly) { $("saveSiteInfoButton").disabled = true; form.insertAdjacentHTML("beforeend", '<div class="errorMsg">Phone number format is invalid</div>'); return; }
       var us = field("Country*").value === "United States";

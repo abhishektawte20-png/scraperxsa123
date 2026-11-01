@@ -11,7 +11,7 @@
  *   - If the form ends up with an error, it is cancelled so a half-filled form is never left behind.
  */
 (() => {
-  const TIMEOUTS = { open: 4000, field: 1500, settle: 20000, list: 3000, poll: 40, section: 1500, state: 9000, after: 1200 };
+  const TIMEOUTS = { open: 4000, field: 1500, settle: 20000, list: 3000, poll: 40, section: 1500, state: 9000, after: 1200, format: 500 };
   const DEFAULTS = { siteType: "Primary HQ", status: "Current" };
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -228,6 +228,34 @@
     return parts.join(", ") || squash(address);
   }
 
+  // The "(Format)" links beside Zip, Phone and Fax. Each one checks the box next to it against RTS's rule for the country.
+  const FORMAT_BOXES = { zip: "Zip", phone: "Phone", fax: "Fax" };
+  const controlAfter = (node, root) => Array.from(root.querySelectorAll(FIELD_BOXES)).filter(isShown).find((c) => !node.contains(c) && (node.compareDocumentPosition(c) & 4)) || null;
+
+  // Presses each Format link whose box holds a value; a value RTS then marks as wrong is emptied (it can be added by hand).
+  async function pressFormatLinks(did, leftOut) {
+    const root = formRoot();
+    if (!root) return;
+    const links = Array.from(root.querySelectorAll('[class*="format" i]')).filter((n) => isShown(n) && /format/i.test(n.textContent) && squash(n.textContent).length < 20 && !n.children.length);
+    for (const link of links) {
+      const box = controlAfter(link, root);
+      const role = Object.keys(FORMAT_BOXES).find((k) => find(k) === box);
+      if (!box || !role || !box.value) continue;
+      const before = box.value;
+      press(link);
+      await wait(TIMEOUTS.format);
+      const after = box.value;
+      const wrong = markedBoxes().includes(box) || (formErrors().toLowerCase().includes(FORMAT_BOXES[role].toLowerCase()));
+      if (wrong) {
+        await globalThis.SXRTS.adapters.textField.applyText(box, "");
+        leftOut.push(`${FORMAT_BOXES[role]} (${before})`);
+        did(`Format pressed for ${FORMAT_BOXES[role]}: RTS marked "${before}" wrong, so it was emptied`);
+      } else {
+        did(`Format pressed for ${FORMAT_BOXES[role]}${after !== before ? `: "${before}" became "${after}"` : ": accepted"}`);
+      }
+    }
+  }
+
   // The "Address Preview" RTS builds from the address boxes (null when the form has no such line).
   function addressPreview() {
     const root = formRoot();
@@ -440,6 +468,7 @@
    */
   async function runSite(record, options, trace) {
     const did = (text) => trace.push(text);
+    const leftOut = [];
     const r = {};
     for (const k of ["siteName", "address1", "address2", "city", "country", "state", "zip", "phone", "fax", "email"]) r[k] = squash(record[k]);
     // The report may give only a full address: take what is missing from it.
@@ -534,6 +563,7 @@
       }
       did(addressPreview() ? `address preview "${addressPreview().slice(0, 50)}"` : "address preview stayed empty");
     }
+    await pressFormatLinks(did, leftOut);
     if (options.dryRun) { await cancelForm(); return { status: "checked", trace }; }
     const save = findSave();
     if (!save) { await cancelForm(); throw new Error("The site form's SAVE button was not found."); }
@@ -564,7 +594,6 @@
       return { evidence, refusal };
     };
     let outcome = await watchSave();
-    const leftOut = [];
     if (outcome.refusal && formOpen() && !listed()) {
       // RTS refused an optional box (for example the phone's format): leave that box out and press SAVE once more,
       // so the site is still added. What was left out is reported.
@@ -581,6 +610,20 @@
     if (outcome.refusal && formOpen() && !listed()) {
       await cancelForm();
       throw new Error(`RTS did not accept the site. RTS says: ${outcome.refusal}${leftOut.length ? ` (also tried without ${leftOut.join(", ")})` : ""}`);
+    }
+    if (!outcome.evidence && formOpen() && !listed() && !outcome.refusal) {
+      // Nothing happened and RTS said nothing: the format-checked boxes (zip, phone, fax) are the usual cause. Leave them
+      // out and press SAVE once more, so the site is still added.
+      const bad = ["zip", "phone", "fax"].filter((role) => { const box = find(role); return box && box.value; });
+      if (bad.length) {
+        for (const role of bad) { const box = find(role); leftOut.push(`${OPTIONAL[role]} (${squash(box.value)})`); await globalThis.SXRTS.adapters.textField.applyText(box, ""); }
+        did(`SAVE did nothing; ${leftOut.join(", ")} emptied and SAVE pressed a second time`);
+        const again = findSave();
+        if (again && (await waitFor(() => !again.disabled, TIMEOUTS.field))) {
+          press(again);
+          outcome = await watchSave();
+        }
+      }
     }
     if (!outcome.evidence) {
       const said = formErrors();

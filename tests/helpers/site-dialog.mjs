@@ -29,6 +29,6 @@ export function setup(options = {}) {
   window.eval(pageScript);
   const raw = window.installSitePage(options);
   const state = new Proxy(raw, { get: (target, key) => (Array.isArray(target[key]) ? Array.from(target[key]) : target[key]) });
-  Object.assign(site.TIMEOUTS, { open: 400, field: 300, settle: 600, list: 300, poll: 5, section: 300, state: 1500, after: 40 });
+  Object.assign(site.TIMEOUTS, { open: 400, field: 300, settle: 600, list: 300, poll: 5, section: 300, state: 1500, after: 40, format: 40 });
   return { doc: window.document, state };
 }

@@ -211,3 +211,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Site: typed the way a person types.** RTS's Site form builds its *Address Preview* and wakes **SAVE** from key presses, not only from "input"/"change" events. The extension now sends key down, key press, the value, key up, then leaves the box, for every Site text box, and presses SAVE with a full mouse press. If the Address Preview stays empty it nudges the address boxes once more and notes it in the steps ("address preview …" or "address preview stayed empty").
 - **Site: Address Line 1 is the street only.** The report's full address ("12600 Crystal View Blvd., Texas City, TX 77568") is cut back to its street ("12600 Crystal View Blvd.") because city, state, zip and country have their own boxes.
 - **Site: the new row is recognised** when the site's name appears once more in the Site list, even if the list shows the address cut short.
+
+## 0.27.6
+
+- **Site: the "(Format)" links.** Before SAVE, the extension presses the **(Format)** link beside Zip, Phone and Fax (only for boxes that hold a value). If RTS reformats the value, the reformatted value is kept; if RTS marks it as wrong, that box is emptied so the site can still be saved. The steps say what happened ("Format pressed for Phone: …").
+- **Site: SAVE that does nothing.** If SAVE is pressed and neither the form closes, nor the list shows the site, nor RTS says anything, zip, phone and fax are emptied and SAVE is pressed once more, so the site is still added. The result lists what was left out ("Saved Texas City without Zip (77568), Phone (…)") so it can be added by hand.
