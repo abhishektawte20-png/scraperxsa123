@@ -249,3 +249,7 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 ## 0.29.2
 
 - **"No popup window opened" on Industry.** (a) Fields that open a window (Industry, NAICS) now run FIRST in a publish, right after the click on Publish. Chrome only lets a page open a window shortly after a person's click (about 5 seconds), and before this the Industry window waited behind the name, SIC and Site saves. (b) When a later try fails for a different reason than the first, both reasons are shown ("The first try had failed with: …"), and the RTS message boxes seen during the run are listed. (c) If this error still appears: Chrome > Settings > Privacy and security > Site settings > Pop-ups and redirects > allow https://rts.pitchbook.com.
+
+## 0.29.3
+
+- **"The button that opens the popup window for Industry code was not found."** The Industry button sits inside the "Industries and Verticals" section. Until 0.29.1 that section happened to be opened by the SIC step, which ran first; 0.29.2 ran the window fields first, so the section was still closed. A mapped field that opens a window now opens its section itself when the button is missing (and never collapses anything). No re-mapping is needed.

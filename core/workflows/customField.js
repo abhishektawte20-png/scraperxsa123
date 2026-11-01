@@ -27,6 +27,8 @@
 
   // How long to wait for the popup to appear / disappear. Exposed so tests
   // do not have to sit through the real waits.
+  // Sections of the Company tab whose bar is opened when a field's opening button is missing.
+  const SECTION_TITLES = ["Industries and Verticals", "Industry Group", "Industry Tagging"];
   const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000, retryPause: 1200 };
 
   // jsdom and real pages both: hidden by the attribute, display:none or
@@ -400,7 +402,13 @@
       if (!opener) return { status: "skipped", reason: `${label} already has an entry in RTS (its row has no "${def.openButton.text || "opening"}" button).` };
     } else {
       opener = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
-      if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page. Open the right tab/section, or re-map the field.`);
+      if (!opener) {
+        // The button can sit inside a section that is still closed (Industry and NAICS are under "Industries and
+        // Verticals"). Open it, only if the button is missing, then look again. Nothing is collapsed if it does not help.
+        await globalThis.SXRTS.navigation?.ensureSectionOpen(() => globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton), SECTION_TITLES);
+        opener = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+      }
+      if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page, even after opening the "Industries and Verticals" section. Open the right tab/section, or re-map the field.`);
     }
     if (opener.disabled) throw new Error(`The button that opens the popup window for ${def.label} is disabled right now.`);
 

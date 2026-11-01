@@ -14,6 +14,7 @@ import "../core/outputFields.js";
 import "../core/customFields.js";
 import "../core/selectorBuilder.js";
 import "../core/workflows/customField.js";
+import "../core/navigation.js";
 globalThis.SXRTS.workflows.customField.TIMEOUTS.retryPause = 0;
 
 const cf = globalThis.SXRTS.customFields;
@@ -154,4 +155,27 @@ test("no value proposed is a skip and the window is never opened", async () => {
 test("a window that ends without any result is a clear error, never a crash on null", async () => {
   setup(() => ({ type: "result", result: null }));
   await assert.rejects(run(), /the window ended without telling what happened/);
+});
+
+test("the opening button sits inside a closed 'Industries and Verticals' section: the section is opened first, then the window", async () => {
+  const state = setup(() => result({ status: "saved", fieldRetained: true }));
+  // the button is not on the page until the section's bar is clicked, as on RTS
+  document.getElementById("addIndustry").remove();
+  document.body.insertAdjacentHTML("beforeend", '<div id="bar">Industries and Verticals</div><div id="body"></div>');
+  let barClicks = 0;
+  document.getElementById("bar").addEventListener("click", () => {
+    barClicks++;
+    document.getElementById("body").innerHTML = '<input id="addIndustry" type="button" value="Add Industry">';
+    document.getElementById("addIndustry").addEventListener("click", () => state.opened++);
+  });
+  const out = await run();
+  assert.equal(out.status, "savedValueVerified");
+  assert.equal(barClicks, 1, "the section was opened once");
+  assert.equal(state.opened, 1);
+});
+
+test("a section that is already open is not touched, and a button that never appears is an error that says so", async () => {
+  setup(() => result({ status: "saved", fieldRetained: true }));
+  document.getElementById("addIndustry").remove();
+  await assert.rejects(run(), /was not found on this page, even after opening the "Industries and Verticals" section/);
 });
