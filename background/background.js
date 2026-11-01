@@ -23,6 +23,7 @@ const ASSISTANT_FILES = [
   "core/history.js",
   "core/fieldStats.js",
   "core/mappingCheck.js",
+  "core/pageAnalysis.js",
   "core/undoLedger.js",
   "core/feedback.js",
   "core/feedbackConfig.js",
@@ -48,6 +49,7 @@ const ASSISTANT_FILES = [
   "content/history.js",
   "content/health.js",
   "content/check.js",
+  "content/analyze.js",
   "content/undo.js",
   "content/feedback.js",
   "content/game.js",
@@ -172,7 +174,7 @@ const ADOPT_AFTER = 2500;
 const NO_WINDOW = "No popup window opened. Close any window of this form that is open and try again. If none is open, check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects).";
 
 // Resolves { tabId, adopted }. `known` = ids of the pop-up windows that were already open.
-function watchForNewWindow(openerTabId, origin, known = new Set()) {
+function watchForNewWindow(openerTabId, origin, known = new Set(), allowAdopt = true) {
   return new Promise((resolve, reject) => {
     let done = false;
     const timers = [];
@@ -212,7 +214,7 @@ function watchForNewWindow(openerTabId, origin, known = new Set()) {
       if (fresh) found(fresh.id);
     }, 300);
     // Nothing new appeared: use the window that is already open.
-    timers.push(setTimeout(async () => {
+    if (allowAdopt) timers.push(setTimeout(async () => {
       if (done) return;
       const open = await popupTabs(openerTabId, origin);
       if (open.length && !done) {
@@ -281,7 +283,7 @@ chrome.runtime.onConnect.addListener((port) => {
         await new Promise((resolve) => setTimeout(resolve, 600));
         already = await popupTabs(openerTabId, message.origin);
       }
-      const opened = watchForNewWindow(openerTabId, message.origin, new Set(already.map((tab) => tab.id)));
+      const opened = watchForNewWindow(openerTabId, message.origin, new Set(already.map((tab) => tab.id)), message.mode !== "scan");
       opened.catch(() => {});
       say({ type: "armed" });
       const found = await opened;
@@ -291,6 +293,12 @@ chrome.runtime.onConnect.addListener((port) => {
       if (message.mode === "pick") {
         await startPicker(tabId, message.token);
         say({ type: "picker-open" });
+      } else if (message.mode === "scan") {
+        // "Analyze page": read what the window that opened contains, then close it. Nothing is typed or saved.
+        await chrome.scripting.executeScript({ target: { tabId }, files: ["core/selectorBuilder.js", "core/outputFields.js", "core/pageAnalysis.js"] });
+        const [scanned] = await chrome.scripting.executeScript({ target: { tabId }, func: () => globalThis.SXRTS.pageAnalysis.plain(globalThis.SXRTS.pageAnalysis.scan({ scope: "page" })) });
+        say({ type: "scan", inventory: scanned?.result ?? null });
+        if (!adopted) setTimeout(() => { chrome.tabs.remove(tabId).catch(() => { /* already gone */ }); }, 400);
       } else {
         say({ type: "result", result: await runInWindow(tabId, message.job) });
       }

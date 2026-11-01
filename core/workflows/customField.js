@@ -296,6 +296,34 @@
     return { status: "savedValueVerified", name: def.key };
   }
 
+  // ---- a whole form in one go (made with "Analyze page"): open it when a button opens it, fill every box
+  // (from the report, or a fixed value), press Save ONCE, and read back what can be read back. ----
+  async function applyForm(def, record) {
+    const values = def.fields
+      .map((field) => ({ field, value: field.fixed !== undefined ? field.fixed : record[field.key] }))
+      .filter(({ value }) => value !== null && value !== undefined && value !== "");
+    if (!values.some(({ field }) => field.fixed === undefined)) return { status: "skipped", reason: "no value proposed" };
+
+    let weOpened = false;
+    try {
+      weOpened = await ensureOpen(def);
+      for (const { field, value } of values) await writeField(def, field, findControl(def, field), value);
+      await clickSave(def);
+      const first = def.fields[0];
+      const gone = def.openButton ? !shownControls(def, first).length : false;
+      if (gone) return { status: "savedStateVerified", name: def.key, detail: `Saved. The ${def.label} form closed by itself, so the values could not be read back; check the list in RTS.` };
+      const kept = values.every(({ field, value }) => {
+        const control = shownControls(def, field)[0];
+        return control && normalize(readField(field, control)) === normalize(value);
+      });
+      return kept
+        ? { status: "savedValueVerified", name: def.key }
+        : { status: "savedStateVerified", name: def.key, detail: `Saved. The ${def.label} form was cleared after Save, so the values could not be read back; check the list in RTS.` };
+    } finally {
+      if (weOpened) await closePopup(def);
+    }
+  }
+
   // ---- a field that is filled in a separate popup window ----
   // The window is a different document, so the background worker watches for
   // it, runs core/workflows/popupWindow.js inside it, and hands the result
@@ -497,6 +525,7 @@
 
   async function applyHere(def, record) {
     if (record.action === "skip") return { status: "skipped", reason: "action=skip" };
+    if (def.form) return applyForm(def, record);
     if (def.tree) return globalThis.SXRTS.workflows.treePicker.apply(def, record);
     if (def.window) return applyWindowed(def, record);
     return def.kind === "single" ? applySingle(def, record) : applyRecord(def, record);

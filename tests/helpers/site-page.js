@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -15,8 +15,10 @@
     var html = [
       '<div id="tabs"><button class="navigation__button" id="tabCompany">Company</button><button class="navigation__button" id="tabEntity">Business Entity</button></div>',
       '<div id="companyTab"' + (o.otherTab ? ' style="display:none"' : "") + '>',
-      '<div class="bar" id="siteBar" style="cursor:pointer;background:#47719a;color:#fff;padding:6px">Site</div>',
-      '<div id="blockSite" style="' + (o.collapsed ? "display:none" : "") + '"><ul id="sites">' + rows() + '</ul>',
+      // real: like RTS, the section block holds its own title bar, and only the small icon in the bar reacts to clicks.
+      o.real ? '<div id="blockSite"><div class="head" style="background:#47719a;color:#fff;padding:6px"><span id="siteIcon" style="cursor:pointer;display:inline-block;width:14px">+</span><span class="title">Site</span> <span class="help">?</span></div><div id="siteContent" style="' + (o.collapsed ? "display:none" : "") + '"><ul id="sites">' + rows() + '</ul>'
+      : '<div class="bar" id="siteBar" style="cursor:pointer;background:#47719a;color:#fff;padding:6px">Site</div>',
+      o.real ? "" : '<div id="blockSite" style="' + (o.collapsed ? "display:none" : "") + '"><ul id="sites">' + rows() + '</ul>',
       '<input type="button" class="btn btn_secondary buttonView" id="addSite" value="Add New Site">',
       '<div id="siteForm" style="display:none"><table>',
       '<tr><td>Site name*</td><td><input type="text"' + nm("site.siteName") + '></td></tr>',
@@ -32,7 +34,7 @@
       '<tr><td>Email</td><td><input type="text"' + nm("site.coEmailAddr") + '></td></tr>',
       '<tr><td>Status*</td><td><select' + nm("site.siteStatus.id") + '>' + opt(["", "Current", "Former"]) + '</select></td></tr>',
       '</table><input type="button" class="btn mr_15 buttonSave" id="saveSiteInfoButton" value="SAVE" disabled><input type="button" id="cancelSite" value="Cancel"></div>',
-      '</div></div>',
+      o.real ? '</div></div></div>' : '</div></div>',
       '<div id="entityTab"' + (o.otherTab ? "" : ' style="display:none"') + '><p>Business Entity</p></div>'
     ].join("");
     document.body.insertAdjacentHTML("beforeend", html);
@@ -44,7 +46,8 @@
     };
     $("tabCompany").addEventListener("click", function () { state.tabClicks++; $("companyTab").style.display = ""; $("entityTab").style.display = "none"; });
     $("tabEntity").addEventListener("click", function () { $("companyTab").style.display = "none"; $("entityTab").style.display = ""; });
-    $("siteBar").addEventListener("click", function () { state.barClicks++; var b = $("blockSite"); b.style.display = b.style.display === "none" ? "" : "none"; });
+    if (o.real) $("siteIcon").addEventListener("click", function () { state.barClicks++; var b = $("siteContent"); b.style.display = b.style.display === "none" ? "" : "none"; });
+    else $("siteBar").addEventListener("click", function () { state.barClicks++; var b = $("blockSite"); b.style.display = b.style.display === "none" ? "" : "none"; });
     $("addSite").addEventListener("click", function () { state.opens++; form.style.display = ""; });
     $("cancelSite").addEventListener("click", function () { state.cancels++; form.style.display = "none"; });
     function refresh() {

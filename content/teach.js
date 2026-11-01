@@ -307,9 +307,23 @@
       card.appendChild(el("p", { className: "teach-muted", text: "Mappings tell the extension where an agent value goes in RTS. Ones you make are saved in this browser; team defaults come with the extension." }));
       card.appendChild(shareSection());
 
+      // Team mappings unmapped on this browser can be brought back.
+      const hiddenSection = () => {
+        const hidden = cf().getHidden?.() ?? [];
+        if (!hidden.length) return null;
+        const box = el("div", { className: "teach-guide" }, [el("h4", { text: `Unmapped team mappings (${hidden.length})` })]);
+        for (const def of hidden) {
+          const restore = el("button", { className: "teach-btn secondary", text: "Restore", type: "button" });
+          restore.addEventListener("click", async () => { await cf().restoreHidden(def.key); onChange?.(); render(); });
+          box.appendChild(el("div", { className: "teach-row" }, [el("span", { text: def.label }), restore]));
+        }
+        return box;
+      };
       const defs = cf().getCached();
       if (!defs.length) {
         card.appendChild(el("p", { className: "teach-muted", text: "Nothing mapped yet. Click \"Map this field\" on a row marked Waiting for RTS mapping." }));
+        const back = hiddenSection();
+        if (back) card.appendChild(back);
         return;
       }
       for (const def of defs) {
@@ -323,16 +337,25 @@
           remap.addEventListener("click", () => { draft = boundDraft(def.binds.path, []); view = "wizard"; render(); });
           actions.push(remap);
         }
-        if (!fromTeam) {
-          const remove = el("button", { className: "teach-btn danger", text: overrides ? "Reset to team default" : "Delete", type: "button" });
-          remove.addEventListener("click", async () => {
-            if (!window.confirm(overrides ? `Go back to the team default for "${def.label}"?` : `Delete "${def.label}"?`)) return;
+        if (!fromTeam && overrides) {
+          const reset = el("button", { className: "teach-btn secondary", text: "Reset to team default", type: "button" });
+          reset.addEventListener("click", async () => {
+            if (!window.confirm(`Go back to the team default for "${def.label}"?`)) return;
             await cf().removeDefinition(def.key);
             onChange?.();
             render();
           });
-          actions.push(remove);
+          actions.push(reset);
         }
+        // Unmap works for every mapping: yours is deleted; a team one is hidden on this browser (Restore brings it back).
+        const unmapBtn = tipped(el("button", { className: "teach-btn danger", text: "Unmap", type: "button" }), "Removes this mapping, for example when RTS changed its page. A team mapping is only hidden on this browser and can be restored below.");
+        unmapBtn.addEventListener("click", async () => {
+          if (!window.confirm(`Unmap "${def.label}"? The extension will stop filling it until it is mapped again.`)) return;
+          await cf().unmap(def.key);
+          onChange?.();
+          render();
+        });
+        actions.push(unmapBtn);
         card.appendChild(el("div", { className: "teach-item" }, [
           el("div", {}, [
             el("div", { text: (def.binds ? `${def.label}  ·  mapped from the agent's report` : `${def.label}  ·  custom.${def.key}`) + origin }),
@@ -344,6 +367,8 @@
           el("div", { className: "teach-row" }, actions)
         ]));
       }
+      const back = hiddenSection();
+      if (back) card.appendChild(back);
     }
 
     // ---------- team defaults: export, import, reset ----------

@@ -64,7 +64,7 @@
     const jobs = [
       ...(wf().companySite ? [{ group: "Built in", label: "Site (one form)", path: "company.sites", run: () => withTabs(() => wf().companySite.check()) }] : []),
       ...entries.map((e) => ({ group: "Built in", label: friendly(e.key) === e.key ? (e.section || e.key) : friendly(e.key), path: e.key, run: () => withTabs(async () => checkRegistry(e)) })),
-      ...defs.map((def) => ({ group: def.binds ? "Mapped fields" : "Taught fields", label: def.label, path: def.binds?.path || def.key, run: () => wf().customField.checkField(def) }))
+      ...defs.map((def) => ({ group: def.binds ? "Mapped fields" : "Taught fields", label: def.label, path: def.binds?.path || def.key, key: def.key, run: () => wf().customField.checkField(def) }))
     ];
     try { await globalThis.SXRTS.navigation?.expandAll?.(); } catch { /* a page without the control carries on */ }
     const rows = [];
@@ -72,7 +72,7 @@
       onProgress({ done: i, total: jobs.length, label: job.label });
       let result;
       try { result = await job.run(); } catch (error) { result = { parts: [mk("Check", false, error.message)] }; }
-      rows.push({ group: job.group, label: job.label, path: job.path, status: statusOf(result), parts: result.parts || [] });
+      rows.push({ group: job.group, label: job.label, path: job.path, key: job.key, status: statusOf(result), parts: result.parts || [] });
     }
     if (startTab) { try { await globalThis.SXRTS.navigation?.navigateToSection?.(startTab); } catch { /* best effort */ } }
     onProgress({ done: jobs.length, total: jobs.length, label: "" });

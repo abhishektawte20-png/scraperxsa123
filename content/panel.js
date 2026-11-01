@@ -344,7 +344,8 @@
     const historyUi = globalThis.SXRTS.historyUi?.mount(shadow);
     const healthUi = globalThis.SXRTS.healthUi?.mount(shadow);
     const undoUi = globalThis.SXRTS.undoUi?.mount(shadow);
-    const checkUi = globalThis.SXRTS.checkUi?.mount(shadow);
+    const analyzeUi = globalThis.SXRTS.analyzeUi?.mount(shadow, { onMapped: (label) => { regeneratePrompt(); revalidate(); setStatus(publishStatus, `Mapped "${label}" as one form. Run "Check mappings" to test it.`, "success"); } });
+    const checkUi = globalThis.SXRTS.checkUi?.mount(shadow, { onUnmapped: () => { regeneratePrompt(); revalidate(); } });
     const feedbackUi = globalThis.SXRTS.feedbackUi?.mount(shadow, {
       getContext: () => {
         refreshReport();
@@ -357,6 +358,8 @@
     healthButton.addEventListener("click", () => healthUi?.open());
     const checkButton = element("button", { className: "btn secondary", text: "Check mappings", type: "button", tip: "Looks on the open profile for every button, box, tick box and Save button the extension uses, and says which are found. Writes nothing." });
     checkButton.addEventListener("click", () => checkUi?.open());
+    const analyzeButton = element("button", { className: "btn secondary", text: "Analyze page", type: "button", tip: "Reads the page (or the open window) and lists every box and button. Use it when a field cannot be mapped the usual way: press a button to see the form it opens, and turn that form into one mapping. Only reads." });
+    analyzeButton.addEventListener("click", () => analyzeUi?.open());
     const feedbackButton = element("button", { className: "btn secondary", text: "Feedback", type: "button", tip: "Sends the issue report to the person who maintains this tool, in one click." });
     feedbackButton.addEventListener("click", () => feedbackUi?.open());
     const gameUi = globalThis.SXRTS.gameUi?.mount(shadow);
@@ -365,7 +368,7 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, healthButton, checkButton, feedbackButton, gameButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, healthButton, checkButton, analyzeButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -710,6 +713,17 @@
           teach?.open({ bindPath: action.jsonPath, samples });
         });
         mapRow.push(element("div", { className: "map-row" }, [mapButton, element("span", { className: "why", text: "Not filled yet: the extension doesn't know where this goes in RTS." })]));
+      }
+      // A mapped field can be unmapped right here (for example when RTS changed its page).
+      if (action.customKey && globalThis.SXRTS.customFields?.getDefinition(action.customKey)) {
+        const unmapButton = element("button", { className: "btn", text: "Unmap", type: "button", tip: "Stops filling this field until it is mapped again (for example after RTS changed its page). A team mapping is only hidden on this browser." });
+        unmapButton.addEventListener("click", async () => {
+          if (!window.confirm(`Unmap "${action.section || action.jsonPath}"? The extension will stop filling it until it is mapped again.`)) return;
+          await globalThis.SXRTS.customFields.unmap(action.customKey);
+          regeneratePrompt();
+          revalidate();
+        });
+        mapRow.push(element("div", { className: "map-row" }, [unmapButton, element("span", { className: "why", text: "Mapped. Unmap it if RTS changed and it no longer works." })]));
       }
       const card = element("div", { className: `action-card${isRunnable ? "" : " action-card-skipped"}` }, [head, editor.element, ...ruleNotes, ...mapRow, reasonEl]);
 

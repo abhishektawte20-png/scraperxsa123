@@ -37,7 +37,7 @@ const REPORT = TEXT_SAMPLE.replace(/\* Address: Borivali[^\n]*\n[^\n]*\n/, `* Ad
 `);
 
 const MAIN = `<!doctype html><body style="font:14px sans-serif"><span class="flat-button__caption-x1">PBID: PB-1</span>
-<script src="/site-page.js"></script><script>installSitePage({ collapsed: true });</script></body>`;
+<script src="/site-page.js"></script><script>installSitePage({ collapsed: true, real: true });</script></body>`;
 
 test("the address fields are published as one site; a listed site is not added twice; 'add anyway' adds it", { timeout: 300000 }, async () => {
   assert.match(REPORT, /\* City: Texas City/);

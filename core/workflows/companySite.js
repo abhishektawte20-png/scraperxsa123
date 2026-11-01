@@ -114,17 +114,53 @@
   }
 
   // ---- the section ----
-  // Opens the Site section (and the Company tab) until the "Add New Site" button is on screen.
+  // A click that reaches whatever the page listens to: the whole press, sent to the element itself, so it bubbles up
+  // to the bar's own handler and to a handler on the icon or the title alike.
+  function press(node) {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+      node.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true }));
+    }
+  }
+
+  // Things that open the Site section, most likely first: the little icon / title inside the section's own title
+  // bar, then the bar, then any shown element whose text is "Site". The innermost element comes first because a click
+  // reaches its parents but never its children.
+  function siteBars() {
+    const out = [];
+    const add = (node) => { if (node && isShown(node) && !out.includes(node)) out.push(node); };
+    const titleOf = (node) => key(node.textContent) === "site" || key(node.textContent) === "sites";
+    const block = document.getElementById("blockSite");
+    const head = block?.firstElementChild;
+    if (head && isShown(head)) {
+      for (const node of Array.from(head.querySelectorAll("*"))) if (!node.children.length && titleOf(node)) add(node);
+      for (const node of Array.from(head.querySelectorAll('[class*="icon" i], [class*="expand" i], [class*="toggle" i], [class*="collapse" i], [class*="arrow" i], [class*="plus" i], [id*="icon" i], [id*="expand" i]'))) add(node);
+      for (const node of Array.from(head.querySelectorAll("*"))) if (!node.children.length && /^[+\u2795\u25b6\u25b8\u25ba\u25bc]$/.test(squash(node.textContent))) add(node);
+      add(head);
+    }
+    const walker = document.createTreeWalker(document.body, 4);
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      if (!/^(site|sites)$/i.test(squash(text.nodeValue))) continue;
+      let node = text.parentElement;
+      for (let depth = 0; node && depth < 3 && key(node.textContent).length <= 12; depth++, node = node.parentElement) add(node);
+    }
+    return out;
+  }
+
+  const sectionOpen = () => Boolean(findOpener()) || formOpen();
+
+  // Opens the Site section: the page as it is, then the Company tab, then the other tab.
   async function reveal() {
     const nav = globalThis.SXRTS.navigation;
-    let opener = findOpener();
-    if (opener || formOpen()) return opener;
-    await nav?.ensureSectionOpen?.(() => Boolean(findOpener()) || formOpen(), ["Site", "Sites"]);
-    opener = findOpener();
-    if (opener || formOpen()) return opener;
-    await nav?.navigateToSection?.("Company");
-    await nav?.ensureSectionOpen?.(() => Boolean(findOpener()) || formOpen(), ["Site", "Sites"]);
-    return findOpener();
+    if (sectionOpen()) return findOpener();
+    for (const tab of [null, "Company", "Business Entity"]) {
+      if (tab) await nav?.navigateToSection?.(tab);
+      if (sectionOpen()) return findOpener();
+      for (const bar of siteBars().slice(0, 12)) {
+        press(bar);
+        if (await waitFor(sectionOpen, TIMEOUTS.section)) return findOpener();
+      }
+    }
+    return null;
   }
 
   const sectionRoot = (opener) => document.getElementById("blockSite") || opener?.closest("[id^=block]") || opener?.parentElement?.parentElement || document.body;
@@ -165,7 +201,7 @@
 
     const opener = await reveal();
     if (!formOpen()) {
-      if (!opener) throw new Error("The Add New Site button was not found. Open the Company tab and its Site section, then publish again.");
+      if (!opener) throw new Error("The Site section could not be opened by the extension: the Add New Site button did not appear. Open the Site section by hand (click its bar), then publish again.");
       if (opener.disabled || opener.getAttribute("aria-disabled") === "true") throw new Error("The Add New Site button is disabled right now.");
       if (!options.addAnyway && alreadyListed(sectionRoot(opener), r)) {
         return { status: "skipped", reason: `Site already exists in RTS (${r.address1 || r.city}). Nothing was added. Tick "Add the site even if one exists" to add it anyway.` };

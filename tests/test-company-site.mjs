@@ -112,5 +112,34 @@ test("a SAVE that RTS does not accept is an error, never a success, and the form
 test("a missing Add New Site button is a clear error", async () => {
   const { doc } = setup();
   doc.getElementById("addSite").remove();
-  await assert.rejects(site.applySite(TEXAS), /Add New Site button was not found/);
+  await assert.rejects(site.applySite(TEXAS), /Site section could not be opened/);
+});
+
+// RTS's real layout: the section block holds its own title bar, and only the small icon in the bar reacts to a click.
+test("the Site section is opened even when only the little icon in its title bar reacts to a click", async () => {
+  const { state, doc } = setup({ real: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.ok(state.barClicks >= 1);
+  assert.equal(state.saves, 1);
+  assert.equal(doc.getElementById("siteContent").style.display, "", "the section is left open");
+});
+
+test("with that layout and the Company tab not showing, it still works", async () => {
+  const { state } = setup({ real: true, otherTab: true });
+  assert.equal((await site.applySite(TEXAS)).status, "savedValueVerified");
+  assert.ok(state.tabClicks >= 1);
+});
+
+test("a section that cannot be opened is explained: what was tried, and that opening it by hand then publishing works", async () => {
+  const { doc } = setup({ real: true });
+  doc.getElementById("siteIcon").remove(); // nothing on the page can open the section any more
+  await assert.rejects(site.applySite(TEXAS), /Site section could not be opened.*by hand/s);
+});
+
+test("check mappings opens the section the same way", async () => {
+  const { state } = setup({ real: true });
+  const result = await site.check();
+  assert.ok(result.parts.every((p) => p.ok), JSON.stringify(result.parts.filter((p) => !p.ok)));
+  assert.equal(state.saves, 0);
 });

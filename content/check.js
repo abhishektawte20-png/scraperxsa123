@@ -16,7 +16,7 @@
   const LABEL = { ok: "found", warn: "look at", fail: "not found" };
   const CLASS = { ok: "hx-valid", warn: "hx-halted", fail: "hx-invalid" };
 
-  function mount(shadow) {
+  function mount(shadow, { onUnmapped } = {}) {
     const mc = () => globalThis.SXRTS.mappingCheck;
     const modal = el("div", { className: "hx-modal" });
     const card = el("div", { className: "hx-card" });
@@ -57,7 +57,18 @@
         box.appendChild(el("div", { className: "hx-row" }, [el("span", { className: `hx-badge ${CLASS[row.status]}`, text: LABEL[row.status] }), el("span", { className: "hx-title", text: row.label })]));
         const shown = row.parts.filter((p) => !p.ok || p.note);
         for (const part of row.status === "ok" ? shown : row.parts) box.appendChild(el("div", { className: "hx-muted", text: `${part.ok ? "✓" : "✗"} ${part.name}${part.note ? ` — ${part.note}` : ""}` }));
-        if (row.status === "fail") box.appendChild(el("div", { className: "hx-muted", text: "Open that part of the profile and check again; if it is still not found, re-map the field (Teach new field)." }));
+        if (row.status === "fail") box.appendChild(el("div", { className: "hx-muted", text: "Open that part of the profile and check again. If it is still not found, unmap it and map it again (Teach new field, or Map this field on its row)." }));
+        if (row.key && row.status !== "ok") {
+          box.appendChild(el("div", { className: "hx-row" }, [button("Unmap", async () => {
+            if (!window.confirm(`Unmap "${row.label}"? The extension will stop filling it until it is mapped again.`)) return;
+            await globalThis.SXRTS.customFields.unmap(row.key);
+            result.rows = result.rows.filter((r) => r !== row);
+            result.fail = result.rows.filter((r) => r.status === "fail").length; result.warn = result.rows.filter((r) => r.status === "warn").length; result.ok = result.rows.filter((r) => r.status === "ok").length;
+            note = `"${row.label}" is unmapped.`;
+            onUnmapped?.();
+            render();
+          }, "danger")]));
+        }
         card.appendChild(box);
       }
     }

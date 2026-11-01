@@ -35,8 +35,12 @@
 
   const sameField = (a, b) => a.key === b.key || Boolean(a.binds && b.binds && a.binds.path === b.binds.path);
 
+  // "Unmapped" team mappings: a local marker { key, removed: true, binds? } hides the team's mapping on this browser.
+  const isHiddenMark = (d) => d?.removed === true && typeof d.key === "string";
+  const ownDefs = () => local.filter((d) => !isHiddenMark(d));
+
   function rebuild() {
-    cached = [...team.filter((t) => !local.some((l) => sameField(t, l))).map((t) => ({ ...t, fromTeam: true })), ...local];
+    cached = [...team.filter((t) => !local.some((l) => sameField(t, l))).map((t) => ({ ...t, fromTeam: true })), ...ownDefs()];
   }
 
   function normalize(value) {
@@ -88,16 +92,24 @@
         if (field.kind === "select" && (!Array.isArray(field.options) || !field.options.length)) {
           errors.push(`Dropdown "${field.key}" has no options.`);
         }
+        // A fixed value is always typed or chosen, whatever the report says (for example Site type: Primary HQ).
+        if (field.fixed !== undefined) {
+          if (!def.form) errors.push(`Sub-field "${field.key}": a fixed value is only for a whole-form mapping.`);
+          else if (typeof field.fixed !== "string" || !TEXT_PATTERN.test(field.fixed)) errors.push(`Sub-field "${field.key}": the fixed value must be short plain text.`);
+          else if (field.kind === "select" && Array.isArray(field.options) && !findOption(field, field.fixed)) errors.push(`Sub-field "${field.key}": "${field.fixed}" is not one of the dropdown's choices.`);
+        }
       }
     }
     // A list in a separate window has no Add button: each row has its own
     // button that opens the window, and the row is found by rowBy.
-    if (def.kind === "record" && !def.window && !def.tree) {
+    if (def.form !== undefined && def.form !== true) errors.push("The whole-form setting is invalid.");
+    if (def.form && (def.window || def.tree)) errors.push("A whole form is filled on the page itself, not in a separate window or tree.");
+    if (def.kind === "record" && !def.window && !def.tree && !def.form) {
       validateSelectors("The Add button", def.addButton?.selectors, errors);
     }
     validateSelectors("The Save button", def.saveButton?.selectors, errors);
     if (def.openButton !== undefined && def.openButton !== null) {
-      if (def.kind !== "single" && !def.window && !def.tree) errors.push("Only a single field can sit inside a popup.");
+      if (def.kind !== "single" && !def.window && !def.tree && !def.form) errors.push("Only a single field can sit inside a popup.");
       validateOptionalButton("The button that opens the popup", def.openButton, errors);
       validateOptionalButton("The popup's Close button", def.closeButton, errors);
     } else if (def.closeButton) {
@@ -145,8 +157,10 @@
     if (def.kind !== (field.kind === "single" ? "single" : "record")) errors.push(`${field.label} must be mapped as a ${field.kind === "single" ? "single field" : "repeatable record"}.`);
     const outKeys = field.keys.map((k) => k.key);
     for (const f of def.fields || []) {
+      if (f.fixed !== undefined) continue;
       if (!outKeys.includes(def.binds.map?.[f.key])) errors.push(`Pick which ${field.label} value goes into "${f.key}".`);
     }
+    if (def.form && !(def.fields || []).some((f) => f.fixed === undefined)) errors.push("At least one box must be filled from the report.");
     return errors;
   }
 
@@ -155,7 +169,7 @@
     team = Array.isArray(shipped) ? shipped.filter((d) => validateDefinition(d).length === 0) : [];
     try {
       const stored = await chrome.storage.local.get(STORAGE_KEY);
-      local = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((d) => validateDefinition(d).length === 0) : [];
+      local = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY].filter((d) => isHiddenMark(d) || validateDefinition(d).length === 0) : [];
     } catch {
       local = [];
     }
@@ -181,6 +195,7 @@
     // Names the row whose window is filled (for example the network).
     if (def.rowBy) record.__row = outRecord?.[def.rowBy.outKey] ?? null;
     for (const field of def.fields) {
+      if (field.fixed !== undefined) { record[field.key] = field.fixed; continue; }
       const outKey = def.binds.map[field.key];
       const value = outRecord?.[outKey];
       record[field.key] = value === undefined ? null : value;
@@ -211,13 +226,37 @@
     await persist(local.filter((def) => def.key !== key));
   }
 
+  // Unmaps a field on this browser: this browser's own mapping is deleted, and a team mapping for the same
+  // field is hidden (the team's file is not changed; "Restore" brings it back). Returns what happened.
+  async function unmap(key) {
+    const target = cached.find((def) => def.key === key);
+    if (!target) return { removed: false };
+    const keep = local.filter((def) => !isHiddenMark(def) && def.key !== key && !(target.binds && def.binds?.path === target.binds.path));
+    const marks = local.filter(isHiddenMark);
+    const teamDef = team.find((t) => sameField(t, target));
+    const next = teamDef && !marks.some((m) => sameField(teamDef, m))
+      ? [...keep, ...marks, { key: teamDef.key, removed: true, ...(teamDef.binds ? { binds: { path: teamDef.binds.path } } : {}), updatedAt: new Date().toISOString() }]
+      : [...keep, ...marks];
+    await persist(next);
+    return { removed: true, hidTeamMapping: Boolean(teamDef) };
+  }
+
+  // The team mappings this browser has unmapped.
+  const getHidden = () => team.filter((t) => local.some((l) => isHiddenMark(l) && sameField(t, l)));
+
+  async function restoreHidden(key) {
+    const wanted = key ? getHidden().filter((t) => t.key === key) : getHidden();
+    await persist(local.filter((l) => !(isHiddenMark(l) && wanted.some((t) => sameField(t, l)))));
+    return wanted.length;
+  }
+
   const isFromTeam = (def) => Boolean(def?.fromTeam);
   const overridesTeam = (def) => !def?.fromTeam && team.some((t) => sameField(t, def));
   const getTeam = () => team;
 
-  // Drops every local mapping that replaces a team default.
+  // Drops every local mapping that replaces a team default, and brings back the ones that were unmapped.
   async function resetToTeam() {
-    const kept = local.filter((def) => !team.some((t) => sameField(t, def)));
+    const kept = local.filter((def) => !isHiddenMark(def) && !team.some((t) => sameField(t, def)));
     const dropped = local.length - kept.length;
     await persist(kept);
     return dropped;
@@ -292,7 +331,7 @@
   }
 
   function hasAnyValue(def, record) {
-    return def.fields.some((field) => record[field.key] !== null && record[field.key] !== undefined && record[field.key] !== "");
+    return def.fields.filter((field) => field.fixed === undefined).some((field) => record[field.key] !== null && record[field.key] !== undefined && record[field.key] !== "");
   }
 
   // Validates the pasted top-level "custom" object against the taught
@@ -376,7 +415,7 @@
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.customFields = {
-    ACTIONS, KEY_PATTERN, load, getCached, getDefinition, saveDefinition, removeDefinition,
+    ACTIONS, KEY_PATTERN, load, getCached, getDefinition, saveDefinition, removeDefinition, unmap, getHidden, restoreHidden,
     validateDefinition, validateRecord, validatePayload, normalizeRecord, hasAnyValue, getBoundDef, isBound, toDefRecord,
     jsonPathFor, defForJsonPath, optionsFor, promptParts, findOption, isFromTeam, overridesTeam, getTeam, resetToTeam, exportable, importDefinitions
   };
