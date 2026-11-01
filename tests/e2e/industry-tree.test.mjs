@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "", guard = false } = {}) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "", guard = false, late = 0 } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -48,7 +48,7 @@ const MAIN = `<!doctype html><body style="font:14px sans-serif">
   window.profile = { getSection: (x) => x };
   // RTS opens this window under a fixed name, so a second press reuses a window that is still open.
   // With focus on: a window that is still open is only brought to the front (no navigation, no new window), like RTS can do.
-  window.openIndustries = () => { if (window.confirmOnOpen && !confirm("Data is not saved.")) return; window.opens++; if (${focus ? "true" : "false"} && window.w && !window.w.closed) { window.w.focus(); return; } window.w = window.open("/tree.html?mode=${mode}", "${reuse || focus ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
+  window.openIndustries = () => { if (window.confirmOnOpen && !confirm("Data is not saved.")) return; window.opens++; if (${focus ? "true" : "false"} && window.w && !window.w.closed) { window.w.focus(); return; } window.w = window.open("/tree.html?mode=${mode}" + (window.lateMs ? "&late=" + window.lateMs : ""), "${reuse || focus ? "industryWindow" : "indPopup\" + window.opens + \""}", "width=700,height=500"); };
   window.markIndustry = (names) => { window.industries = names; window.saves++; };
 <\/script></body>`;
 const GROUPS = [
@@ -85,6 +85,8 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     if (q.get("mode") === "close") window.close();
     if (q.get("mode") === "navigate") location.href = "/after.html"; // RTS submits the form: the window leaves the page
   });
+  // "late": the window opens empty and RTS fetches the tree a moment later (industryGroup/loadBeIndustries).
+  if (q.get("late")) { const c = document.getElementById("12848611Content"); const parent = c.parentNode; const next = c.nextSibling; c.remove(); setTimeout(() => parent.insertBefore(c, next), Number(q.get("late"))); }
 <\/script></body>`;
   const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(req.url.startsWith("/tree.html") ? TREE : req.url.startsWith("/after.html") ? "<p>saved</p>" : MAIN); });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -95,7 +97,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus, guard);
+    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus, guard, late);
   } finally {
     await ctx.close();
     server.close();
@@ -103,7 +105,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", guard = false) {
+async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", guard = false, late = 0) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   const dialogsShown = [];
@@ -235,6 +237,7 @@ async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", gua
       await page.waitForTimeout(500);
     }
   }
+  if (late) await page.evaluate((ms) => { window.lateMs = ms; }, late);
   await inPanel(() => {
     window.reloadNow = true;
     const root = document.getElementById("sx-test-root").shadowRoot;
@@ -381,3 +384,11 @@ test("a form that saves and closes itself the moment the choice is ticked is rea
   assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
 });
+
+for (const mode of ["close", "navigate"]) {
+  test(`the window opens empty and RTS loads the tree 2.5 seconds later: the extension waits for it, ticks the choice and saves (${mode})`, { timeout: 150000 }, async () => {
+    const result = await scenario(mode, "2.1.2 — Clothing", { auto: true, late: 2500 });
+    assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+    assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
+  });
+}
