@@ -425,11 +425,19 @@
     // A tree window can go away under the script (RTS reloads or closes it). Nothing was confirmed then, so the
     // whole job is run again: it is safe to repeat, because a choice that is already ticked is only reported.
     let result;
+    let firstFailure = "";
     for (let attempt = 0; ; attempt++) {
       try {
         result = await runInWindow(opener, job);
         break;
       } catch (error) {
+        // A later try can fail for a different reason than the first. Both are shown, so the cause is not hidden.
+        if (attempt > 0 && firstFailure && !/first try had failed/.test(String(error?.message))) error.message += ` (The first try had failed with: ${firstFailure})`;
+        if (/No popup window opened/.test(String(error?.message))) {
+          const said = (globalThis.SXRTS.dialogLog?.peek?.() ?? []).map((entry) => `"${entry.message}"`).join(", ");
+          error.message += ` (RTS messages seen during this run: ${said || "none"}.)`;
+        }
+        if (!firstFailure) firstFailure = String(error?.message);
         if (!tree || !/Frame with ID|was removed|No tab with id|closed before it reported back/i.test(String(error?.message))) throw error;
         const next = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
         if (attempt >= 3) {

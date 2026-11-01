@@ -1175,6 +1175,10 @@
         });
       }
 
+      const isWindowField = (entry) => { const d = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey); return Boolean(d && (d.window || d.tree)); };
+      const customEntries = selected.filter((entry) => entry.action.customKey);
+      for (const entry of customEntries.filter(isWindowField)) await publishCustom(entry);
+
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {
         progress.doing("Name variations");
@@ -1300,19 +1304,18 @@
         await publishSite([entry], { siteName: text("siteName"), address1: text("address1"), address2: text("address2"), city: text("city"), country: text("country"), state: text("state"), zip: text("zip"), phone: text("phone"), fax: text("fax"), email: text("email") });
       }
 
-      const customEntries = selected.filter((entry) => entry.action.customKey);
-      for (const entry of customEntries) {
+      // One mapped field. A field that opens a window goes FIRST, right after the click on Publish: Chrome only lets a
+      // page open a window shortly after a person's click, so it must not wait behind the slower saves.
+      async function publishCustom(entry) {
         const value = validatedValueFor(entry);
-        if (value === undefined) continue;
+        if (value === undefined) return;
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
         progress.doing(def?.label || entry.action.section || "Mapped field");
         if (!def) {
           failed++; setRowStatus(entry.action.actionId, "failed", "This taught field no longer exists.");
           recordResult(entry.action.jsonPath, { status: "error", error: "This taught field no longer exists." });
-          continue;
+          return;
         }
-        // A window-based field starts from a page that has finished its previous save: a short pause, never a race.
-        if (def.window || def.tree) await new Promise((resolve) => setTimeout(resolve, 800));
         try {
           const result = await (def.window || def.tree ? (run) => run() : lookAgain)(() => globalThis.SXRTS.workflows.customField.applyCustomField(def, globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value)));
           recordResult(entry.action.jsonPath, result);
@@ -1325,6 +1328,7 @@
           recordResult(entry.action.jsonPath, { status: "error", error: error.message });
         }
       }
+      for (const entry of customEntries.filter((e) => !isWindowField(e))) await publishCustom(entry);
 
       progress.finish(applied, skipped, failed);
       const rtsSaid = globalThis.SXRTS.dialogLog?.summarize(globalThis.SXRTS.dialogLog.end()) ?? [];
