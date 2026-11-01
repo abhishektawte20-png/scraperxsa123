@@ -189,3 +189,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Site: the State box.** A real run stopped at "State: neither a dropdown nor a box was found in the form" (after site name, site type, address and country were filled). The State box is now found by its name, by the words printed beside it ("State", "Province", "Region"), by the choice it offers (a dropdown that lists the state), or as a plain box; and its choices are waited for up to 9 seconds after the country is chosen (RTS loads them late). If no State box exists at all, the site is still tried (outside the US it is not needed); if RTS then refuses Save, the message says the State box was not found and lists the boxes that are on screen.
 - All other Site boxes are also found by their printed words when RTS gives them other names.
 - A site listed with only its street is recognised when the report gives the whole address (same street and same city).
+
+## 0.27.2
+
+- **Site: a clear result, and no false "saved".** The results screen showed "Saved Texas City; RTS now shows it as linked" once per Site field. It now shows ONE Site line. When the Site list cannot confirm the new site, it says "Saved Texas City, but the Site list does not show it yet. Check the Site list in RTS." and the card's detail shows what the list does contain. If RTS answers a Save with a message (Save greyed out, form still open), the extension reports RTS's own words and does not call it saved.
+- **No second copy.** A site the extension added to a profile (even one the Site list could not confirm) is not added again for that profile for 30 days; "Add the site even if one already exists" still adds it.

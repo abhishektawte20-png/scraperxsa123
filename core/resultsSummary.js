@@ -28,7 +28,7 @@
     "businessEntity.emailDefaultStructure": "Email default structure", "businessEntity.researchNotes": "Research notes",
     "company.sicCodes": "SIC codes", "company.naicsCodes": "NAICS codes", "company.keywords": "Keywords",
     "company.briefDescription": "Brief description", "company.fullDescription": "Full description",
-    "businessEntity.socialMediaIdentifiers": "Social media"
+    "businessEntity.socialMediaIdentifiers": "Social media", "company.sites": "Site"
   };
   function friendly(field) {
     const base = String(field).replace(/\[\d+\]/g, "");
@@ -62,7 +62,7 @@
         icon: "✓",
         status: "success",
         label: field,
-        message: `Saved ${result.name || "value"}; RTS now shows it as linked`,
+        message: result.note || `Saved ${result.name || "value"}; RTS now shows it as linked`,
         detail: result.detail || null
       };
     }

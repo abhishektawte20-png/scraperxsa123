@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "" }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -77,6 +77,7 @@
     refresh();
     $("saveSiteInfoButton").addEventListener("click", function () {
       if (o.rejectSave) return;
+      if (o.rejectSoftly) { $("saveSiteInfoButton").disabled = true; form.insertAdjacentHTML("beforeend", '<div class="errorMsg">Phone number format is invalid</div>'); return; }
       var us = field("Country*").value === "United States";
       state.lastForm = {
         name: field("Site name*").value, type: field("Site Type*").value, address1: field("Address Line 1").value, city: field("City*").value,
@@ -84,7 +85,7 @@
         fax: field("Fax").value, email: field("Email").value, status: field("Status*").value
       };
       state.saves++;
-      state.sites.push({ name: state.lastForm.name, address1: state.lastForm.address1, city: state.lastForm.city });
+      if (!o.listNeverShows) state.sites.push({ name: state.lastForm.name, address1: state.lastForm.address1, city: state.lastForm.city });
       $("sites").innerHTML = rows();
       if (o.keepOpenAfterSave) { $("saveSiteInfoButton").disabled = true; return; }
       form.style.display = "none";

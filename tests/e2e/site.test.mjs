@@ -133,7 +133,7 @@ test("the address fields are published as one site; a listed site is not added t
     await page.waitForTimeout(300);
 
     // 1. No site yet: one form, one save, from a collapsed section.
-    assert.equal(await publish(), "Saved 6 · Already in RTS 0 · Needs attention 0");
+    assert.equal(await publish(), "Saved 1 · Already in RTS 0 · Needs attention 0");
     let state = await site();
     assert.equal(state.saves, 1, "one SAVE for all six fields");
     assert.equal(state.opens, 2, "once while looking (the form stays open for the try-run), once for the real run");
@@ -142,14 +142,14 @@ test("the address fields are published as one site; a listed site is not added t
 
     // 2. The same report again: the site is listed, so nothing is added and it shows as already in RTS.
     await validate();
-    assert.equal(await publish(), "Saved 0 · Already in RTS 6 · Needs attention 0");
+    assert.equal(await publish(), "Saved 0 · Already in RTS 1 · Needs attention 0");
     state = await site();
     assert.equal(state.saves, 1, "nothing was added");
     assert.equal(state.opens, 2, "the form was not opened again");
 
     // 3. "Add the site even if one already exists" adds it.
     await validate();
-    assert.equal(await publish({ anyway: true }), "Saved 6 · Already in RTS 0 · Needs attention 0");
+    assert.equal(await publish({ anyway: true }), "Saved 1 · Already in RTS 0 · Needs attention 0");
     state = await site();
     assert.equal(state.saves, 2);
     assert.equal(state.sites.length, 2);

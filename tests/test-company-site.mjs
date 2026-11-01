@@ -322,3 +322,40 @@ test("a site listed with only its street is still recognised when the report giv
   assert.equal((await site.applySite({ ...TEXAS, address1: "12600 Crystal View Blvd., Texas City, TX 77568" })).status, "savedValueVerified");
   assert.equal(other.state.saves, 1);
 });
+
+// ---- the screen after a Save: never a false "saved", and a plain note when the list cannot confirm ----
+test("a Save that RTS answers with a message (Save greyed out, form still open) is reported with RTS's own words, not as saved", async () => {
+  const { state, doc } = setup({ rejectSoftly: true });
+  await assert.rejects(site.applySite(TEXAS), /RTS did not accept the site\. RTS says: Phone number format is invalid/);
+  assert.equal(state.saves, 0);
+  assert.equal(doc.getElementById("siteForm").style.display, "none", "the form is put away");
+});
+
+test("when the Site list cannot confirm the new site, the result says so in plain words and shows what the list holds", async () => {
+  const { state } = setup({ listNeverShows: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedStateVerified");
+  assert.equal(state.saves, 1);
+  assert.match(result.note, /Saved Texas City, but the Site list does not show it yet\. Check the Site list in RTS\./);
+  assert.match(result.detail, /The list shows:/);
+  const { formatResult } = globalThis.SXRTS.resultsSummary;
+  assert.equal(formatResult("extras.city", result).message, result.note, "the results screen shows the plain note, not 'shows it as linked'");
+});
+
+test("a site the Site list could not confirm is not added a second time for the same profile (and 'add anyway' still adds it)", async () => {
+  const store = new Map();
+  const shared = { storage: { local: { async get(k) { return store.has(k) ? { [k]: JSON.parse(JSON.stringify(store.get(k))) } : {}; }, async set(o) { for (const [k, v] of Object.entries(o)) store.set(k, JSON.parse(JSON.stringify(v))); }, async remove(k) { store.delete(k); } } } };
+  const first = setup({ listNeverShows: true });
+  global.chrome = shared;
+  assert.equal((await site.applySite(TEXAS)).status, "savedStateVerified");
+  assert.equal(first.state.saves, 1);
+  // the same report again, the list still shows nothing
+  const second = setup({ listNeverShows: true });
+  global.chrome = shared;
+  const again = await site.applySite(TEXAS);
+  assert.equal(again.status, "skipped");
+  assert.match(again.reason, /the extension added .* earlier/);
+  assert.equal(second.state.saves, 0);
+  assert.equal((await site.applySite(TEXAS, { addAnyway: true })).status, "savedStateVerified");
+  assert.equal(second.state.saves, 1);
+});

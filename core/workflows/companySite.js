@@ -11,7 +11,7 @@
  *   - If the form ends up with an error, it is cancelled so a half-filled form is never left behind.
  */
 (() => {
-  const TIMEOUTS = { open: 4000, field: 1500, settle: 8000, list: 3000, poll: 40, section: 1500, state: 9000 };
+  const TIMEOUTS = { open: 4000, field: 1500, settle: 8000, list: 3000, poll: 40, section: 1500, state: 9000, after: 900 };
   const DEFAULTS = { siteType: "Primary HQ", status: "Current" };
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -309,6 +309,30 @@
     try { if (off) await chrome.storage.local.set({ [FLAG_KEY]: true }); else await chrome.storage.local.remove(FLAG_KEY); } catch { /* the choice still holds for this page */ }
   }
 
+  // ---- sites this extension added (so a site the Site list cannot confirm is never added twice) ----
+  const ADDED_KEY = "sxrts_sites_added";
+  const ADDED_DAYS = 30;
+  function profileKey() {
+    let pbId = "";
+    try { pbId = globalThis.SXRTS.identityLock?.readRtsIdentityFromPage?.().pbId || ""; } catch { /* not on a profile */ }
+    return pbId || String(window.location?.pathname || "");
+  }
+  const siteKey = (r) => key(r.address1 ? r.address1.split(",")[0] : r.city) + "|" + key(r.city);
+  async function addedBefore(r) {
+    try {
+      const all = (await chrome.storage.local.get(ADDED_KEY))?.[ADDED_KEY] || {};
+      return (all[profileKey()] || []).some((e) => e.k === siteKey(r) && Date.now() - e.at < ADDED_DAYS * 86400000);
+    } catch { return false; }
+  }
+  async function rememberAdded(r) {
+    try {
+      const all = (await chrome.storage.local.get(ADDED_KEY))?.[ADDED_KEY] || {};
+      const mine = (all[profileKey()] || []).filter((e) => Date.now() - e.at < ADDED_DAYS * 86400000);
+      all[profileKey()] = [...mine, { k: siteKey(r), at: Date.now() }];
+      await chrome.storage.local.set({ [ADDED_KEY]: all });
+    } catch { /* the site list is still the main check */ }
+  }
+
   // ---- city, state, country and zip taken from a full address, only to fill what the report left out ----
   const countryNames = () => (globalThis.SXRTS.registry?.getField?.("company.sites")?.form?.country?.options ?? []).map((o) => o.label);
   const countryOf = (part) => COUNTRY_ALIASES[key(part)] || countryNames().find((c) => key(c) === key(part)) || "";
@@ -365,6 +389,9 @@
       if (opener.disabled || opener.getAttribute("aria-disabled") === "true") throw new Error("The Add New Site button is disabled right now.");
       if (!options.addAnyway && !options.dryRun && alreadyListed(sectionRoot(opener), r)) {
         return { status: "skipped", reason: `Site already exists in RTS (${r.address1 || r.city}). Nothing was added. Tick "Add the site even if one exists" to add it anyway.` };
+      }
+      if (!options.addAnyway && !options.dryRun && await addedBefore(r)) {
+        return { status: "skipped", reason: `Site already exists in RTS: the extension added ${r.address1 || r.city} to this profile earlier, although the Site list could not show it. Nothing was added. Tick "Add the site even if one exists" to add it anyway.` };
       }
       opener.click();
       if (!(await waitFor(formOpen, TIMEOUTS.open))) throw new Error('The site form did not open after clicking "Add New Site".');
@@ -441,18 +468,31 @@
     did("SAVE pressed once");
     // RTS may close the form, or leave it open with Save back to greyed out (like its other Save buttons).
     const settled = await waitFor(() => !formOpen() || save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
-    if (settled && formOpen()) await cancelForm();
+    if (settled && formOpen()) {
+      // Greyed-out Save with the form still open: RTS is either busy saving or has refused. Give it a moment, then read
+      // what it says: a refusal is reported with RTS's own words, never as a saved site.
+      await wait(TIMEOUTS.after);
+      const refusal = formErrors();
+      await cancelForm();
+      if (refusal) throw new Error(`RTS did not accept the site. RTS says: ${refusal}`);
+    }
     if (!settled) {
       const why = formErrors();
       await cancelForm();
       throw new Error(`Save did not complete: the site form is still open.${why ? ` RTS says: ${why}` : " A required box may be empty or invalid."}`);
     }
 
+    await rememberAdded(r);
     const root = sectionRoot(findOpener() || opener);
     const shown = await waitFor(() => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName }), TIMEOUTS.list);
     const note = Object.keys(derived).length ? ` (${Object.entries(derived).map(([k, v]) => `${k} ${v}`).join(", ")} taken from the address)` : "";
     if (shown) return { status: "savedValueVerified", name: r.siteName, ...(note ? { derived: note } : {}) };
-    return { status: "savedStateVerified", name: r.siteName, detail: `Saved. The Site section does not list "${r.address1 || r.city}" on the page, so it could not be read back; check the Site list in RTS.` };
+    const seen = listedText(root).replace(/\s+/g, " ").slice(0, 140);
+    return {
+      status: "savedStateVerified", name: r.siteName,
+      note: `Saved ${r.siteName}, but the Site list does not show it yet. Check the Site list in RTS.`,
+      detail: `Saved, but "${r.address1 || r.city}" is not in the Site list on the page, so it could not be read back. The list shows: "${seen || "(nothing)"}". Check the Site list in RTS.`
+    };
   }
 
   // Adds the steps that were done to any failure, so a message says exactly where it stopped.

@@ -1181,16 +1181,17 @@
           const result = await globalThis.SXRTS.workflows.companySite.applySite(record, { addAnyway });
           const message = result.reason || result.detail || "";
           const kind = statusOf(result);
+          // One line on the results screen for the one site (its cards each show their own status).
+          recordResult("company.sites", kind === "failed" ? { status: "error", error: message } : result);
           for (const entry of entries) {
-            recordResult(entry.action.jsonPath, kind === "failed" ? { status: "error", error: message } : result);
             setRowStatus(entry.action.actionId, kind, kind === "savedValueVerified" ? (result.detail || "") : message);
             if (kind === "savedValueVerified") applied++; else if (kind === "skipped") skipped++; else failed++;
           }
           keepForUndo({ action: { jsonPath: "company.sites" } }, result.name || record.city, result);
         } catch (error) {
+          recordResult("company.sites", { status: "error", error: error.message });
           for (const entry of entries) {
             failed++; setRowStatus(entry.action.actionId, "failed", error.message);
-            recordResult(entry.action.jsonPath, { status: "error", error: error.message });
           }
         }
       }
