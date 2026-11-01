@@ -79,7 +79,7 @@ test("the worker starts, schedules the history purge, erases expired runs, and r
   }
 });
 
-test("the weekly digest is posted once a week to the team channel, never without one, and 'send now' works", async () => {
+test("the weekly digest is posted once a week to the team channel, never without one", async () => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-digest-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -133,15 +133,6 @@ test("the weekly digest is posted once a week to the team channel, never without
     assert.match(out.message.report, /acme\.com .*Frame with ID 0 was removed\./);
     assert.equal(out.again.reason, "not due");
     assert.equal(out.sentFinal, 1);
-
-    // the "Send digest now" button: the page asks the worker
-    const tabId = await worker.evaluate(async (b) => (await chrome.tabs.query({ url: `${b}/*` }))[0]?.id, base);
-    const reply = await worker.evaluate(async (tabId) => {
-      globalThis.SXRTS.feedback.send = async () => ({ ok: true, label: "Microsoft Teams" });
-      const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: () => chrome.runtime.sendMessage({ type: "sxrts-digest-now" }) });
-      return result;
-    }, tabId);
-    assert.equal(reply.ok, true);
   } finally {
     await ctx.close();
     server.close();

@@ -92,24 +92,16 @@
         if (field.kind === "select" && (!Array.isArray(field.options) || !field.options.length)) {
           errors.push(`Dropdown "${field.key}" has no options.`);
         }
-        // A fixed value is always typed or chosen, whatever the report says (for example Site type: Primary HQ).
-        if (field.fixed !== undefined) {
-          if (!def.form) errors.push(`Sub-field "${field.key}": a fixed value is only for a whole-form mapping.`);
-          else if (typeof field.fixed !== "string" || !TEXT_PATTERN.test(field.fixed)) errors.push(`Sub-field "${field.key}": the fixed value must be short plain text.`);
-          else if (field.kind === "select" && Array.isArray(field.options) && !findOption(field, field.fixed)) errors.push(`Sub-field "${field.key}": "${field.fixed}" is not one of the dropdown's choices.`);
-        }
       }
     }
     // A list in a separate window has no Add button: each row has its own
     // button that opens the window, and the row is found by rowBy.
-    if (def.form !== undefined && def.form !== true) errors.push("The whole-form setting is invalid.");
-    if (def.form && (def.window || def.tree)) errors.push("A whole form is filled on the page itself, not in a separate window or tree.");
-    if (def.kind === "record" && !def.window && !def.tree && !def.form) {
+    if (def.kind === "record" && !def.window && !def.tree) {
       validateSelectors("The Add button", def.addButton?.selectors, errors);
     }
     validateSelectors("The Save button", def.saveButton?.selectors, errors);
     if (def.openButton !== undefined && def.openButton !== null) {
-      if (def.kind !== "single" && !def.window && !def.tree && !def.form) errors.push("Only a single field can sit inside a popup.");
+      if (def.kind !== "single" && !def.window && !def.tree) errors.push("Only a single field can sit inside a popup.");
       validateOptionalButton("The button that opens the popup", def.openButton, errors);
       validateOptionalButton("The popup's Close button", def.closeButton, errors);
     } else if (def.closeButton) {
@@ -157,10 +149,8 @@
     if (def.kind !== (field.kind === "single" ? "single" : "record")) errors.push(`${field.label} must be mapped as a ${field.kind === "single" ? "single field" : "repeatable record"}.`);
     const outKeys = field.keys.map((k) => k.key);
     for (const f of def.fields || []) {
-      if (f.fixed !== undefined) continue;
       if (!outKeys.includes(def.binds.map?.[f.key])) errors.push(`Pick which ${field.label} value goes into "${f.key}".`);
     }
-    if (def.form && !(def.fields || []).some((f) => f.fixed === undefined)) errors.push("At least one box must be filled from the report.");
     return errors;
   }
 
@@ -195,7 +185,6 @@
     // Names the row whose window is filled (for example the network).
     if (def.rowBy) record.__row = outRecord?.[def.rowBy.outKey] ?? null;
     for (const field of def.fields) {
-      if (field.fixed !== undefined) { record[field.key] = field.fixed; continue; }
       const outKey = def.binds.map[field.key];
       const value = outRecord?.[outKey];
       record[field.key] = value === undefined ? null : value;
@@ -331,7 +320,7 @@
   }
 
   function hasAnyValue(def, record) {
-    return def.fields.filter((field) => field.fixed === undefined).some((field) => record[field.key] !== null && record[field.key] !== undefined && record[field.key] !== "");
+    return def.fields.some((field) => record[field.key] !== null && record[field.key] !== undefined && record[field.key] !== "");
   }
 
   // Validates the pasted top-level "custom" object against the taught

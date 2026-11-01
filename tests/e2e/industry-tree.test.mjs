@@ -34,7 +34,7 @@ function buildExtension(target, teamFile) {
   if (teamFile) fs.writeFileSync(path.join(target, "core", "teamDefaults.js"), teamFile);
 }
 
-async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "", check = false } = {}) {
+async function scenario(mode, code = "2.1.2 — Clothing", { auto = false, teamFile, reuse = false, undo = false, focus = "" } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-e2e-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
@@ -92,7 +92,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
     args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`]
   });
   try {
-    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus, check);
+    return await drive(ctx, base, code, auto, reuse || Boolean(focus), undo, focus);
   } finally {
     await ctx.close();
     server.close();
@@ -100,7 +100,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
   }
 }
 
-async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", check = false) {
+async function drive(ctx, base, code, auto, reuse, undo = false, focus = "") {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
@@ -225,24 +225,6 @@ async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", che
       await page.waitForTimeout(500);
     }
   }
-  let checked = null;
-  if (check) {
-    // "Check mappings": read-only. The industry window is opened, looked at and closed; nothing is ticked or saved.
-    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll("button")].find((b) => b.textContent === "Check mappings").click());
-    await page.waitForTimeout(300);
-    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".hx-modal.open button")].find((b) => b.textContent === "Start check").click());
-    for (let i = 0; i < 120; i++) {
-      if (await inPanel(() => /\d+ checked ·/.test(document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || ""))) break;
-      await page.waitForTimeout(500);
-    }
-    await page.waitForTimeout(800);
-    checked = {
-      text: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || ""),
-      industries: await inPanel(() => [...window.industries]), saves: await inPanel(() => window.saves),
-      windows: ctx.pages().filter((p) => p.url().includes("/tree.html")).length
-    };
-    await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open .hx-x").click());
-  }
   await inPanel(() => {
     window.reloadNow = true;
     const root = document.getElementById("sx-test-root").shadowRoot;
@@ -271,14 +253,7 @@ async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", che
     }
     const undoText = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
     await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open .hx-x").click());
-    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll("button")].find((b) => b.textContent === "Field health").click());
-    await page.waitForTimeout(500);
-    const health = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
-    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".hx-modal.open button")].find((b) => b.textContent === "Send digest now").click());
-    await page.waitForTimeout(800);
-    const digestNow = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
     undone = {
-      health, digestNow,
       afterPublish, listed,
       after: await inPanel(() => [...window.industries]),
       text: undoText,
@@ -286,7 +261,7 @@ async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", che
     };
   }
   return {
-    undone, checked,
+    undone,
     summary: await inPanel(() => document.getElementById("sx-test-root").shadowRoot.textContent.match(/Saved \d+ · Already in RTS \d+ · Needs attention \d+/)?.[0]),
     industries: await inPanel(() => window.industries),
     saves: await inPanel(() => window.saves),
@@ -366,10 +341,7 @@ for (const mode of ["close", "stay"]) {
     assert.match(result.undone.listed, /can undo/);
     assert.deepEqual(result.undone.after, [], "the choice is no longer ticked in RTS");
     assert.match(result.undone.text, /undone/);
-    assert.match(result.undone.health, /Field health/);
-    assert.match(result.undone.health, /Industry code[\s\S]*100%/, "the saved publish shows as a 100% field");
-    assert.match(result.undone.digestNow, /Not sent: No team channel is set/, "without a channel nothing is sent and the reason is shown");
-    assert.ok(result.undone.stats.some((e) => e.path === "extras.industryCode" && e.kind === "saved"), "the publish was counted in the field health numbers");
+    assert.ok(result.undone.stats.some((e) => e.path === "extras.industryCode" && e.kind === "saved"), "the publish was counted in the weekly-digest numbers");
   });
 }
 
@@ -385,16 +357,4 @@ test("the open window holds an old page (not the tree): it is closed and a clean
   assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
   assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
   assert.equal(result.saves, 1);
-});
-
-test("Check mappings: the industry window is opened, its + buttons, tick boxes and Save are found, it is closed again, and nothing is ticked or saved", { timeout: 200000 }, async () => {
-  const result = await scenario("stay", "2.1.2 — Clothing", { auto: true, check: true });
-  assert.match(result.checked.text, /Industry code/);
-  assert.match(result.checked.text, /found\s*Industry code/, "the Industry row is green");
-  assert.deepEqual(result.checked.industries, []);
-  assert.equal(result.checked.saves, 0);
-  assert.equal(result.checked.windows, 0, "the window was closed again");
-  // and publishing still works afterwards
-  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
-  assert.deepEqual(result.industries, ["Apparel and Accessories > Clothing"]);
 });

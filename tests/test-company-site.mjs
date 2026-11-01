@@ -137,9 +137,55 @@ test("a section that cannot be opened is explained: what was tried, and that ope
   await assert.rejects(site.applySite(TEXAS), /Site section could not be opened.*by hand/s);
 });
 
-test("check mappings opens the section the same way", async () => {
-  const { state } = setup({ real: true });
-  const result = await site.check();
-  assert.ok(result.parts.every((p) => p.ok), JSON.stringify(result.parts.filter((p) => !p.ok)));
-  assert.equal(state.saves, 0);
+test("the state list that loads a moment after the country is chosen is waited for", async () => {
+  const { state } = setup({ slowStates: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.lastForm.state, "Texas");
+});
+
+test("boxes the page wipes when the country changes are read back and filled again before Save", async () => {
+  const { state } = setup({ wipeOnCountry: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.deepEqual([state.lastForm.zip, state.lastForm.phone], ["77568", "281-941-6001"]);
+});
+
+test("a form that stays open after a good Save (Save greyed out again) is a success, and it is put away", async () => {
+  const { state, doc } = setup({ keepOpenAfterSave: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.saves, 1);
+  assert.equal(doc.getElementById("siteForm").style.display, "none", "the saved form was put away");
+});
+
+test("city, state, country and zip are taken from a full address, only for what the report left out", async () => {
+  const d = site.deriveFromAddress;
+  assert.deepEqual(d("12600 Crystal View Blvd., Texas City, TX 77568, United States"), { country: "United States", zip: "77568", state: "TX", city: "Texas City" });
+  assert.deepEqual(d("Borivali, Borivali East, 400066 Mumbai MH, India"), { country: "India", zip: "400066", state: "MH", city: "Mumbai" });
+  assert.deepEqual(d("1 Main St, Austin, Texas 78701, USA"), { country: "United States", zip: "78701", state: "Texas", city: "Austin" });
+  assert.deepEqual(d("Nowhere"), {});
+
+  const { state } = setup();
+  const result = await site.applySite({ address1: "12600 Crystal View Blvd., Texas City, TX 77568, United States" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.deepEqual([state.lastForm.city, state.lastForm.state, state.lastForm.country, state.lastForm.zip, state.lastForm.name], ["Texas City", "Texas", "United States", "77568", "Texas City"]);
+  assert.match(result.derived, /taken from the address/);
+  // what the report does give is never replaced
+  const second = setup();
+  await site.applySite({ address1: "1 Road, Elsewhere, TX 11111, United States", city: "Texas City", country: "United States", state: "Texas" });
+  assert.equal(second.state.lastForm.city, "Texas City");
+});
+
+test("the built-in Site can be switched off and on, and the choice is remembered", async () => {
+  const store = new Map();
+  global.chrome = { storage: { local: { async get(k) { return store.has(k) ? { [k]: store.get(k) } : {}; }, async set(o) { for (const [k, v] of Object.entries(o)) store.set(k, v); }, async remove(k) { store.delete(k); } } } };
+  assert.equal(site.isEnabled(), true);
+  await site.setEnabled(false);
+  assert.equal(site.isEnabled(), false);
+  await site.loadFlag();
+  assert.equal(site.isEnabled(), false, "remembered");
+  await site.setEnabled(true);
+  await site.loadFlag();
+  assert.equal(site.isEnabled(), true);
 });

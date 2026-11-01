@@ -22,8 +22,6 @@ const ASSISTANT_FILES = [
   "core/teamShare.js",
   "core/history.js",
   "core/fieldStats.js",
-  "core/mappingCheck.js",
-  "core/pageAnalysis.js",
   "core/undoLedger.js",
   "core/feedback.js",
   "core/feedbackConfig.js",
@@ -47,9 +45,6 @@ const ASSISTANT_FILES = [
   "content/teach.js",
   "content/rules.js",
   "content/history.js",
-  "content/health.js",
-  "content/check.js",
-  "content/analyze.js",
   "content/undo.js",
   "content/feedback.js",
   "content/game.js",
@@ -67,22 +62,6 @@ importScripts("../core/history.js", "../core/feedback.js", "../core/resultsSumma
  *   when the extension is installed or updated, and every few hours.
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "sxrts-digest-now" && sender.id === chrome.runtime.id) {
-    // Sends the digest of the last 7 days right now (the "Send digest now" button).
-    (async () => {
-      const url = await globalThis.SXRTS.feedback.getUrl();
-      if (!url) return { ok: false, error: "No team channel is set. Add the webhook address in the Feedback window first." };
-      const { text, summary } = await globalThis.SXRTS.fieldStats.digest();
-      let name = "";
-      try { name = (await chrome.storage.local.get("sxrts_feedback_name"))?.sxrts_feedback_name || ""; } catch { /* optional */ }
-      return globalThis.SXRTS.feedback.send(url, {
-        title: "ScraperX digest (sent by hand)",
-        facts: [["From", name || "(no name given)"], ["Tool version", chrome.runtime.getManifest().version], ["Fields attempted", String(summary.total.tried)], ["Failed", String(summary.total.failed)], ["Success rate", globalThis.SXRTS.fieldStats.pct(summary.total.rate)]],
-        note: "Digest of the last 7 days, sent by hand.", report: text, captures: "", output: ""
-      });
-    })().then(sendResponse, (error) => sendResponse({ ok: false, error: String(error?.message || error) }));
-    return true;
-  }
   if (message?.type !== "sxrts-send-feedback" || sender.id !== chrome.runtime.id) return false;
   globalThis.SXRTS.feedback.send(message.url, message.message).then(sendResponse, (error) => sendResponse({ ok: false, error: String(error?.message || error) }));
   return true;
@@ -174,7 +153,7 @@ const ADOPT_AFTER = 2500;
 const NO_WINDOW = "No popup window opened. Close any window of this form that is open and try again. If none is open, check that the button you picked is the real, enabled button (a greyed-out button or the box around it opens nothing) and re-pick it; if it is right, allow pop-ups for rts.pitchbook.com (Chrome settings > Privacy and security > Site settings > Pop-ups and redirects).";
 
 // Resolves { tabId, adopted }. `known` = ids of the pop-up windows that were already open.
-function watchForNewWindow(openerTabId, origin, known = new Set(), allowAdopt = true) {
+function watchForNewWindow(openerTabId, origin, known = new Set()) {
   return new Promise((resolve, reject) => {
     let done = false;
     const timers = [];
@@ -214,7 +193,7 @@ function watchForNewWindow(openerTabId, origin, known = new Set(), allowAdopt = 
       if (fresh) found(fresh.id);
     }, 300);
     // Nothing new appeared: use the window that is already open.
-    if (allowAdopt) timers.push(setTimeout(async () => {
+    timers.push(setTimeout(async () => {
       if (done) return;
       const open = await popupTabs(openerTabId, origin);
       if (open.length && !done) {
@@ -283,7 +262,7 @@ chrome.runtime.onConnect.addListener((port) => {
         await new Promise((resolve) => setTimeout(resolve, 600));
         already = await popupTabs(openerTabId, message.origin);
       }
-      const opened = watchForNewWindow(openerTabId, message.origin, new Set(already.map((tab) => tab.id)), message.mode !== "scan");
+      const opened = watchForNewWindow(openerTabId, message.origin, new Set(already.map((tab) => tab.id)));
       opened.catch(() => {});
       say({ type: "armed" });
       const found = await opened;
@@ -293,12 +272,6 @@ chrome.runtime.onConnect.addListener((port) => {
       if (message.mode === "pick") {
         await startPicker(tabId, message.token);
         say({ type: "picker-open" });
-      } else if (message.mode === "scan") {
-        // "Analyze page": read what the window that opened contains, then close it. Nothing is typed or saved.
-        await chrome.scripting.executeScript({ target: { tabId }, files: ["core/selectorBuilder.js", "core/outputFields.js", "core/pageAnalysis.js"] });
-        const [scanned] = await chrome.scripting.executeScript({ target: { tabId }, func: () => globalThis.SXRTS.pageAnalysis.plain(globalThis.SXRTS.pageAnalysis.scan({ scope: "page" })) });
-        say({ type: "scan", inventory: scanned?.result ?? null });
-        if (!adopted) setTimeout(() => { chrome.tabs.remove(tabId).catch(() => { /* already gone */ }); }, 400);
       } else {
         say({ type: "result", result: await runInWindow(tabId, message.job) });
       }

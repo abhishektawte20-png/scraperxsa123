@@ -307,6 +307,27 @@
       card.appendChild(el("p", { className: "teach-muted", text: "Mappings tell the extension where an agent value goes in RTS. Ones you make are saved in this browser; team defaults come with the extension." }));
       card.appendChild(shareSection());
 
+      // The built-in Site: shown like a mapping, so it can be unmapped and restored.
+      const siteWf = globalThis.SXRTS.workflows?.companySite;
+      if (siteWf?.isEnabled) {
+        const on = siteWf.isEnabled();
+        const toggle = tipped(el("button", { className: on ? "teach-btn danger" : "teach-btn secondary", text: on ? "Unmap" : "Restore", type: "button" }), on ? "Stops the built-in Site from being filled, for example when RTS changed its Site form. Restore turns it back on." : "Turns the built-in Site back on.");
+        toggle.addEventListener("click", async () => {
+          if (on && !window.confirm("Unmap Site? The extension will stop adding the site until it is restored.")) return;
+          await siteWf.setEnabled(!on);
+          onChange?.();
+          render();
+        });
+        card.appendChild(el("div", { className: "teach-item" }, [
+          el("div", {}, [
+            el("div", { text: `Site  ·  built in${on ? "" : "  ·  unmapped"}` }),
+            el("div", { className: "teach-muted", text: "Opens the Site section, presses Add New Site, fills the whole form (site type Primary HQ, status Current, site name = city) and saves once. Address, city, state, country, postcode, phone, fax and site email come from the report." }),
+            el("div", { className: on ? "teach-ok" : "teach-warn", text: on ? "✓ On" : "Off: the Site fields wait for a mapping" })
+          ]),
+          el("div", { className: "teach-row" }, [toggle])
+        ]));
+      }
+
       // Team mappings unmapped on this browser can be brought back.
       const hiddenSection = () => {
         const hidden = cf().getHidden?.() ?? [];

@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, wipeOnCountry: false, keepOpenAfterSave: false }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -50,6 +50,18 @@
     else $("siteBar").addEventListener("click", function () { state.barClicks++; var b = $("blockSite"); b.style.display = b.style.display === "none" ? "" : "none"; });
     $("addSite").addEventListener("click", function () { state.opens++; form.style.display = ""; });
     $("cancelSite").addEventListener("click", function () { state.cancels++; form.style.display = "none"; });
+    // Like a page that redraws part of the form when the country changes.
+    if (o.slowStates || o.wipeOnCountry) {
+      form.addEventListener("change", function (event) {
+        if (event.target !== field("Country*")) return;
+        if (o.slowStates) {
+          var sel = $("stateSel");
+          sel.innerHTML = "";
+          setTimeout(function () { sel.innerHTML = opt(STATES); refresh(); }, 250);
+        }
+        if (o.wipeOnCountry) { field("Zip").value = ""; field("Phone").value = ""; }
+      });
+    }
     function refresh() {
       var country = field("Country*").value;
       var us = country === "United States";
@@ -72,6 +84,7 @@
       state.saves++;
       state.sites.push({ name: state.lastForm.name, address1: state.lastForm.address1, city: state.lastForm.city });
       $("sites").innerHTML = rows();
+      if (o.keepOpenAfterSave) { $("saveSiteInfoButton").disabled = true; return; }
       form.style.display = "none";
     });
     window.__site = state;

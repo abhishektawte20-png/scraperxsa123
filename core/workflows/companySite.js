@@ -188,6 +188,61 @@
     if (cancel) { cancel.click(); await wait(200); }
   }
 
+  // ---- the built-in Site can be switched off ("Unmap") and back on ----
+  const FLAG_KEY = "sxrts_site_off";
+  let off = false;
+  const isEnabled = () => !off;
+  async function loadFlag() {
+    try { off = Boolean((await chrome.storage.local.get(FLAG_KEY))?.[FLAG_KEY]); } catch { off = false; }
+    return !off;
+  }
+  async function setEnabled(on) {
+    off = !on;
+    try { if (off) await chrome.storage.local.set({ [FLAG_KEY]: true }); else await chrome.storage.local.remove(FLAG_KEY); } catch { /* the choice still holds for this page */ }
+  }
+
+  // ---- city, state, country and zip taken from a full address, only to fill what the report left out ----
+  const countryNames = () => (globalThis.SXRTS.registry?.getField?.("company.sites")?.form?.country?.options ?? []).map((o) => o.label);
+  const countryOf = (part) => COUNTRY_ALIASES[key(part)] || countryNames().find((c) => key(c) === key(part)) || "";
+  const POSTCODE = /\b(\d{4,6}(?:-\d{4})?|[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d)\b/;
+  function deriveFromAddress(full) {
+    const parts = squash(full).split(",").map(squash).filter(Boolean);
+    const out = {};
+    if (parts.length < 2) return out;
+    const country = countryOf(parts[parts.length - 1]);
+    if (country) { out.country = country; parts.pop(); }
+    // The last part usually holds the state and the postcode ("TX 77568", "400066 Mumbai MH").
+    const tail = parts[parts.length - 1] || "";
+    const code = POSTCODE.exec(tail);
+    let rest = tail;
+    if (code) { out.zip = code[1]; rest = squash(tail.replace(code[1], " ")); }
+    const regionWords = Object.values(REGIONS).map(key);
+    const lastWord = rest.split(" ").pop();
+    if (/^[A-Z]{2}$/.test(lastWord) && rest.split(" ").length >= 1) {
+      out.state = lastWord;
+      const before = squash(rest.slice(0, rest.length - lastWord.length));
+      out.city = before || (parts.length > 1 ? parts[parts.length - 2] : "");
+    } else if (regionWords.includes(key(rest))) {
+      out.state = rest;
+      out.city = parts.length > 1 ? parts[parts.length - 2] : "";
+    } else if (rest) {
+      out.city = rest;
+    }
+    if (!out.city && parts.length > 1) out.city = parts[parts.length - 2];
+    return out;
+  }
+
+  // After the country is chosen the state box may change (a list for the US, a text box elsewhere) and its choices
+  // may load a moment later: wait until it has settled.
+  async function settleState(country) {
+    const wantsList = /^(united states|canada)$/i.test(squash(country));
+    await waitFor(() => {
+      const list = find("stateSelect");
+      if (list && list.options.length > 1) return true;
+      return !wantsList && Boolean(find("province"));
+    }, TIMEOUTS.field);
+  }
+
   /*
    * record: { city, country, state, address1, address2, zip, phone, fax, email, siteName? }
    * options: { addAnyway }
@@ -195,6 +250,12 @@
   async function applySite(record, options = {}) {
     const r = {};
     for (const k of ["siteName", "address1", "address2", "city", "country", "state", "zip", "phone", "fax", "email"]) r[k] = squash(record[k]);
+    // The report may give only a full address: take what is missing from it.
+    const derived = {};
+    if (r.address1 && (!r.city || !r.country || !r.state || !r.zip)) {
+      const d = deriveFromAddress(r.address1);
+      for (const k of ["city", "country", "state", "zip"]) if (!r[k] && d[k]) { r[k] = d[k]; derived[k] = d[k]; }
+    }
     r.siteName = r.siteName || r.city;
 
     if (!r.city || !r.country) return { status: "failed", reason: `Site: RTS needs a ${[!r.city && "city", !r.country && "country"].filter(Boolean).join(" and ")} to add a site, and the report has none.` };
@@ -222,7 +283,7 @@
       await setSelect("Country", country, r.country, COUNTRY_ALIASES);
       // The state box can change when the country does (a list for the US, a text box elsewhere).
       if (r.state) {
-        await waitFor(() => Boolean(find("stateSelect") || find("province")), TIMEOUTS.field);
+        await settleState(r.country);
         const list = find("stateSelect");
         if (list) await setSelect("State", list, r.state);
         else {
@@ -243,6 +304,18 @@
       const status = find("status");
       if (!status) throw new Error("Status: the dropdown was not found in the form.");
       await setSelect("Status", status, DEFAULTS.status);
+      // A page that redraws the form when a choice changes can wipe boxes filled earlier: read them back, fill again once.
+      const wanted = [["siteName", "Site name", r.siteName], ["address1", "Address line 1", r.address1], ["address2", "Address line 2", r.address2], ["city", "City", r.city], ["zip", "Zip", r.zip], ["phone", "Phone", r.phone], ["fax", "Fax", r.fax], ["email", "Email", r.email]];
+      for (const [name, label, value] of wanted) {
+        if (!value) continue;
+        const box = find(name);
+        if (box && squash(box.value) !== value) await setText(label, box, value);
+      }
+      for (const [name, label, value] of [["siteType", "Site type", DEFAULTS.siteType], ["country", "Country", r.country], ["status", "Status", DEFAULTS.status]]) {
+        const select = find(name);
+        const option = select && optionFor(select, value, name === "country" ? COUNTRY_ALIASES : {});
+        if (select && option && select.selectedOptions[0] !== option) await setSelect(label, select, value, name === "country" ? COUNTRY_ALIASES : {});
+      }
     } catch (error) {
       await cancelForm();
       throw error;
@@ -256,7 +329,9 @@
       throw new Error(`The site form's SAVE button stayed disabled, so RTS did not accept the values.${why ? ` RTS says: ${why}` : ""}`);
     }
     save.click();
-    const settled = await waitFor(() => !formOpen(), TIMEOUTS.settle);
+    // RTS may close the form, or leave it open with Save back to greyed out (like its other Save buttons).
+    const settled = await waitFor(() => !formOpen() || save.disabled || !save.isConnected || !isShown(save), TIMEOUTS.settle);
+    if (settled && formOpen()) await cancelForm();
     if (!settled) {
       const why = formErrors();
       await cancelForm();
@@ -265,35 +340,12 @@
 
     const root = sectionRoot(findOpener() || opener);
     const shown = await waitFor(() => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName }), TIMEOUTS.list);
-    if (shown) return { status: "savedValueVerified", name: r.siteName };
+    const note = Object.keys(derived).length ? ` (${Object.entries(derived).map(([k, v]) => `${k} ${v}`).join(", ")} taken from the address)` : "";
+    if (shown) return { status: "savedValueVerified", name: r.siteName, ...(note ? { derived: note } : {}) };
     return { status: "savedStateVerified", name: r.siteName, detail: `Saved. The Site section does not list "${r.address1 || r.city}" on the page, so it could not be read back; check the Site list in RTS.` };
-  }
-
-  // Read-only ("Check mappings"): the Site form is opened, every box is looked for, and the form is cancelled.
-  async function check() {
-    const parts = [];
-    const add = (name, ok, note = "") => parts.push({ name, ok, note });
-    const opener = await reveal();
-    if (!opener && !formOpen()) return { notOnScreen: true, parts: [{ name: "Add New Site button", ok: false, note: "not on this page" }] };
-    add("Add New Site button", true);
-    let weOpened = false;
-    if (!formOpen()) {
-      opener.click();
-      weOpened = true;
-      if (!(await waitFor(formOpen, TIMEOUTS.open))) { add("Site form opens", false, "the form did not open"); return { parts }; }
-    }
-    for (const [name, label] of [["siteName", "Site name"], ["siteType", "Site type"], ["address1", "Address line 1"], ["city", "City"], ["country", "Country"], ["zip", "Zip"], ["phone", "Phone"], ["fax", "Fax"], ["email", "Email"], ["status", "Status"]]) add(label, Boolean(find(name)));
-    add("State (list or box)", Boolean(find("stateSelect") || find("province")));
-    const type = find("siteType");
-    add('Site type offers "Primary HQ"', Boolean(type && optionFor(type, DEFAULTS.siteType)));
-    const status = find("status");
-    add('Status offers "Current"', Boolean(status && optionFor(status, DEFAULTS.status)));
-    add("SAVE button", Boolean(findButton(SAVE.selectors, SAVE.text)));
-    if (weOpened) await cancelForm();
-    return { parts };
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.companySite = { applySite, check, reveal, TIMEOUTS, DEFAULTS, optionFor, alreadyListed };
+  globalThis.SXRTS.workflows.companySite = { applySite, reveal, TIMEOUTS, DEFAULTS, optionFor, alreadyListed, deriveFromAddress, isEnabled, setEnabled, loadFlag };
 })();

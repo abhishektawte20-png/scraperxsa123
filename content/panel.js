@@ -318,6 +318,7 @@
     // Taught fields feed the prompt, so it is rebuilt once they load and
     // whenever one is added or removed.
     globalThis.SXRTS.customFields?.load().then(regeneratePrompt);
+    globalThis.SXRTS.workflows?.companySite?.loadFlag?.().then(() => { if (lastValidated && textarea.value.trim()) validateButton.click(); });
     // Re-run validation after a mapping or rule changes so the preview updates by itself.
     const revalidate = () => { if (lastValidated && textarea.value.trim()) validateButton.click(); };
     const teach = globalThis.SXRTS.teach?.mount(shadow, {
@@ -342,10 +343,7 @@
 
     // Run history (kept 15 days, for quality checks) and one-click feedback.
     const historyUi = globalThis.SXRTS.historyUi?.mount(shadow);
-    const healthUi = globalThis.SXRTS.healthUi?.mount(shadow);
     const undoUi = globalThis.SXRTS.undoUi?.mount(shadow);
-    const analyzeUi = globalThis.SXRTS.analyzeUi?.mount(shadow, { onMapped: (label) => { regeneratePrompt(); revalidate(); setStatus(publishStatus, `Mapped "${label}" as one form. Run "Check mappings" to test it.`, "success"); } });
-    const checkUi = globalThis.SXRTS.checkUi?.mount(shadow, { onUnmapped: () => { regeneratePrompt(); revalidate(); } });
     const feedbackUi = globalThis.SXRTS.feedbackUi?.mount(shadow, {
       getContext: () => {
         refreshReport();
@@ -354,12 +352,6 @@
     });
     const historyButton = element("button", { className: "btn secondary", text: "History", type: "button", tip: "Every report you validate is kept here for 15 days, then erased automatically. Open it to see what the agent returned on a given day, or to compare two runs of the same company." });
     historyButton.addEventListener("click", () => historyUi?.open());
-    const healthButton = element("button", { className: "btn secondary", text: "Field health", type: "button", tip: "How often each field is saved or fails, the most common errors, and the weekly digest that goes to the team channel." });
-    healthButton.addEventListener("click", () => healthUi?.open());
-    const checkButton = element("button", { className: "btn secondary", text: "Check mappings", type: "button", tip: "Looks on the open profile for every button, box, tick box and Save button the extension uses, and says which are found. Writes nothing." });
-    checkButton.addEventListener("click", () => checkUi?.open());
-    const analyzeButton = element("button", { className: "btn secondary", text: "Analyze page", type: "button", tip: "Reads the page (or the open window) and lists every box and button. Use it when a field cannot be mapped the usual way: press a button to see the form it opens, and turn that form into one mapping. Only reads." });
-    analyzeButton.addEventListener("click", () => analyzeUi?.open());
     const feedbackButton = element("button", { className: "btn secondary", text: "Feedback", type: "button", tip: "Sends the issue report to the person who maintains this tool, in one click." });
     feedbackButton.addEventListener("click", () => feedbackUi?.open());
     const gameUi = globalThis.SXRTS.gameUi?.mount(shadow);
@@ -368,7 +360,7 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, healthButton, checkButton, analyzeButton, feedbackButton, gameButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -713,6 +705,21 @@
           teach?.open({ bindPath: action.jsonPath, samples });
         });
         mapRow.push(element("div", { className: "map-row" }, [mapButton, element("span", { className: "why", text: "Not filled yet: the extension doesn't know where this goes in RTS." })]));
+      }
+      // The built-in Site: unmap it from its cards, restore it when it was unmapped.
+      const siteWf = globalThis.SXRTS.workflows?.companySite;
+      const SITE_PATHS = Object.keys(globalThis.SXRTS.executionPlan?.SITE_EXTRAS ?? {});
+      const isSiteAction = action.jsonPath === "company.sites" || SITE_PATHS.includes(action.jsonPath);
+      if (siteWf?.setEnabled && isSiteAction) {
+        const on = siteWf.isEnabled();
+        const toggle = element("button", { className: on ? "btn" : "btn map", text: on ? "Unmap Site" : "Restore Site", type: "button", tip: on ? "Stops the built-in Site from being filled (for example when RTS changed its Site form). Restore turns it back on." : "Turns the built-in Site back on." });
+        toggle.addEventListener("click", async () => {
+          if (on && !window.confirm("Unmap Site? The extension will stop adding the site until it is restored.")) return;
+          await siteWf.setEnabled(!on);
+          regeneratePrompt();
+          revalidate();
+        });
+        if (on ? action.executionStatus === "pending" : true) mapRow.push(element("div", { className: "map-row" }, [toggle, element("span", { className: "why", text: on ? "Built in: opens the Site section, fills the whole form, saves once." : "Site is unmapped. Restore the built-in Site, or map this field by hand." })]));
       }
       // A mapped field can be unmapped right here (for example when RTS changed its page).
       if (action.customKey && globalThis.SXRTS.customFields?.getDefinition(action.customKey)) {

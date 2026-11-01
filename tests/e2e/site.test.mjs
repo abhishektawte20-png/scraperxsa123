@@ -115,25 +115,11 @@ test("the address fields are published as one site; a listed site is not added t
     };
     const site = () => page.evaluate(() => JSON.parse(JSON.stringify({ saves: window.__site.saves, opens: window.__site.opens, form: window.__site.lastForm, sites: window.__site.sites, barClicks: window.__site.barClicks })));
 
-    // 0. Check mappings: the Site form is opened, every box is found, and it is cancelled again. Nothing is saved.
-    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll("button")].find((b) => b.textContent === "Check mappings").click());
-    await page.waitForTimeout(300);
-    await inPanel(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".hx-modal.open button")].find((b) => b.textContent === "Start check").click());
-    for (let i = 0; i < 60; i++) {
-      if (await inPanel(() => /\d+ checked ·/.test(document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || ""))) break;
-      await page.waitForTimeout(500);
-    }
-    const checkText = await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open")?.textContent || "");
-    assert.match(checkText, /found\s*Site \(one form\)/, checkText.slice(0, 400));
-    await inPanel(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".hx-modal.open .hx-x").click());
-    let before = await page.evaluate(() => ({ saves: window.__site.saves, formShown: document.getElementById("siteForm").style.display !== "none", cancels: window.__site.cancels }));
-    assert.deepEqual(before, { saves: 0, formShown: false, cancels: 1 });
-
     // 1. No site yet: one form, one save, from a collapsed section.
     assert.equal(await publish(), "Saved 6 · Already in RTS 0 · Needs attention 0");
     let state = await site();
     assert.equal(state.saves, 1, "one SAVE for all six fields");
-    assert.equal(state.opens, 2, "once for the check, once for the publish");
+    assert.equal(state.opens, 1);
     assert.ok(state.barClicks >= 1, "the Site section was opened");
     assert.deepEqual(state.form, { name: "Texas City", type: "Primary HQ", address1: "12600 Crystal View Blvd.", city: "Texas City", country: "United States", state: "Texas", zip: "77568", phone: "281-941-6001", fax: "", email: "", status: "Current" });
 
@@ -142,7 +128,7 @@ test("the address fields are published as one site; a listed site is not added t
     assert.equal(await publish(), "Saved 0 · Already in RTS 6 · Needs attention 0");
     state = await site();
     assert.equal(state.saves, 1, "nothing was added");
-    assert.equal(state.opens, 2, "the form was not opened again");
+    assert.equal(state.opens, 1, "the form was not opened again");
 
     // 3. "Add the site even if one already exists" adds it.
     await validate();

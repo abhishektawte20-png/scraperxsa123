@@ -31,8 +31,7 @@ import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../core/workflows/customField.js";
-import "../core/mappingCheck.js";
-import "../content/check.js";
+import "../core/workflows/companySite.js";
 import "../content/teach.js";
 import "../content/ui.js";
 import "../content/panel.js";
@@ -120,11 +119,12 @@ test("the mapped-fields list has an Unmap button for a team mapping and a Restor
   byText(shadow.querySelector(".card"), "Teach new field").click();
   const card = shadow.querySelector(".teach-card");
   assert.match(card.textContent, /Start date/);
-  byText(card, "Unmap").click();
+  const inItem = (text, label) => byText(Array.from(card.querySelectorAll(".teach-item")).find((i) => i.textContent.includes(text)), label);
+  inItem("Start date", "Unmap").click();
   await tick(20);
   assert.doesNotMatch(card.textContent, /Start date {2}·/);
   assert.match(card.textContent, /Unmapped team mappings \(1\)/);
-  byText(card, "Restore").click();
+  Array.from(card.querySelectorAll(".teach-row")).find((r) => r.textContent.startsWith("Start date")).querySelector("button").click();
   await tick(20);
   assert.match(card.textContent, /Start date/);
   assert.equal(cf().getBoundDef("extras.startDate").key, "extrasStartDate");
@@ -147,29 +147,49 @@ test("a mapped field's card in the preview has an Unmap button that stops it bei
   assert.ok(startCard().querySelector("button.map"), "it can be mapped again");
 });
 
-test("in Check mappings, a mapping that is not found has an Unmap button that removes it from the list and from use", async () => {
+const REPORT = (await import("./helpers/rovo-text-sample.mjs")).TEXT_SAMPLE.replace(/\* Address: Borivali[^\n]*\n[^\n]*\n/, "* Address: 12600 Crystal View Blvd.\n   * Source: https://www.psypher.in/\n* City: Texas City\n   * Source: https://www.psypher.in/\n* Country: USA\n   * Source: https://www.psypher.in/\n");
+
+test("the built-in Site has Unmap on its cards: it switches the Site off (cards wait for a mapping), and Restore Site switches it back on", async () => {
   freshStore();
-  globalThis.SXRTS.teamDefaults = { mappings: [mapping("extrasStartDate", "extras.startDate", "Start date")] };
+  globalThis.SXRTS.teamDefaults = { mappings: [] };
   const shadow = setupPanel();
   await cf().load();
-  const original = globalThis.SXRTS.mappingCheck.run;
-  globalThis.SXRTS.mappingCheck.run = async () => ({ rows: [{ group: "Mapped fields", label: "Start date", key: "extrasStartDate", status: "fail", parts: [{ name: "Start Date", ok: false, note: "not found" }] }, { group: "Mapped fields", label: "Fine", key: "x", status: "ok", parts: [] }], ok: 1, warn: 0, fail: 1 });
-  let notified = 0;
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const sh = host.attachShadow({ mode: "open" });
-  const ui = globalThis.SXRTS.checkUi.mount(sh, { onUnmapped: () => { notified++; } });
-  try {
-    ui.open();
-    byText(sh, "Start check").click();
-    await tick(30);
-    assert.match(sh.textContent, /not found\s*Start date/);
-    assert.equal(Array.from(sh.querySelectorAll("button")).filter((b) => b.textContent === "Unmap").length, 1, "only the broken one offers Unmap");
-    byText(sh, "Unmap").click();
-    await tick(30);
-    assert.equal(notified, 1);
-    assert.ok(!Array.from(sh.querySelectorAll(".hx-item")).some((n) => n.textContent.includes("Start date")), "the row is gone from the list");
-    assert.equal(cf().getBoundDef("extras.startDate"), null);
-    void shadow;
-  } finally { globalThis.SXRTS.mappingCheck.run = original; }
+  await globalThis.SXRTS.workflows.companySite.setEnabled(true);
+  shadow.querySelector("#sxrts-response").value = REPORT;
+  byText(shadow, "Validate JSON").click();
+  await tick(60);
+  const cityCard = () => Array.from(shadow.querySelectorAll(".action-card")).find((c) => /extras\.city/.test(c.querySelector(".action-card-field").textContent));
+  assert.equal(cityCard().querySelector(".badge").textContent, "pending", "ready to publish as part of the one site");
+  assert.ok(byText(cityCard(), "Unmap Site"), "Unmap is offered on the site's cards");
+  assert.ok(!byText(cityCard(), "Restore Site"));
+
+  byText(cityCard(), "Unmap Site").click();
+  await tick(120);
+  assert.equal(globalThis.SXRTS.workflows.companySite.isEnabled(), false);
+  assert.notEqual(cityCard().querySelector(".badge").textContent, "pending", "no longer published by the built-in Site");
+  assert.ok(byText(cityCard(), "Restore Site"), "Restore is offered");
+  assert.ok(!byText(cityCard(), "Unmap Site"));
+
+  byText(cityCard(), "Restore Site").click();
+  await tick(120);
+  assert.equal(globalThis.SXRTS.workflows.companySite.isEnabled(), true);
+  assert.equal(cityCard().querySelector(".badge").textContent, "pending");
+});
+
+test("Mapped & taught fields lists the built-in Site with Unmap, and Restore after it", async () => {
+  freshStore();
+  globalThis.SXRTS.teamDefaults = { mappings: [] };
+  const shadow = setupPanel();
+  await cf().load();
+  await globalThis.SXRTS.workflows.companySite.setEnabled(true);
+  byText(shadow.querySelector(".card"), "Teach new field").click();
+  const card = shadow.querySelector(".teach-card");
+  assert.match(card.textContent, /Site\s+·\s+built in/);
+  byText(card, "Unmap").click();
+  await tick(30);
+  assert.equal(globalThis.SXRTS.workflows.companySite.isEnabled(), false);
+  assert.match(card.textContent, /Site\s+·\s+built in\s+·\s+unmapped/);
+  byText(card, "Restore").click();
+  await tick(30);
+  assert.equal(globalThis.SXRTS.workflows.companySite.isEnabled(), true);
 });

@@ -29,7 +29,8 @@
 
   // The report's address fields that go into ONE site form (Company > Site), and the form box each fills.
   const SITE_EXTRAS = { "extras.address": "address1", "extras.city": "city", "extras.state": "state", "extras.country": "country", "extras.postcode": "zip", "extras.phone": "phone", "extras.fax": "fax", "extras.siteEmail": "email" };
-  const hasSiteWorkflow = () => Boolean(globalThis.SXRTS.workflows?.companySite);
+  // The built-in Site is used unless it was unmapped ("Unmap" on a Site card or in Mapped & taught fields).
+  const hasSiteWorkflow = () => { const w = globalThis.SXRTS.workflows?.companySite; return Boolean(w) && (w.isEnabled ? w.isEnabled() : true); };
 
   function buildExecutionPlan(validated) {
     const registry = globalThis.SXRTS.registry;

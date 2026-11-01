@@ -7,6 +7,8 @@ import "../../core/adapters/textField.js";
 import "../../core/adapters/nativeSelect.js";
 import "../../core/navigation.js";
 import "../../core/selectorBuilder.js";
+import "../../registry/company.sites.js";
+import "../../registry/index.js";
 import "../../core/workflows/companySite.js";
 
 export const site = globalThis.SXRTS.workflows.companySite;
