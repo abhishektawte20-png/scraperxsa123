@@ -205,3 +205,9 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Phone (and fax) in RTS's format.** New output-rule step **"Format as a US phone number (281-941-6001)"**. The team defaults now ship four rules that use it (phone and fax, for the report's address fields and for a `company.sites` record), so a phone such as "(281) 941-6001" or "+1 281 941 6001" reaches the preview, and RTS, as 281-941-6001. Numbers of other countries, and incomplete numbers, are never changed. Turn a rule off in Output rules if another format is needed.
 - **Site: if RTS refuses an optional box** (phone, fax, zip, email, address line 2), that box is emptied, SAVE is pressed once more, and the site is still added; the result says what was left out ("Saved Texas City without Phone (…): RTS refused it").
 - **Site: RTS's own complaint is read.** Besides messages by class name, any red text in the form and any box marked invalid are read and shown, with the box named, in the card's message.
+
+## 0.27.5
+
+- **Site: typed the way a person types.** RTS's Site form builds its *Address Preview* and wakes **SAVE** from key presses, not only from "input"/"change" events. The extension now sends key down, key press, the value, key up, then leaves the box, for every Site text box, and presses SAVE with a full mouse press. If the Address Preview stays empty it nudges the address boxes once more and notes it in the steps ("address preview …" or "address preview stayed empty").
+- **Site: Address Line 1 is the street only.** The report's full address ("12600 Crystal View Blvd., Texas City, TX 77568") is cut back to its street ("12600 Crystal View Blvd.") because city, state, zip and country have their own boxes.
+- **Site: the new row is recognised** when the site's name appears once more in the Site list, even if the list shows the address cut short.

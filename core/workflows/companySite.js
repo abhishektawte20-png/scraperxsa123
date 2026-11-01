@@ -201,10 +201,40 @@
     if (select.selectedOptions[0] !== option) throw new Error(`${name}: RTS did not keep "${wanted}" in the dropdown.`);
   }
 
+  // Typed the way a person types: focus, key down / press, the value with its input and change events, key up, leave.
+  // RTS's form listens to the keys (it builds the Address Preview and wakes up Save from them), not only to "input".
   async function setText(name, control, value) {
     const adapter = globalThis.SXRTS.adapters.textField;
-    await adapter.applyText(control, value);
+    const last = String(value).slice(-1) || "a";
+    const keyEvent = (type) => control.dispatchEvent(new window.KeyboardEvent(type, { key: last, bubbles: true, cancelable: true }));
+    control.scrollIntoView?.({ block: "center", inline: "nearest" });
+    control.focus?.({ preventScroll: true });
+    keyEvent("keydown");
+    keyEvent("keypress");
+    adapter.setNativeValue(control, value);
+    keyEvent("keyup");
+    await wait(20);
+    control.blur?.();
+    await wait(20);
     if (!adapter.verifyText(control, value)) throw new Error(`${name}: the box did not keep "${value}".`);
+  }
+
+  // The street only: the city, state, zip and country have their own boxes, so a full address is cut back to its street.
+  function streetOf(address, r) {
+    const parts = squash(address).split(",").map(squash).filter(Boolean);
+    const values = [r.city, r.state, REGIONS[String(r.state || "").toUpperCase()], r.zip, r.country, COUNTRY_ALIASES[key(r.country)]].filter(Boolean).map(key);
+    const repeats = (part) => values.some((v) => ` ${key(part)} `.includes(` ${v} `));
+    while (parts.length > 1 && repeats(parts[parts.length - 1])) parts.pop();
+    return parts.join(", ") || squash(address);
+  }
+
+  // The "Address Preview" RTS builds from the address boxes (null when the form has no such line).
+  function addressPreview() {
+    const root = formRoot();
+    const label = root && Array.from(root.querySelectorAll("*")).find((n) => !n.children.length && /^address preview$/i.test(squash(n.textContent)));
+    if (!label) return null;
+    const holder = label.parentElement;
+    return squash(holder.textContent.replace(label.textContent, "")) || squash(label.nextElementSibling?.textContent) || squash(holder.nextElementSibling?.textContent);
   }
 
   // ---- the section ----
@@ -445,7 +475,7 @@
       if (!type) throw new Error("Site type: the dropdown was not found in the form.");
       await setSelect("Site type", type, DEFAULTS.siteType);
       did("site name, site type");
-      if (r.address1) { const box = find("address1"); if (!box) throw new Error("Address line 1: the box was not found."); await setText("Address line 1", box, r.address1); }
+      if (r.address1) { const box = find("address1"); if (!box) throw new Error("Address line 1: the box was not found."); await setText("Address line 1", box, streetOf(r.address1, r)); }
       if (r.address2) { const box = find("address2"); if (box) await setText("Address line 2", box, r.address2); }
       const country = find("country");
       if (!country) throw new Error("Country: the dropdown was not found in the form.");
@@ -479,7 +509,7 @@
       await setSelect("Status", status, DEFAULTS.status);
       did("city, zip, phone, email, status");
       // A page that redraws the form when a choice changes can wipe boxes filled earlier: read them back, fill again once.
-      const wanted = [["siteName", "Site name", r.siteName], ["address1", "Address line 1", r.address1], ["address2", "Address line 2", r.address2], ["city", "City", r.city], ["zip", "Zip", r.zip], ["phone", "Phone", r.phone], ["fax", "Fax", r.fax], ["email", "Email", r.email]];
+      const wanted = [["siteName", "Site name", r.siteName], ["address1", "Address line 1", r.address1 ? streetOf(r.address1, r) : ""], ["address2", "Address line 2", r.address2], ["city", "City", r.city], ["zip", "Zip", r.zip], ["phone", "Phone", r.phone], ["fax", "Fax", r.fax], ["email", "Email", r.email]];
       for (const [name, label, value] of wanted) {
         if (!value) continue;
         const box = find(name);
@@ -496,6 +526,14 @@
     }
 
     did("every box read back");
+    // RTS builds the Address Preview from what was typed: if it stays empty, nudge the address boxes once more.
+    if (addressPreview() !== null) {
+      if (!(await waitFor(() => Boolean(addressPreview()), TIMEOUTS.field))) {
+        for (const name of ["address1", "city", "zip"]) { const box = find(name); if (box && box.value) { box.focus?.(); box.dispatchEvent(new window.KeyboardEvent("keyup", { key: "a", bubbles: true })); box.dispatchEvent(new Event("change", { bubbles: true })); box.blur?.(); } }
+        await waitFor(() => Boolean(addressPreview()), TIMEOUTS.field);
+      }
+      did(addressPreview() ? `address preview "${addressPreview().slice(0, 50)}"` : "address preview stayed empty");
+    }
     if (options.dryRun) { await cancelForm(); return { status: "checked", trace }; }
     const save = findSave();
     if (!save) { await cancelForm(); throw new Error("The site form's SAVE button was not found."); }
@@ -504,12 +542,16 @@
       await cancelForm();
       throw new Error(`The site form's SAVE button stayed disabled, so RTS did not accept the values.${stateNote ? ` Likely cause: ${stateNote}.` : ""}${why ? ` RTS says: ${why}` : ""}`);
     }
-    save.click();
+    const sectionNow = sectionRoot(findOpener() || opener);
+    const nameCount = () => listedText(sectionNow).split(key(r.siteName)).length - 1;
+    const countBefore = nameCount();
+    press(save);
     did("SAVE pressed once");
     // The form is NOT touched while RTS may still be saving (emptying or cancelling it then could cancel the save).
     // Evidence of a save: the form closes, or the new site appears in the list. A message from RTS is a refusal.
     const root = sectionRoot(findOpener() || opener);
-    const listed = () => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName });
+    // The new site is in the list when its row appears: the site's name shows up once more than before SAVE.
+    const listed = () => alreadyListed(root, { address1: r.address1, city: r.city, siteName: r.siteName }) || nameCount() > countBefore;
     const watchSave = async () => {
       let refusalSince = 0;
       let refusal = "";

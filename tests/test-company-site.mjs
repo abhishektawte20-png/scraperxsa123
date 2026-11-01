@@ -425,3 +425,36 @@ test("a refusal that does not point at an optional box is never worked around: i
   await assert.rejects(site.applySite({ ...TEXAS, phone: "" }), /RTS did not accept the site/);
   assert.equal(state.saves, 0);
 });
+
+// ---- what the real screenshots showed: RTS never noticed the typing, and the whole address went into Address Line 1 ----
+test("a form that wakes Save and builds its Address Preview only from key events is filled the way a person types", async () => {
+  const { state } = setup({ needsKeyup: true, previewRow: true });
+  const result = await site.applySite(TEXAS);
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.saves, 1);
+  assert.ok(result.trace.some((t) => /address preview "12600 Crystal View Blvd\., Texas City"/.test(t)), result.trace.join(" | "));
+});
+
+test("Address Line 1 gets the street only: the city, state, zip and country have their own boxes", async () => {
+  const cases = [
+    [{ ...TEXAS, address1: "12600 Crystal View Blvd., Texas City, TX 77568" }, "12600 Crystal View Blvd."],
+    [{ ...TEXAS, address1: "12600 Crystal View Blvd., Texas City, TX 77568, United States" }, "12600 Crystal View Blvd."],
+    [{ ...TEXAS, address1: "12600 Crystal View Blvd., Suite 4, Texas City, TX 77568" }, "12600 Crystal View Blvd., Suite 4"],
+    [{ ...TEXAS, address1: "Texas Avenue 5, Texas City, TX 77568" }, "Texas Avenue 5"]
+  ];
+  for (const [record, street] of cases) {
+    const { state } = setup();
+    assert.equal((await site.applySite(record)).status, "savedValueVerified", street);
+    assert.equal(state.lastForm.address1, street);
+  }
+  const india = setup();
+  await site.applySite({ city: "Mumbai", state: "Maharashtra", country: "India", zip: "400066", address1: "Borivali, Borivali East, 400066 Mumbai, Maharashtra, India" });
+  assert.equal(india.state.lastForm.address1, "Borivali, Borivali East");
+});
+
+test("the new site is recognised in the list by its name appearing once more, even when the list shows the address cut short", async () => {
+  const { state } = setup({ existing: [{ name: "Kansas City", address1: "753 S 66th Terr…", city: "Kansas City" }] });
+  const result = await site.applySite({ ...TEXAS, address1: "12600 Crystal View Blvd., Texas City, TX 77568" });
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.sites.length, 2);
+});

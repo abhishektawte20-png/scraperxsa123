@@ -7,7 +7,7 @@
   var STATES = ["", "Alabama", "California", "New York", "Texas"];
 
   window.installSitePage = function (options) {
-    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false, rejectRed: false }, options || {});
+    var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false, rejectRed: false, needsKeyup: false, previewRow: false }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
     var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
@@ -33,6 +33,7 @@
       '<tr><td>Fax <a>(Format)</a></td><td><input type="text"' + nm("site.fax") + '></td></tr>',
       '<tr><td>Email</td><td><input type="text"' + nm("site.coEmailAddr") + '></td></tr>',
       '<tr><td>Status*</td><td><select' + nm("site.siteStatus.id") + '>' + opt(["", "Current", "Former"]) + '</select></td></tr>',
+      o.previewRow ? '<tr><td><b>Address Preview</b></td><td id="addrPreview"></td></tr>' : "",
       '</table><input type="button" class="btn mr_15 buttonSave" id="saveSiteInfoButton" value="SAVE" disabled><input type="button" id="cancelSite" value="Cancel"></div>',
       o.real ? '</div></div></div>' : '</div></div>',
       '<div id="entityTab"' + (o.otherTab ? "" : ' style="display:none"') + '><p>Business Entity</p></div>'
@@ -70,9 +71,23 @@
       if ($("stateSel")) $("stateSel").style.display = us ? "" : "none";
       if ($("provinceInput")) $("provinceInput").style.display = us ? "none" : "";
       var ok = field("Site name*").value && field("Site Type*").value && field("City*").value && country && field("Status*").value && (us ? ($("stateSel") && $("stateSel").value) : true);
+      if (o.needsKeyup) ok = ok && keyed[field("Site name*").name || field("Site name*").id || "INPUT"] && keyed[field("City*").name || field("City*").id || "INPUT"];
       $("saveSiteInfoButton").disabled = !ok;
     }
-    form.addEventListener("input", refresh);
+    // Like RTS: the form reacts to KEYS (it builds the Address Preview and wakes Save from them), not to "input" alone.
+    var keyed = {};
+    if (o.needsKeyup) {
+      form.addEventListener("keyup", function (event) {
+        keyed[event.target.name || event.target.id || event.target.tagName] = true;
+        if (o.previewRow) {
+          var a1 = field("Address Line 1").value, c = field("City*").value;
+          if (keyed[field("Address Line 1").name] || keyed[field("City*").name]) $("addrPreview").textContent = [a1, c].filter(Boolean).join(", ");
+        }
+        refresh();
+      });
+    } else {
+      form.addEventListener("input", refresh);
+    }
     form.addEventListener("change", refresh);
     refresh();
     state.cancelsBeforeDone = 0;
