@@ -105,7 +105,7 @@
       typeSelect.addEventListener("change", () => { draft.steps[index] = { type: typeSelect.value }; renderEdit(); });
       const wrap = el("div", { className: "rules-step" }, [typeSelect]);
       for (const param of or().STEPS[step.type].params) {
-        const input = el("input", { type: "text", value: step[param] ?? "", placeholder: param === "find" ? "text to find" : param === "with" ? "replace with (can be empty)" : "text" });
+        const input = el("input", { type: "text", value: step[param] ?? "", placeholder: or().STEPS[step.type].hints?.[param] ?? (param === "find" ? "text to find" : param === "with" ? "replace with (can be empty)" : "text") });
         input.addEventListener("input", () => { step[param] = input.value; refreshResult(); });
         wrap.appendChild(input);
       }

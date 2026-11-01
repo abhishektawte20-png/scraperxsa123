@@ -25,6 +25,10 @@
     return base.includes("/") ? base.split("/").filter(Boolean) : [];
   }
 
+  const COUNTRY_NAMES = { usa: "united states", us: "united states", "u s": "united states", "u s a": "united states", "united states of america": "united states", america: "united states", uk: "united kingdom", "u k": "united kingdom", "great britain": "united kingdom", england: "united kingdom", uae: "united arab emirates", "south korea": "south korea", korea: "south korea", czechia: "czech republic" };
+  const canonicalCountry = (text) => { const k = String(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); return COUNTRY_NAMES[k] || k; };
+  const DEFAULT_PHONE_FORMATS = { "united states": "###-###-####", canada: "###-###-####" };
+
   const STEPS = {
     lastPathSegment: {
       label: "Keep only the last part of the URL (e.g. the handle)", params: [],
@@ -49,6 +53,58 @@
         return ten.length === 10 ? `${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}` : v;
       }
     },
+    // ---- your own conditions: "if ... then replace the value with ..." (no match: the value is left as it is) ----
+    ifBetween: {
+      label: "If the number is between … and … (inclusive), replace the value with …", params: ["from", "to", "then"],
+      hints: { from: "from, e.g. 2", to: "to, e.g. 10", then: "replace the value with, e.g. 2-10" },
+      check: (step) => (Number.isFinite(Number(step.from)) && String(step.from).trim() !== "" && Number.isFinite(Number(step.to)) && String(step.to).trim() !== "" ? "" : 'Step "If the number is between": "from" and "to" must be numbers.'),
+      // A single number (or "500+") must lie inside; a range such as "5-8" must lie entirely inside.
+      run: (v, p) => {
+        const lo = Number(p.from); const hi = Number(p.to);
+        const nums = (String(v).replace(/,/g, "").match(/\d+(?:\.\d+)?/g) || []).map(Number);
+        if (!nums.length || !Number.isFinite(lo) || !Number.isFinite(hi)) return v;
+        const inside = nums.length >= 2 ? nums[0] >= lo && nums[1] <= hi : nums[0] >= lo && nums[0] <= hi;
+        return inside ? (p.then ?? "") : v;
+      }
+    },
+    ifEquals: { label: "If the value is … replace it with …", params: ["text", "then"], hints: { text: "the value, e.g. USA", then: "replace it with, e.g. United States" }, run: (v, p) => (p.text !== undefined && p.text !== "" && v.trim().toLowerCase() === String(p.text).trim().toLowerCase() ? (p.then ?? "") : v) },
+    ifContains: { label: "If the value contains … replace it with …", params: ["text", "then"], hints: { text: "contains, e.g. Inc", then: "replace it with" }, run: (v, p) => (p.text && v.toLowerCase().includes(String(p.text).toLowerCase()) ? (p.then ?? "") : v) },
+    ifStartsWith: { label: "If the value starts with … replace it with …", params: ["text", "then"], hints: { text: "starts with", then: "replace it with" }, run: (v, p) => (p.text && v.trim().toLowerCase().startsWith(String(p.text).toLowerCase()) ? (p.then ?? "") : v) },
+    ifEndsWith: { label: "If the value ends with … replace it with …", params: ["text", "then"], hints: { text: "ends with", then: "replace it with" }, run: (v, p) => (p.text && v.trim().toLowerCase().endsWith(String(p.text).toLowerCase()) ? (p.then ?? "") : v) },
+    mapValues: {
+      label: "Change values by a list (a=b; c=d)", params: ["pairs"], maxLen: { pairs: 600 },
+      hints: { pairs: "e.g. 2-10=Small; 11-50=Medium; 51-200=Large" },
+      check: (step) => (/=/.test(String(step.pairs || "")) ? "" : 'Step "Change values by a list": write pairs like  a=b; c=d.'),
+      run: (v, p) => {
+        const hit = String(p.pairs || "").split(";").map((pair) => pair.split("=")).find(([from]) => from !== undefined && from.trim().toLowerCase() === v.trim().toLowerCase() && from.trim() !== "");
+        return hit ? hit.slice(1).join("=").trim() : v;
+      }
+    },
+    // The phone is written the way its COUNTRY needs it. The country is the one in the same record (the site's
+    // country, or the report's country). A pattern uses # for each digit; other characters are copied.
+    phoneByCountry: {
+      label: "Format the phone for the country", params: ["formats"], maxLen: { formats: 600 },
+      hints: { formats: "empty = US and Canada as 281-941-6001. Add countries: Germany=+49 ### ########; India=+91 ##### #####" },
+      check: (step) => { const text = String(step.formats || "").trim(); if (!text) return ""; return text.split(";").every((pair) => /^[^=]+=[^=]*#[^=]*$/.test(pair.trim())) ? "" : 'Step "Format the phone for the country": write  Country=pattern  with # for each digit, separated by ;'; },
+      run: (v, p, ctx) => {
+        const country = canonicalCountry(ctx?.country);
+        if (!country) return v;
+        const table = { ...DEFAULT_PHONE_FORMATS };
+        for (const pair of String(p.formats || "").split(";")) { const [name, pattern] = pair.split("="); if (name && pattern) table[canonicalCountry(name)] = pattern.trim(); }
+        const pattern = table[country];
+        if (!pattern) return v;
+        const digits = String(v).replace(/\D/g, "");
+        const fixed = (pattern.match(/\d/g) || []).join("");
+        const slots = (pattern.match(/#/g) || []).length;
+        let own = "";
+        if (digits.length === slots) own = digits;
+        else if (fixed && digits.length === slots + fixed.length && digits.startsWith(fixed)) own = digits.slice(fixed.length);
+        else if (!fixed && digits.length === slots + 1 && digits[0] === "1" && /^(united states|canada)$/.test(country)) own = digits.slice(1);
+        else return v;
+        let i = 0;
+        return pattern.replace(/#/g, () => own[i++]);
+      }
+    },
     trim: { label: "Trim spaces", params: [], run: (v) => v.trim() },
     lowercase: { label: "Make lowercase", params: [], run: (v) => v.toLowerCase() },
     replace: {
@@ -59,11 +115,11 @@
     suffix: { label: "Add text at the end", params: ["text"], run: (v, p) => `${v}${p.text ?? ""}` }
   };
 
-  function runSteps(steps, value) {
+  function runSteps(steps, value, ctx) {
     let current = String(value);
     for (const step of steps) {
       const def = STEPS[step.type];
-      if (def) current = def.run(current, step);
+      if (def) current = def.run(current, step, ctx);
     }
     return current;
   }
@@ -126,7 +182,7 @@
 
   function refsFor(doc, targetId) {
     const refs = [];
-    const add = (path, holder, key) => { if (isObject(holder) && typeof holder[key] === "string") refs.push({ path, get: () => holder[key], set: (v) => { holder[key] = v; } }); };
+    const add = (path, holder, key) => { if (isObject(holder) && typeof holder[key] === "string") refs.push({ path, holder, get: () => holder[key], set: (v) => { holder[key] = v; } }); };
     const list = (value) => (Array.isArray(value) ? value : []);
     const be = doc?.businessEntity;
     const co = doc?.company;
@@ -166,9 +222,13 @@
         const def = STEPS[step?.type];
         if (!def) { errors.push(`Unknown step "${step?.type}".`); continue; }
         for (const param of def.params) {
-          if (typeof (step[param] ?? "") !== "string" || !PARAM_PATTERN.test(step[param] ?? "")) errors.push(`Step "${def.label}": "${param}" must be short plain text.`);
+          const value = step[param] ?? "";
+          const limit = def.maxLen?.[param] ?? 120;
+          if (typeof value !== "string" || /[\n\r]/.test(value) || value.length > limit) errors.push(`Step "${def.label}": "${param}" must be short plain text.`);
         }
         if (step.type === "replace" && !step.find) errors.push('Step "Replace text" needs the text to find.');
+        const problem = def.check?.(step);
+        if (problem) errors.push(problem);
       }
     }
     return errors;
@@ -244,6 +304,15 @@
     return { imported: list.length - skipped.length, skipped };
   }
 
+  // The country a value belongs to: the one in the same record, else the report's own country, else the first site's.
+  function countryFor(doc, holder) {
+    if (isObject(holder) && typeof holder.country === "string" && holder.country.trim()) return holder.country;
+    const own = doc?.extras?.country?.value;
+    if (typeof own === "string" && own.trim()) return own;
+    const site = (Array.isArray(doc?.company?.sites) ? doc.company.sites : []).find((x) => typeof x?.country === "string" && x.country.trim());
+    return site ? site.country : "";
+  }
+
   // Applies every enabled rule to the internal document, in place. A step
   // chain that would leave a value empty is skipped, never applied.
   function apply(doc, rules = cached) {
@@ -252,7 +321,7 @@
       if (rule.enabled === false) continue;
       for (const ref of refsFor(doc, rule.target)) {
         const before = ref.get();
-        const after = runSteps(rule.steps, before);
+        const after = runSteps(rule.steps, before, { doc, holder: ref.holder, country: countryFor(doc, ref.holder) });
         if (after === before || !after.trim()) continue;
         ref.set(after);
         applied.push({ ruleId: rule.id, rule: rule.label, target: rule.target, path: ref.path, before, after });

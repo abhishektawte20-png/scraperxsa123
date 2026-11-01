@@ -216,3 +216,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 - **Site: the "(Format)" links.** Before SAVE, the extension presses the **(Format)** link beside Zip, Phone and Fax (only for boxes that hold a value). If RTS reformats the value, the reformatted value is kept; if RTS marks it as wrong, that box is emptied so the site can still be saved. The steps say what happened ("Format pressed for Phone: …").
 - **Site: SAVE that does nothing.** If SAVE is pressed and neither the form closes, nor the list shows the site, nor RTS says anything, zip, phone and fax are emptied and SAVE is pressed once more, so the site is still added. The result lists what was left out ("Saved Texas City without Zip (77568), Phone (…)") so it can be added by hand.
+
+## 0.27.7
+
+- **Phone by country.** New step "Format the phone for the country": the number is written for the country of the same record (the site's own country, else the report's country). US and Canada are built in (`281-941-6001`). For any other country, add `Country=pattern` pairs in the step, e.g. `Germany=+49 ## ########; India=+91 ##### #####` (`#` = one digit). A country with no pattern is left exactly as it is; an incomplete number is never guessed.
+- **Your own steps.** In Output rules > Add rule, pick any field and add conditions: *if the number is between … and …* (e.g. employee count 2–10 → `2-10`), *if equals / contains / starts with / ends with*, and *replace values from a list* (`a=b; c=d`). Steps run in order.

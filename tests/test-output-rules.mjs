@@ -260,3 +260,112 @@ test("a phone rule changes the phone that reaches the preview, for the text repo
   assert.equal(doc.company.sites[0].phone, "281-941-6001");
   assert.equal(applied.length, 2);
 });
+
+// ---- your own conditions and the phone by country ----
+const run = (steps, value, ctx) => or.runSteps(steps, value, ctx);
+
+test("'If the number is between … and …': a number or a range inside is replaced; anything else is left alone", () => {
+  const step = [{ type: "ifBetween", from: "2", to: "10", then: "2-10" }];
+  assert.equal(run(step, "7"), "2-10");
+  assert.equal(run(step, "2"), "2-10");
+  assert.equal(run(step, "10"), "2-10");
+  assert.equal(run(step, "11"), "11");
+  assert.equal(run(step, "1"), "1");
+  assert.equal(run(step, "5-8"), "2-10", "a range that lies inside");
+  assert.equal(run(step, "5-80"), "5-80", "a range that does not");
+  assert.equal(run(step, "1,200"), "1,200", "thousands separators are understood");
+  assert.equal(run(step, "Not disclosed"), "Not disclosed");
+  assert.equal(run([{ type: "ifBetween", from: "11", to: "50", then: "11-50" }], "25 employees"), "11-50");
+});
+
+test("the other conditions: equals, contains, starts with, ends with, and a list of pairs", () => {
+  assert.equal(run([{ type: "ifEquals", text: "usa", then: "United States" }], "USA"), "United States");
+  assert.equal(run([{ type: "ifEquals", text: "usa", then: "United States" }], "USA Inc"), "USA Inc");
+  assert.equal(run([{ type: "ifContains", text: "pvt", then: "Private Limited" }], "Acme Pvt Ltd"), "Private Limited");
+  assert.equal(run([{ type: "ifStartsWith", text: "www.", then: "site" }], "WWW.acme.com"), "site");
+  assert.equal(run([{ type: "ifEndsWith", text: ".io", then: "tech" }], "acme.io"), "tech");
+  const pairs = [{ type: "mapValues", pairs: "2-10=Small; 11-50=Medium; 51-200=Large" }];
+  assert.equal(run(pairs, "11-50"), "Medium");
+  assert.equal(run(pairs, "51-200"), "Large");
+  assert.equal(run(pairs, "500"), "500");
+  assert.equal(run([{ type: "mapValues", pairs: "a=b=c" }], "a"), "b=c");
+});
+
+test("your own steps chain: the first that matches changes the value, and later steps see the result", () => {
+  const steps = [{ type: "ifBetween", from: "1", to: "1", then: "1-1" }, { type: "ifBetween", from: "2", to: "10", then: "2-10" }, { type: "mapValues", pairs: "2-10=Micro" }];
+  assert.equal(run(steps, "5"), "Micro");
+  assert.equal(run(steps, "20"), "20");
+});
+
+test("steps are validated: numbers where numbers are needed, pairs where pairs are needed, and never empty by accident", () => {
+  const ok = (steps) => or.validateRule({ label: "x", target: "field:extras.employeeCount:value", steps });
+  assert.deepEqual(ok([{ type: "ifBetween", from: "2", to: "10", then: "2-10" }]), []);
+  assert.match(ok([{ type: "ifBetween", from: "two", to: "10", then: "x" }]).join(" "), /must be numbers/);
+  assert.match(ok([{ type: "ifBetween", from: "", to: "10", then: "x" }]).join(" "), /must be numbers/);
+  assert.match(ok([{ type: "mapValues", pairs: "no pairs here" }]).join(" "), /pairs like/);
+  assert.match(ok([{ type: "phoneByCountry", formats: "Germany=no digits" }]).join(" "), /with # for each digit/);
+  assert.deepEqual(ok([{ type: "phoneByCountry", formats: "Germany=+49 ## ########; India=+91 ##### #####" }]), []);
+  assert.deepEqual(ok([{ type: "phoneByCountry" }]), [], "empty = the built-in US and Canada formats");
+  assert.match(ok([{ type: "ifEquals", text: "a\nb", then: "c" }]).join(" "), /short plain text/);
+});
+
+test("a rule on the employee count changes the value that reaches the preview", () => {
+  const doc = { extras: { employeeCount: { value: "7", action: "addIfMissing" } } };
+  const rule = { id: "e", label: "Employees 2-10", target: "field:extras.employeeCount:value", steps: [{ type: "ifBetween", from: "2", to: "10", then: "2-10" }], enabled: true };
+  const applied = or.apply(doc, [rule]);
+  assert.equal(doc.extras.employeeCount.value, "2-10");
+  assert.equal(applied.length, 1);
+});
+
+test("the phone is written for the country it belongs to: US and Canada built in, any other country from your own list", () => {
+  const phone = [{ type: "phoneByCountry", formats: "Germany=+49 ## ########; India=+91 ##### #####; United Kingdom=+44 #### ######" }];
+  assert.equal(run(phone, "(281) 941-6001", { country: "USA" }), "281-941-6001");
+  assert.equal(run(phone, "+1 281 941 6001", { country: "United States" }), "281-941-6001");
+  assert.equal(run(phone, "416.555.0199", { country: "Canada" }), "416-555-0199");
+  assert.equal(run(phone, "+49 3012345678", { country: "Germany" }), "+49 30 12345678");
+  assert.equal(run(phone, "9876543210", { country: "India" }), "+91 98765 43210");
+  assert.equal(run(phone, "+91 98765 43210", { country: "India" }), "+91 98765 43210");
+  assert.equal(run(phone, "+44 20 7946 0958", { country: "UK" }), "+44 2079 460958");
+  assert.equal(run(phone, "01 23 45 67 89", { country: "France" }), "01 23 45 67 89", "a country with no format is left exactly as it is");
+  assert.equal(run(phone, "281-941-6001", {}), "281-941-6001", "no country, no change");
+  assert.equal(run(phone, "941-6001", { country: "USA" }), "941-6001", "an incomplete number is not guessed");
+});
+
+test("the country comes from the same record: a site's own country, else the report's country", () => {
+  const rule = { id: "p", label: "Phone by country", target: "field:company.sites:phone", steps: [{ type: "phoneByCountry", formats: "India=+91 ##### #####" }], enabled: true };
+  const doc = { company: { sites: [{ city: "Pune", country: "India", phone: "9876543210" }, { city: "Austin", country: "USA", phone: "(512) 555-0100" }] } };
+  or.apply(doc, [rule]);
+  assert.deepEqual(doc.company.sites.map((x) => x.phone), ["+91 98765 43210", "512-555-0100"]);
+  const text = { extras: { country: { value: "Canada" }, phone: { value: "(416) 555-0199" } } };
+  or.apply(text, [{ ...rule, target: "field:extras.phone:value" }]);
+  assert.equal(text.extras.phone.value, "416-555-0199");
+});
+
+test("dialog: you build your own condition — if the employee count is between 2 and 10, set 2-10 — and it is saved and applied", async () => {
+  const shadow = setupPanel();
+  btn(shadow, "Output rules").click();
+  const card = shadow.querySelector(".rules-card");
+  btn(card, "Add rule").click();
+  const target = card.querySelector("select");
+  target.value = Array.from(target.options).find((o) => o.textContent === "Employee count").value;
+  target.dispatchEvent(new window.Event("change", { bubbles: true }));
+  let c = shadow.querySelector(".rules-card");
+  type(c.querySelector("input[type=text]"), "Employees 2-10");
+  const stepType = c.querySelectorAll("select")[1];
+  assert.ok(Array.from(stepType.options).some((o) => /If the number is between/.test(o.textContent)), "the new steps are offered");
+  stepType.value = "ifBetween";
+  stepType.dispatchEvent(new window.Event("change", { bubbles: true }));
+  c = shadow.querySelector(".rules-card");
+  const boxes = Array.from(c.querySelectorAll(".rules-step input[type=text]"));
+  assert.deepEqual(boxes.map((b) => b.placeholder), ["from, e.g. 2", "to, e.g. 10", "replace the value with, e.g. 2-10"]);
+  type(boxes[0], "2"); type(boxes[1], "10"); type(boxes[2], "2-10");
+  btn(c, "Save rule").click();
+  await tick(); await tick();
+  const saved = or.getCached().find((r) => r.label === "Employees 2-10");
+  assert.deepEqual(saved.steps, [{ type: "ifBetween", from: "2", to: "10", then: "2-10" }]);
+  assert.match(shadow.querySelector(".rules-card").textContent, /If the number is between/);
+  const doc = { extras: { employeeCount: { value: "7", action: "addIfMissing" } } };
+  or.apply(doc);
+  assert.equal(doc.extras.employeeCount.value, "2-10");
+  await or.removeRule(saved.id);
+});
