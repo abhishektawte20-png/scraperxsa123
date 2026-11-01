@@ -45,3 +45,18 @@ test("a title that is not on the page is ignored, and a longer text that merely 
   assert.equal(await nav().ensureSectionOpen(() => null, ["Nope"]), false);
   assert.ok(doc);
 });
+
+test("expandEverything opens the sections of BOTH tabs, never collapses an open one, and puts the page back where it was", async () => {
+  const doc = setup(`<button class="navigation__button" id="be">Business Entity</button><button class="navigation__button" id="co">Company</button>
+    <div id="tabBE"><a id="expBE" href="#">Expand</a></div><div id="tabCO" style="display:none"><a id="expCO" href="#">Expand</a></div>`);
+  const open = { be: false, co: false };
+  const show = (which) => { doc.getElementById("tabBE").style.display = which === "be" ? "block" : "none"; doc.getElementById("tabCO").style.display = which === "co" ? "block" : "none"; };
+  doc.getElementById("be").addEventListener("click", () => show("be"));
+  doc.getElementById("co").addEventListener("click", () => show("co"));
+  for (const [id, key] of [["expBE", "be"], ["expCO", "co"]]) doc.getElementById(id).addEventListener("click", (event) => { event.preventDefault(); open[key] = true; event.currentTarget.textContent = "Collapse"; });
+  assert.equal(await nav().expandEverything(), 2);
+  assert.deepEqual(open, { be: true, co: true });
+  // a second time: the links now say Collapse, so nothing is pressed and nothing is collapsed
+  await nav().expandEverything();
+  assert.deepEqual(open, { be: true, co: true });
+});

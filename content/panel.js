@@ -1088,7 +1088,7 @@
       }
 
       // Open every section of the current tab once, so a field is not missed only because its section is collapsed.
-      try { await globalThis.SXRTS.navigation?.expandAll(); } catch { /* a page without the control simply carries on */ }
+      try { await globalThis.SXRTS.navigation?.expandEverything(); } catch { /* a page without the control simply carries on */ }
       // From here until the results, a message box from RTS is answered at once (and written down) instead of waiting for OK.
       globalThis.SXRTS.dialogLog?.begin();
       progress.start(selected.length);

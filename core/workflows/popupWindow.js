@@ -140,7 +140,11 @@
   // Every + button of every level: they may carry different ids (RTS: ...Group...Expander and ...Segment...Expander).
   function treeShownAll(selectors) {
     const out = [];
-    for (const selector of selectors || []) for (const node of queryAll(selector)) if (rendered(node) && !out.includes(node)) out.push(node);
+    // A "+" button is never a close / cancel control: a mapping that picked up the window's close button (for example
+    // #msa-close-btn) must not press it while looking for a choice, or the window would close under the job.
+    const WORDS = /(^|[^a-z])(close|cancel|dismiss|exit)([^a-z]|$)/i; // "msa-close-btn" yes, "tree-closed" no
+    const closing = (node) => WORDS.test(`${node.id} ${typeof node.className === "string" ? node.className : ""} ${node.getAttribute?.("aria-label") || ""} ${node.getAttribute?.("title") || ""} ${node.getAttribute?.("data-dismiss") || ""}`) || /^(close|cancel|x|\u00d7)$/i.test((node.textContent || node.value || "").trim());
+    for (const selector of selectors || []) for (const node of queryAll(selector)) if (rendered(node) && !closing(node) && !out.includes(node)) out.push(node);
     return out.sort((a, b) => (a.compareDocumentPosition(b) & 4 ? -1 : 1));
   }
 

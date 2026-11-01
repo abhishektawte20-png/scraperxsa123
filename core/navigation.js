@@ -87,6 +87,24 @@
     return true;
   }
 
+  // Opens every section of BOTH tabs (Business Entity and Company), so a control is never missing only because its
+  // section was collapsed or its tab was not the one being shown. "Expand" is only pressed where it says Expand, so a
+  // tab that is already open is never collapsed. The page is scrolled back to where it was.
+  async function expandEverything() {
+    const startY = window.scrollY || 0;
+    let opened = 0;
+    for (const name of ["Business Entity", "Company"]) {
+      const button = Array.from(document.querySelectorAll("button.navigation__button")).find((btn) => btn.textContent.includes(name));
+      if (!button) continue;
+      button.click();
+      await wait(300);
+      if (await expandAll()) opened += 1;
+    }
+    if (!opened) await expandAll();
+    try { window.scrollTo(0, startY); } catch { /* a page that cannot scroll simply stays */ }
+    return opened;
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.navigation = { expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
+  globalThis.SXRTS.navigation = { expandEverything, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
 })();

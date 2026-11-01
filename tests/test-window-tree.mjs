@@ -258,3 +258,13 @@ test("undo: read-back of an untick reports the box as not ticked", async () => {
   const result = await run(job("6.4.1 — IT Consulting and Outsourcing", { verifyOnly: true, untick: true }));
   assert.deepEqual(result, { status: "verified", checked: true }, "still ticked (nothing was undone yet)");
 });
+
+test("a mapping that also lists the window's close button as a + button never presses it while looking for a choice", async () => {
+  const { doc, state } = setup();
+  doc.body.insertAdjacentHTML("afterbegin", '<div id="msa-close-btn" style="display:block">x</div>');
+  let closePressed = 0;
+  doc.getElementById("msa-close-btn").addEventListener("click", () => { closePressed++; });
+  const outcome = await run(job("6.5.1 — Application Software", { tree: { expander: { selectors: ["img.tg", "#msa-close-btn"] }, leaf: { selectors: ['input[type="checkbox"]'] } } }));
+  assert.equal(outcome.status, "saved");
+  assert.equal(closePressed, 0, "the close button was left alone");
+});
