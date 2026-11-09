@@ -87,6 +87,33 @@
       evidenceStatus: "ready",
       required: false
     },
+    // The fixed statuses: plain drop-downs saved with the same Save button as the rest of this group.
+    {
+      key: "businessEntity.financingStatus", jsonPath: "businessEntity.financingStatus", area: "Business Entity", section: "Entity > General", controlKind: "nativeSelect",
+      form: { select: { candidates: ['select[name="company.financingStatus.id"]', '[id="company.financingStatus.id"]'] } },
+      saveButton: SAVE_BUTTON, verification: VERIFICATION, evidenceStatus: "ready", required: false
+    },
+    {
+      key: "businessEntity.researchStatus", jsonPath: "businessEntity.researchStatus", area: "Business Entity", section: "Entity > General", controlKind: "nativeSelect",
+      form: { select: { candidates: ["#companyResearchStatus", 'select[name="company.researchStatus.id"]'] } },
+      saveButton: SAVE_BUTTON, verification: VERIFICATION, evidenceStatus: "ready", required: false
+    },
+    {
+      key: "businessEntity.publishStatus", jsonPath: "businessEntity.publishStatus", area: "Business Entity", section: "Entity > General", controlKind: "nativeSelect",
+      form: { select: { candidates: ['select[name="companyPublishStatusSelect"]', "select.profile-publish-status"] } },
+      saveButton: SAVE_BUTTON, verification: VERIFICATION, evidenceStatus: "ready", required: false
+    },
+    // The two history tables have their own Save buttons and are written by core/workflows/statusHistory.js.
+    {
+      key: "businessEntity.ownershipStatus", jsonPath: "businessEntity.ownershipStatus", area: "Business Entity", section: "Ownership Status History", controlKind: "statusHistory",
+      form: { addButton: { candidates: ['input[value="Add New Ownership Status"]'] } },
+      saveButton: { scopedTo: "Ownership Status History", candidates: ["#saveOwnershipStatusHistory"] }, verification: { method: "rowsReadBack" }, evidenceStatus: "ready", required: false
+    },
+    {
+      key: "businessEntity.businessStatus", jsonPath: "businessEntity.businessStatus", area: "Business Entity", section: "Business Status History", controlKind: "statusHistory",
+      form: { addButton: { candidates: ['input[value="Add New Business Status"]'] } },
+      saveButton: { scopedTo: "Business Status History", candidates: ["#saveTargetStageHistory"] }, verification: { method: "rowsReadBack" }, evidenceStatus: "ready", required: false
+    },
     {
       key: "businessEntity.researchNotes",
       jsonPath: "businessEntity.researchNotes",

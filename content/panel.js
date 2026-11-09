@@ -345,6 +345,9 @@
         return applied?.before ?? globalThis.SXRTS.outputRules.refsFor(lastValidated, target)[0]?.get() ?? null;
       }
     });
+    const mappingsUi = globalThis.SXRTS.mappingsUi?.mount(shadow);
+    const mappingsButton = element("button", { className: "btn secondary", text: "Mappings", type: "button", tip: "Every data point and the steps used to fill it: built-in fields, mapped fields and rules. Read-only." });
+    mappingsButton.addEventListener("click", () => mappingsUi?.open());
     const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", tip: "Saved changes applied to the agent's output before it reaches RTS. Example: keep only the Facebook handle instead of the whole URL." });
     rulesButton.addEventListener("click", () => rulesUi?.open());
 
@@ -367,7 +370,7 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, rulesButton, historyButton, feedbackButton, gameButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, mappingsButton, rulesButton, historyButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -694,8 +697,8 @@
             input.value = matched || (options.allowBlank ? "" : options.values[0]);
           }
         } else {
-          const isLongText = typeof val === "string" && val.length > 60;
-          input = isLongText ? element("textarea", { value: val, rows: 2 }) : element("input", { value: currentText });
+          const isLongText = typeof val === "string" && (val.length > 60 || val.includes("\n")); // a one-line box would drop the line breaks
+          input = isLongText ? element("textarea", { value: val, rows: Math.min(8, Math.max(2, String(val).split("\n").length)) }) : element("input", { value: currentText });
         }
 
         fields.push({ key, input, type: typeof val });
@@ -747,6 +750,7 @@
           element("div", { className: "action-card-area", text: (() => { const cat = globalThis.SXRTS.outputFields?.get(action.jsonPath); return cat ? `${action.area || cat.area} · ${cat.label}` : (action.area || "(unregistered)"); })() })
         ]),
         ...(action.mandatory ? [element("span", { className: "badge badge-pending", text: "required" })] : []),
+        ...(action.always ? [element("span", { className: "badge badge-pending", text: "every profile" })] : []),
         statusBadge
       ]);
 
@@ -1179,6 +1183,32 @@
       const customEntries = selected.filter((entry) => entry.action.customKey);
       for (const entry of customEntries.filter(isWindowField)) await publishCustom(entry);
 
+      // Verticals: built in. Its window is opened right after the window fields, still close to the click on Publish.
+      const verticalEntries = selected.filter((entry) => entry.action.verticalGroup);
+      if (verticalEntries.length) {
+        progress.doing("Verticals (choose True in the window, save once)");
+        await globalThis.SXRTS.navigation?.showTab("Company");
+        const named = [];
+        for (const entry of verticalEntries) {
+          const value = validatedValueFor(entry);
+          if (value === undefined) continue;
+          const name = typeof value === "string" ? value : value?.value ?? value?.name ?? "";
+          named.push({ entry, name: String(name).trim() });
+        }
+        let outcome = null;
+        try { outcome = await globalThis.SXRTS.workflows.verticals.applyVerticals(named.map((n) => n.name)); } catch (error) {
+          for (const { entry } of named) { failed++; setRowStatus(entry.action.actionId, "failed", error.message); recordResult(entry.action.jsonPath, { status: "error", error: error.message }); }
+        }
+        if (outcome) {
+          for (const { entry, name } of named) {
+            const one = outcome.results[name] ?? { status: "failed", detail: `${name}: no result.` };
+            if (one.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail); recordResult(entry.action.jsonPath, { status: "savedValueVerified", name, detail: one.detail }); }
+            else if (one.status === "skipped") { skipped++; setRowStatus(entry.action.actionId, "skipped", one.detail); recordResult(entry.action.jsonPath, { status: "skipped", reason: one.detail }); }
+            else { failed++; setRowStatus(entry.action.actionId, "failed", one.detail); recordResult(entry.action.jsonPath, { status: "error", error: one.detail }); }
+          }
+        }
+      }
+
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {
         progress.doing("Name variations");
@@ -1197,7 +1227,7 @@
         }
       }
 
-      const generalJsonPaths = ["businessEntity.websiteAddresses", "businessEntity.emailDefaultStructure", "businessEntity.researchNotes"];
+      const generalJsonPaths = ["businessEntity.websiteAddresses", "businessEntity.emailDefaultStructure", "businessEntity.researchNotes", "businessEntity.financingStatus", "businessEntity.researchStatus", "businessEntity.publishStatus"];
       const generalEntries = selected.filter((entry) => generalJsonPaths.includes(entry.action.jsonPath));
       if (generalEntries.length) {
         progress.doing("Website, email and research notes");
@@ -1214,6 +1244,8 @@
             fields.emailDefaultStructure = value;
           } else if (entry.action.jsonPath === "businessEntity.researchNotes") {
             (fields.researchNotes ??= []).push(value);
+          } else {
+            fields[entry.action.jsonPath.split(".")[1]] = value; // financingStatus / researchStatus / publishStatus
           }
         }
 
@@ -1223,16 +1255,19 @@
             const fieldKeyByJsonPath = {
               "businessEntity.websiteAddresses": "websiteAddresses",
               "businessEntity.emailDefaultStructure": "emailDefaultStructure",
-              "businessEntity.researchNotes": "researchNotes"
+              "businessEntity.researchNotes": "researchNotes",
+              "businessEntity.financingStatus": "financingStatus",
+              "businessEntity.researchStatus": "researchStatus",
+              "businessEntity.publishStatus": "publishStatus"
             };
             for (const entry of validEntries) {
               const fieldResult = groupResult.results?.[fieldKeyByJsonPath[entry.action.jsonPath]];
               const status = fieldResult?.status ?? groupResult.status;
               const reason = fieldResult?.reason ?? groupResult.reason ?? "";
-              const result = { status, reason };
+              const result = { status, reason, detail: fieldResult?.detail };
               recordResult(entry.action.jsonPath, result);
               keepForUndo(entry, valueFor(entry.action), { status, before: fieldResult?.before });
-              setRowStatus(entry.action.actionId, status, reason);
+              setRowStatus(entry.action.actionId, status, status === "savedValueVerified" ? (fieldResult?.detail || "") : reason);
               if (status === "savedValueVerified") applied++; else if (status === "skipped") skipped++; else failed++;
             }
           } catch (error) {
@@ -1242,6 +1277,24 @@
               recordResult(entry.action.jsonPath, { status: "error", error: error.message });
             }
           }
+        }
+      }
+
+      // Ownership and Business Status History: each is its own small table with its own Save button.
+      for (const entry of selected.filter((e) => e.action.jsonPath === "businessEntity.ownershipStatus" || e.action.jsonPath === "businessEntity.businessStatus")) {
+        const kind = entry.action.jsonPath === "businessEntity.ownershipStatus" ? "ownership" : "business";
+        progress.doing(kind === "ownership" ? "Ownership status history" : "Business status history");
+        await globalThis.SXRTS.navigation?.showTab("Business Entity");
+        const value = validatedValueFor(entry);
+        if (value === undefined) continue;
+        try {
+          const result = await lookAgain(() => globalThis.SXRTS.workflows.statusHistory.applyStatusHistory(kind, { date: value.date, status: value.value }));
+          recordResult(entry.action.jsonPath, result);
+          if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", result.detail || ""); }
+          else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
+        } catch (error) {
+          failed++; setRowStatus(entry.action.actionId, "failed", error.message);
+          recordResult(entry.action.jsonPath, { status: "error", error: error.message });
         }
       }
 

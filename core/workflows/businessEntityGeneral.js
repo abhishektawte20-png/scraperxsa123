@@ -75,6 +75,22 @@
     return { status: "willSave", value: match.label, before: current };
   }
 
+  // A fixed status drop-down (Financing, Research, Publish). It is set to the wanted option; when it already shows that
+  // option nothing is changed. A different value is overwritten (the team's rule), and what it was is reported.
+  async function applyStatusSelect(key, label, envelope) {
+    const field = entry(key);
+    const select = field.form.select.candidates.map((selector) => document.querySelector(selector)).find(Boolean);
+    if (!select) throw new Error(`${label} dropdown was not found. Open the Business Entity tab so it is on screen, then publish again.`);
+    if (envelope.action === "skip") return { status: "skipped", reason: "action=skip" };
+    const option = globalThis.SXRTS.adapters.nativeSelect.findExactOption(select, envelope.value);
+    if (!option) throw new Error(`${label}: "${envelope.value}" is not one of the dropdown's choices in RTS.`);
+    const current = select.selectedOptions[0]?.textContent.replace(/\s+/g, " ").trim() || "";
+    if (select.selectedOptions[0] === option) return { status: "skipped", reason: `${label} already equals "${current}".` };
+    await globalThis.SXRTS.adapters.nativeSelect.selectNativeOption(select, option.textContent);
+    if (select.selectedOptions[0] !== option) throw new Error(`${label} did not keep "${envelope.value}".`);
+    return { status: "willSave", value: envelope.value, before: current };
+  }
+
   async function applyResearchNotesValue(notes) {
     const field = entry("businessEntity.researchNotes");
     const editable = document.querySelector(field.form.editable.candidates[0]);
@@ -83,6 +99,7 @@
     let finalText = globalThis.SXRTS.adapters.contentEditable.readContentEditable(editable);
     const added = [];
     let changed = false;
+    let alreadyMarked = false;
 
     for (const note of notes) {
       if (note.action === "skip") continue;
@@ -94,13 +111,16 @@
         continue;
       }
       if (note.action === "updateIfBlank" && finalText.trim()) continue;
+      // The monitoring mark is only ever added once: any form of it already in the notes (this one or the older
+      // one-line wording) means it is there, and nothing is added.
+      if (/AIGEN_SRX_V1_Y/i.test(note.text) && /AIGEN_SRX_V1_Y/i.test(finalText)) { alreadyMarked = true; continue; }
       if (normalize(finalText).includes(normalize(note.text))) continue;
       finalText = finalText.trim() ? `${finalText}\n${note.text}` : note.text;
       added.push(note.text);
       changed = true;
     }
 
-    if (!changed) return { status: "skipped", reason: "Research Notes already has this text; nothing new to add." };
+    if (!changed) return { status: "skipped", reason: alreadyMarked ? "Research Notes already has the ANC mark (AIGEN_SRX_V1_Y); nothing new to add." : "Research Notes already has this text; nothing new to add." };
 
     await globalThis.SXRTS.adapters.contentEditable.applyContentEditable(editable, finalText);
     if (!globalThis.SXRTS.adapters.contentEditable.verifyContentEditable(editable, finalText)) {
@@ -140,6 +160,14 @@
       if (outcome.status === "willSave") touched.push("emailDefaultStructure");
     }
 
+    for (const [key, name, label] of [["financingStatus", "Financing status", "Financing Status"], ["researchStatus", "Research status", "Research Status"], ["publishStatus", "Publish status", "Publish Status"]]) {
+      if (!fields[key]) continue;
+      const outcome = await applyStatusSelect(`businessEntity.${key}`, label, fields[key]);
+      if (outcome.status === "willSave") outcome.detail = `${name} changed from "${outcome.before || "(blank)"}" to "${outcome.value}".`;
+      results[key] = outcome;
+      if (outcome.status === "willSave") touched.push(key);
+    }
+
     if (fields.researchNotes?.length) {
       const outcome = await applyResearchNotesValue(fields.researchNotes);
       results.researchNotes = outcome;
@@ -165,6 +193,7 @@
     applyWebsiteAddressValue,
     applyEmailDefaultStructureValue,
     applyResearchNotesValue,
+    applyStatusSelect,
     saveGeneralGroup
   };
 })();

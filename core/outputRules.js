@@ -71,6 +71,20 @@
     ifContains: { label: "If the value contains … replace it with …", params: ["text", "then"], hints: { text: "contains, e.g. Inc", then: "replace it with" }, run: (v, p) => (p.text && v.toLowerCase().includes(String(p.text).toLowerCase()) ? (p.then ?? "") : v) },
     ifStartsWith: { label: "If the value starts with … replace it with …", params: ["text", "then"], hints: { text: "starts with", then: "replace it with" }, run: (v, p) => (p.text && v.trim().toLowerCase().startsWith(String(p.text).toLowerCase()) ? (p.then ?? "") : v) },
     ifEndsWith: { label: "If the value ends with … replace it with …", params: ["text", "then"], hints: { text: "ends with", then: "replace it with" }, run: (v, p) => (p.text && v.trim().toLowerCase().endsWith(String(p.text).toLowerCase()) ? (p.then ?? "") : v) },
+    // Puts another field's text in front: the full description is the brief description followed by the full one.
+    prependField: {
+      label: "Put another field's text in front (for example the brief description before the full description)", params: ["path"], maxLen: { path: 80 },
+      hints: { path: "field path, e.g. company.briefDescription" },
+      check: (step) => (/^[A-Za-z][\w.]*$/.test(String(step.path || "")) ? "" : 'Step "Put another field in front": write a field path such as company.briefDescription.'),
+      run: (v, p, ctx) => {
+        let other = ctx?.doc;
+        for (const key of String(p.path || "").split(".")) other = other && typeof other === "object" ? other[key] : undefined;
+        if (other && typeof other === "object" && "value" in other) other = other.value;
+        const front = typeof other === "string" ? other.trim() : "";
+        if (!front || v.trim().toLowerCase().startsWith(front.toLowerCase())) return v; // nothing to add, or already there
+        return `${front} ${v.trim()}`;
+      }
+    },
     mapValues: {
       label: "Change values by a list (a=b; c=d)", params: ["pairs"], maxLen: { pairs: 600 },
       hints: { pairs: "e.g. 2-10=Small; 11-50=Medium; 51-200=Large" },

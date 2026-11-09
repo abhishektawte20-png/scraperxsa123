@@ -137,7 +137,7 @@ test("teach a field by clicking it on the page, then it flows through prompt, va
   });
   buttonByText(shadow, "Validate JSON").click();
   const cards = shadow.querySelectorAll(".action-card");
-  assert.equal(cards.length, 2, "the field plus the always-present ANC mark");
+  assert.equal(cards.length, 6, "the field, the ANC mark, three fixed drop-downs and the ownership row (skipped: no start date); no history workflow is loaded here, so no business row");
   const taught = Array.from(cards).find((card) => /custom\.foundedYear/.test(card.textContent));
   assert.ok(taught, "the taught field has its card");
   assert.match(taught.textContent, /Taught field/);

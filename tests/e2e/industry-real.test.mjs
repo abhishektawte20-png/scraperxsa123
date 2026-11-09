@@ -12,7 +12,7 @@ import { TEXT_SAMPLE } from "../helpers/rovo-text-sample.mjs";
 import { createHandler } from "../helpers/rts-industry-site.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"; const dir = fs.readdirSync(root).find((d) => d.startsWith("chromium-")); return dir ? path.join(root, dir, "chrome-linux", "chrome") : undefined; };
+const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"; const dir = fs.readdirSync(root).find((d) => d.startsWith("chromium-")); return dir ? [path.join(root, dir, "chrome-linux", "chrome"), path.join(root, dir, "chrome-linux64", "chrome")].find((candidate) => fs.existsSync(candidate)) : undefined; };
 
 async function publishIndustry(options = {}, code = "1.2.4 — Consulting Services", { fixedName = "", preopen = false } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-real-"));

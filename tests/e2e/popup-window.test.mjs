@@ -19,7 +19,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 function chromiumPath() {
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers";
   const dir = fs.readdirSync(root).find((d) => d.startsWith("chromium-"));
-  return dir ? path.join(root, dir, "chrome-linux", "chrome") : undefined;
+  return dir ? [path.join(root, dir, "chrome-linux", "chrome"), path.join(root, dir, "chrome-linux64", "chrome")].find((candidate) => fs.existsSync(candidate)) : undefined;
 }
 
 function buildExtension(target, teamFile) {

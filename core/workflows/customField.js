@@ -535,5 +535,5 @@
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS };
+  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow };
 })();

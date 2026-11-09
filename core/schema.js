@@ -393,7 +393,7 @@
       return null;
     }
     const safe = {};
-    const known = new Set(["nameVariations", "emailDefaultStructure", "websiteAddresses", "socialMediaIdentifiers", "researchNotes"]);
+    const known = new Set(["nameVariations", "emailDefaultStructure", "websiteAddresses", "socialMediaIdentifiers", "researchNotes", "financingStatus", "researchStatus", "publishStatus", "ownershipStatus", "businessStatus"]);
     for (const key of Object.keys(value)) {
       if (!known.has(key)) warnings.push(`businessEntity.${key} is not a recognized field and was ignored.`);
     }
@@ -425,6 +425,17 @@
     }
     if ("researchNotes" in value) {
       safe.researchNotes = checkRecordArray(value.researchNotes, "businessEntity.researchNotes", errors, researchNoteFields);
+    }
+    // The fixed statuses the extension adds to every profile: a value from a list, and for the two histories a date too.
+    for (const key of ["financingStatus", "researchStatus", "publishStatus", "ownershipStatus", "businessStatus"]) {
+      if (!(key in value) || value[key] === null) continue;
+      const record = checkEnvelope(value[key], `businessEntity.${key}`, errors, { valueCheck: (v) => typeof v === "string" && v.trim().length > 0, valueLabel: "a non-empty string" });
+      if (record && (key === "ownershipStatus" || key === "businessStatus")) {
+        const date = value[key].date;
+        if (typeof date !== "string" || !/^\d{2}\/\d{2}\/\d{4}$/.test(date)) pushError(errors, `businessEntity.${key}`, `date must use MM/DD/YYYY. Received: ${describeValue(date)}`);
+        else record.date = date;
+      }
+      safe[key] = record;
     }
     return safe;
   }

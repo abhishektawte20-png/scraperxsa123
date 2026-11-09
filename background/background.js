@@ -40,11 +40,14 @@ const ASSISTANT_FILES = [
   "core/workflows/businessEntityGeneral.js",
   "core/workflows/companySic.js",
   "core/workflows/companySite.js",
+  "core/workflows/statusHistory.js",
+  "core/workflows/verticals.js",
   "core/workflows/customField.js",
   "core/workflows/treePicker.js",
   "content/ui.js",
   "content/teach.js",
   "content/rules.js",
+  "content/mappings.js",
   "content/history.js",
   "content/undo.js",
   "content/feedback.js",
@@ -240,7 +243,7 @@ async function waitUntilGone(tabId, limit = 3500) {
 
 async function runInWindow(tabId, job) {
   const result = await runInWindowOnce(tabId, job);
-  if (result?.status === "saved" || result?.status === "verified" || result?.status === "skipped") await waitUntilGone(tabId);
+  if (result?.status === "saved" || result?.status === "verified" || result?.status === "skipped" || result?.status === "clicked") await waitUntilGone(tabId);
   return result;
 }
 

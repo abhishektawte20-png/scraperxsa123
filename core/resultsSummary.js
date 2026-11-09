@@ -27,6 +27,8 @@
     "businessEntity.nameVariations": "Name variations", "businessEntity.websiteAddresses": "Website address",
     "businessEntity.emailDefaultStructure": "Email default structure", "businessEntity.researchNotes": "Research notes",
     "company.sicCodes": "SIC codes", "company.naicsCodes": "NAICS codes", "company.keywords": "Keywords",
+    "businessEntity.financingStatus": "Financing status", "businessEntity.researchStatus": "Research status", "businessEntity.publishStatus": "Publish status", "businessEntity.ownershipStatus": "Ownership status history", "businessEntity.businessStatus": "Business status history",
+    "extras.verticals": "Verticals", "company.verticals": "Verticals",
     "company.briefDescription": "Brief description", "company.fullDescription": "Full description",
     "businessEntity.socialMediaIdentifiers": "Social media", "company.sites": "Site"
   };
@@ -52,7 +54,7 @@
         icon: "✓",
         status: "success",
         label: field,
-        message: `Added ${result.name || result.code || result.value || "value"} successfully`,
+        message: result.detail || `Added ${result.name || result.code || result.value || "value"} successfully`,
         detail: null
       };
     }

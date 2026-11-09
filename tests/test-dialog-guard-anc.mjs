@@ -65,7 +65,7 @@ test("the ANC mark is always in the plan, once, and cannot be skipped", () => {
   const plan = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
   assert.equal(plan.length, 1);
   assert.equal(plan[0].mandatory, true);
-  assert.equal(plan[0].proposedValue.text, "AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research");
+  assert.equal(plan[0].proposedValue.text, "AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research");
   assert.equal(plan[0].proposedValue.action, "addIfMissing", "it is appended, never replaces existing notes");
   const again = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
   assert.equal(again.length, 1, "building the plan twice never doubles it");
@@ -86,4 +86,38 @@ test("only aggregators and hosting addresses are warnings; an ordinary outside p
   assert.equal(C.externalSeverity("diamondmirror.net"), "info");
   assert.equal(C.externalCode("diamondmirror.net"), "SOURCE_NOTE");
   assert.equal(C.externalCode("www.zoominfo.com"), "EXTERNAL_SOURCE");
+});
+
+test("the ANC note lists the sources the report gave, each link once, with the fields that used it", () => {
+  const ep = globalThis.SXRTS.executionPlan;
+  globalThis.SXRTS.resultsSummary = { friendly: (path) => ({ "company.briefDescription": "Brief description", "company.fullDescription": "Full description", "businessEntity.websiteAddresses": "Website address" })[path] || path };
+  const doc = {
+    profileIdentity: { companyName: "A", domain: "a.com" },
+    businessEntity: { websiteAddresses: [{ value: "a.com", action: "addIfMissing", source: "https://a.com/" }] },
+    company: {
+      briefDescription: { value: "x", action: "addIfMissing", source: "https://a.com/about" },
+      fullDescription: { value: "y", action: "addIfMissing", source: "https://a.com/about" }
+    }
+  };
+  const note = ep.ancNote(doc);
+  assert.equal(note, [
+    "AIGEN_SRX_V1_Y", "Used ScraperX UI Automation Tool for Research", "Sources:",
+    "[1] https://a.com/", "[2] https://a.com/about",
+    "Website address: [1]", "Brief description: [2]", "Full description: [2]"
+  ].join("\n"));
+  const plan = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
+  assert.equal(plan.at(-1).proposedValue.text, note);
+  assert.equal(plan.at(-1).mandatory, true);
+  assert.equal(ep.ancNote({ profileIdentity: {} }), ep.ANC_TEXT, "no sources, just the two fixed lines");
+});
+
+test("the full description in the plan starts with the brief description, once; the brief description is untouched", () => {
+  const ep = globalThis.SXRTS.executionPlan;
+  const make = () => ({ profileIdentity: { companyName: "A", domain: "a.com" }, company: { briefDescription: { value: "Provider of X intended for Y.", action: "addIfMissing" }, fullDescription: { value: "The company does Z, enabling W.", action: "addIfMissing" } } });
+  const doc = make();
+  const plan = ep.buildExecutionPlan(doc);
+  assert.equal(plan.find((a) => a.jsonPath === "company.fullDescription").proposedValue.value, "Provider of X intended for Y. The company does Z, enabling W.");
+  assert.equal(plan.find((a) => a.jsonPath === "company.briefDescription").proposedValue.value, "Provider of X intended for Y.");
+  ep.buildExecutionPlan(doc);
+  assert.equal(doc.company.fullDescription.value, "Provider of X intended for Y. The company does Z, enabling W.", "building the plan again does not double it");
 });

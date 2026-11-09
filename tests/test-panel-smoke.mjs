@@ -27,6 +27,8 @@ import "../core/promptBuilder.js";
 import "../core/outputFields.js";
 import "../core/executionPlan.js";
 import "../core/workflows/businessEntityNameVariations.js";
+import "../core/workflows/statusHistory.js";
+import { statusControlsHtml, wireStatusControls } from "./helpers/status-controls.mjs";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../core/resultsSummary.js";
@@ -64,6 +66,16 @@ function setupDom() {
   return { dom, shadow };
 }
 
+// Publishing now does more steps (statuses, history tables), so wait for the summary instead of a fixed pause.
+async function untilSummary(shadow, ms = 6000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const statuses = shadow.querySelectorAll(".status");
+    if (/Saved \d+ · Already in RTS/.test(statuses[statuses.length - 1]?.textContent || "")) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 function textOf(shadow, selector) {
   return shadow.querySelector(selector)?.textContent ?? "";
 }
@@ -91,7 +103,7 @@ test("validating a valid response builds a preview with the expected row count",
   validateButton.click();
 
   const rows = shadow.querySelectorAll(".action-card");
-  assert.equal(rows.length, 3, "the two fields plus the always-present ANC mark");
+  assert.equal(rows.length, 8, "the two fields, the ANC mark, the three fixed drop-downs, the business status row and the ownership row (skipped: no start date)");
   const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   assert.equal(publishButton.disabled, false);
 });
@@ -197,7 +209,9 @@ test("insufficient identity proceeds to publish once manually confirmed", async 
     <input type="button" value="Save" id="saveBusinessEntityNameVariation">
     <div class="highlight-textarea" contenteditable=""></div>
     <input type="button" id="saveBusinessEntityButton">
+    ${statusControlsHtml()}
   `);
+  wireStatusControls(document);
   document.getElementById("saveBusinessEntityButton").addEventListener("click", () => { setTimeout(() => { document.getElementById("saveBusinessEntityButton").disabled = true; }, 10); });
   const nameInputs = () => document.querySelectorAll(".businessEntityName");
   document.getElementById("addNameVariation").addEventListener("click", () => {
@@ -224,10 +238,10 @@ test("insufficient identity proceeds to publish once manually confirmed", async 
   window.confirm = () => true; // accept both the generic publish confirm and the identity confirm
 
   Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save").click();
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await untilSummary(shadow);
 
   const statuses = shadow.querySelectorAll(".status");
-  assert.match(statuses[statuses.length - 1].textContent, /Saved 2 · Already in RTS 0 · Needs attention 0/);
+  assert.match(statuses[statuses.length - 1].textContent, /Saved 3 · Already in RTS 3 · Needs attention 0/);
 });
 
 test("clear cache button does not throw when no cache exists yet", async () => {
@@ -296,7 +310,9 @@ test("publishing Email Default Structure actually writes and saves it end to end
     </select>
     <div class="highlight-textarea" contenteditable=""></div>
     <input type="button" disabled="disabled" id="saveBusinessEntityButton">
+    ${statusControlsHtml()}
   `);
+  wireStatusControls(document);
   const emailSelect = document.querySelector('select[name="businessEntity.emailDefaultStructure.id"]');
   const saveButton = document.getElementById("saveBusinessEntityButton");
   emailSelect.addEventListener("input", () => { saveButton.disabled = false; });
@@ -313,18 +329,18 @@ test("publishing Email Default Structure actually writes and saves it end to end
 
   const publishButton = Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save");
   publishButton.click();
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await untilSummary(shadow);
 
   assert.equal(emailSelect.value, "2");
   const statuses = shadow.querySelectorAll(".status");
-  assert.match(statuses[statuses.length - 1].textContent, /Saved 2 · Already in RTS 0 · Needs attention 0/, "the email plus the always-added ANC mark");
-  assert.match(document.querySelector(".highlight-textarea").textContent, /AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research/);
+  assert.match(statuses[statuses.length - 1].textContent, /Saved 3 · Already in RTS 3 · Needs attention 0/, "the email, the ANC mark and the business status row saved; the three drop-downs already showed the wanted values");
+  assert.match(document.querySelector(".highlight-textarea").textContent, /AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research/);
   const bar = shadow.querySelector(".pbar");
   assert.ok(!bar.classList.contains("hidden"), "the progress bar is shown after a publish");
   assert.ok(bar.classList.contains("done"), "and it is green when everything went through");
-  assert.match(bar.querySelector(".pbar-label").textContent, /Done · all 2 fields processed/);
+  assert.match(bar.querySelector(".pbar-label").textContent, /Done · all 6 fields processed/);
   assert.equal(bar.querySelector(".pbar-fill").style.width, "100%");
-  assert.match(bar.querySelector(".pbar-note").textContent, /Took .* · saved 2/);
+  assert.match(bar.querySelector(".pbar-note").textContent, /Took .* · saved 3/);
 });
 
 test("an invalid manual edit is caught by real schema re-validation before any workflow runs", async () => {
@@ -391,5 +407,5 @@ test("the progress bar is hidden before a publish and amber, with the count of p
   await new Promise((resolve) => setTimeout(resolve, 400));
   const bar = shadow.querySelector(".pbar");
   assert.ok(bar.classList.contains("warn"), "nothing on this page can be saved, so the bar is amber");
-  assert.match(bar.querySelector(".pbar-label").textContent, /Finished · 2 of 2 fields processed · 2 need attention/);
+  assert.match(bar.querySelector(".pbar-label").textContent, /Finished · 6 of 6 fields processed · 6 need attention/);
 });

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { chromium } from "playwright";
+import { statusControlsHtml, wireStatusControls } from "../helpers/status-controls.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
@@ -152,6 +153,10 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
       document.querySelector('select[name="businessEntity.emailDefaultStructure.id"]').value = "-1";
     });
 
+    // The fixed-status controls (drop-downs showing the wanted values, the two history tables) next to the evidenced fixtures.
+    await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), statusControlsHtml());
+    await page.evaluate(`(${wireStatusControls.toString()})(document)`);
+
     for (const file of ASSISTANT_FILES) {
       await page.addScriptTag({ path: path.join(repo, file) });
     }
@@ -173,7 +178,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
     assert.match(validateStatus, /Valid/, `expected a clean validation, got: ${validateStatus}`);
 
     const summaryBefore = await root.locator(".status").nth(1).innerText();
-    assert.match(summaryBefore, /6 ready to publish/, `expected 6 ready-to-publish (5 fields plus the ANC mark) actions, got: ${summaryBefore}`);
+    assert.match(summaryBefore, /10 ready to publish/, `expected 10 ready-to-publish (5 fields, the ANC mark, three statuses, the business status row) actions, got: ${summaryBefore}`);
 
     await root.getByRole("button", { name: "Publish and save" }).click();
 
@@ -187,7 +192,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
       { timeout: 10000 }
     );
     const publishStatus = await root.locator(".status").nth(1).innerText();
-    assert.match(publishStatus, /Saved 6 · Already in RTS 0 · Needs attention 0/, `expected all 6 live fields to publish cleanly, got: ${publishStatus}`);
+    assert.match(publishStatus, /Saved 7 · Already in RTS 3 · Needs attention 0/, `expected all live fields to publish cleanly, got: ${publishStatus}`);
 
     // The real proof: read the actual RTS DOM state, not just the panel's
     // own claim about what happened.
@@ -211,7 +216,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
     assert.equal(domState.webURL, "www.aromagrowstore.com", "website address was not written correctly (RTS stores a bare host, not a full URL)");
     assert.equal(domState.emailDefaultStructure, "FirstInitialLastName@domain.com", "Email Default Structure dropdown did not land on the right option (this is the exact bug fixed in executionPlan.js)");
     assert.match(domState.researchNotes, /Retailer of hydroponic/, "research note was not appended");
-    assert.match(domState.researchNotes, /AIGEN_SRX_V1_Y - Used ScraperX UI Automation Tool for research/, "the ANC mark was not added");
+    assert.match(domState.researchNotes, /AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research/, "the ANC mark was not added");
     assert.ok(domState.sicCodes.includes("5261"), "SIC code was not added");
     assert.ok(domState.sicSources.includes("PitchBook"), "SIC source was not set correctly");
     assert.ok(domState.allSaveButtonsDisabled, "every Save button should have returned to disabled after a real save");

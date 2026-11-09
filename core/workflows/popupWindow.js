@@ -11,7 +11,7 @@
 (() => {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   // Exposed so tests do not have to sit through the real waits.
-  const TIMEOUTS = { fields: 12000, button: 8000, settle: 8000, after: 700, branch: 1500, poll: 40, search: 60000, afterSave: 15000 };
+  const TIMEOUTS = { fields: 12000, button: 8000, settle: 8000, after: 700, branch: 1500, poll: 40, search: 60000, afterSave: 15000, rowsSettle: 1500 };
 
   async function waitFor(check, timeout) {
     const deadline = Date.now() + timeout;
@@ -409,8 +409,55 @@
     return { status: "saved", fieldRetained: retained };
   }
 
+  // ---- a window that is a list of rows, each with True / False buttons (Verticals) ----
+  // job.rows: { names: ["AdTech", ...], trueText: "True" }. A row is found by the name printed in it; pressing its True
+  // button is the whole job. Nothing is saved here: the window is closed afterwards and the page saves.
+  async function runRows(job) {
+    const trueWord = String(job.rows.trueText || "True").toLowerCase();
+    const trueButtons = () => Array.from(document.querySelectorAll("button, input[type=button], input[type=submit], [role=button], a"))
+      .filter((node) => isShown(node) && labelOf(node).toLowerCase() === trueWord);
+    if (!(await waitFor(() => trueButtons().length, TIMEOUTS.fields))) throw new Error(`The window opened, but no "${job.rows.trueText || "True"}" buttons were found in it.`);
+    await report("rowsFound");
+
+    // The name of the row a True button belongs to: the first words printed in the smallest block that holds only that button.
+    const nameOf = (button) => {
+      let row = button.parentElement;
+      for (let node = button.parentElement; node && node !== document.body; node = node.parentElement) {
+        if (trueButtons().filter((b) => node.contains(b)).length === 1) row = node; else break;
+      }
+      const walker = document.createTreeWalker(row, 4);
+      for (let t; (t = walker.nextNode());) {
+        const text = t.nodeValue.replace(/\s+/g, " ").trim();
+        if (text && !/^(true|false)$/i.test(text) && !/^(script|style)$/i.test(t.parentElement?.tagName || "")) return text;
+      }
+      return "";
+    };
+    // A True button that already looks different from the others is already chosen.
+    const base = (() => { const counts = new Map(); for (const b of trueButtons()) counts.set(classKey(b), (counts.get(classKey(b)) || 0) + 1); return Array.from(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || ""; })();
+    const chosen = (button) => Boolean(base) && classKey(button) !== base;
+
+    const result = { status: "clicked", clicked: [], already: [], missing: [] };
+    for (const name of job.rows.names || []) {
+      const hits = trueButtons().filter((button) => plain(nameOf(button)) === plain(name));
+      if (!hits.length) { result.missing.push(name); continue; }
+      if (hits.length > 1) { result.missing.push(name); continue; }
+      const button = hits[0];
+      if (chosen(button)) { result.already.push(name); continue; }
+      button.scrollIntoView?.({ block: "center" });
+      button.click();
+      await wait(TIMEOUTS.after);
+      await waitFor(() => !button.isConnected || chosen(button), 1200); // RTS may or may not restyle the button
+      result.clicked.push(name);
+    }
+    // Let RTS finish whatever each click started before the window goes away.
+    await wait(TIMEOUTS.rowsSettle);
+    window.setTimeout(() => window.close(), 250);
+    return result;
+  }
+
   // job: { replace, fields: [{ selectors, kind, value }], preSave: [button], saveButton }
   async function run(job) {
+    if (job.rows) return runRows(job);
     if (job.tree) return runTree(job);
     const present = await waitFor(() => job.fields.every((field) => shownMatches(field.selectors).length), TIMEOUTS.fields);
     if (!present) throw new Error("The popup window opened, but the mapped fields were not found in it. Re-map the field.");

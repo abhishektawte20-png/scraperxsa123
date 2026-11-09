@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"; const dir = fs.readdirSync(root).find((d) => d.startsWith("chromium-")); return dir ? path.join(root, dir, "chrome-linux", "chrome") : undefined; };
+const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"; const dir = fs.readdirSync(root).find((d) => d.startsWith("chromium-")); return dir ? [path.join(root, dir, "chrome-linux", "chrome"), path.join(root, dir, "chrome-linux64", "chrome")].find((candidate) => fs.existsSync(candidate)) : undefined; };
 
 test("with the guard on, a page's alert and confirm return at once and are logged; with it off, Chrome's real box appears", async () => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-dlg-"));

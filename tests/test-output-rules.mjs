@@ -30,6 +30,7 @@ import "../core/workflows/businessEntityNameVariations.js";
 import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../content/rules.js";
+import "../content/mappings.js";
 import "../content/ui.js";
 import "../content/panel.js";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
@@ -368,4 +369,39 @@ test("dialog: you build your own condition — if the employee count is between 
   or.apply(doc);
   assert.equal(doc.extras.employeeCount.value, "2-10");
   await or.removeRule(saved.id);
+});
+
+test("the full description starts with the brief description, once, and the brief description itself is untouched", () => {
+  const rule = { id: "d", label: "Full description starts with the brief one", target: "field:company.fullDescription:value", steps: [{ type: "prependField", path: "company.briefDescription" }], enabled: true };
+  const doc = { company: { briefDescription: { value: "Provider of AI consulting intended for sales teams based in Dubai." }, fullDescription: { value: "The company offers workflow design, enabling teams to adopt AI." } } };
+  or.apply(doc, [rule]);
+  assert.equal(doc.company.fullDescription.value, "Provider of AI consulting intended for sales teams based in Dubai. The company offers workflow design, enabling teams to adopt AI.");
+  assert.equal(doc.company.briefDescription.value, "Provider of AI consulting intended for sales teams based in Dubai.");
+  or.apply(doc, [rule]);
+  assert.equal(doc.company.fullDescription.value.split("Provider of AI consulting").length - 1, 1, "run again: not doubled");
+  const none = { company: { fullDescription: { value: "The company offers x." } } };
+  or.apply(none, [rule]);
+  assert.equal(none.company.fullDescription.value, "The company offers x.", "no brief description: unchanged");
+  assert.deepEqual(or.validateRule({ ...rule, steps: [{ type: "prependField", path: "not a path" }] }).length > 0, true);
+});
+
+test("Mappings window: lists the built-in fields with their steps, the mapped fields with steps worked out from the saved mapping, and the rules", async () => {
+  const shadow = setupPanel();
+  await globalThis.SXRTS.customFields.saveDefinition({
+    key: "industryTagging", label: "Industry code", description: "", kind: "single",
+    fields: [{ key: "value", label: "Industry code", description: "", kind: "tree" }],
+    openButton: { selectors: ["#addIndustry"], text: "Add/Edit Industry" }, saveButton: { selectors: ["#save"], text: "Save Changes" },
+    window: { path: "/industryGroup/create.html", preSave: [], tree: { leaf: { selectors: ["div.controls_checkBox"], text: "" }, expander: { selectors: ["[id^=industryControlGroup]"], text: "" } } },
+    binds: { path: "extras.industryCode", map: { value: "value" } }
+  });
+  btn(shadow, "Mappings").click();
+  const text = shadow.querySelector(".mp-modal.open")?.textContent || "";
+  for (const name of ["Name variations", "Research notes (ANC mark and sources)", "Financing, Research and Publish status", "Ownership status history", "Business status history", "Verticals", "Site"]) assert.match(text, new RegExp(name.replace(/[()]/g, "\\$&")), name);
+  assert.match(text, /Mapped fields \(1\)/);
+  assert.match(text, /Industry code/);
+  assert.match(text, /Open: press "Add\/Edit Industry"/);
+  assert.match(text, /Expand the branches/);
+  assert.match(text, /Open the window again and read the tick back/);
+  assert.match(text, /Read-only/);
+  await globalThis.SXRTS.customFields.removeDefinition("industryTagging");
 });
