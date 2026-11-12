@@ -268,3 +268,14 @@ test("a mapping that also lists the window's close button as a + button never pr
   assert.equal(outcome.status, "saved");
   assert.equal(closePressed, 0, "the close button was left alone");
 });
+
+test("a mapping that lists the close button's own image ('#msa-close-btn > img') never presses it either", async () => {
+  const { doc, state } = setup();
+  doc.body.insertAdjacentHTML("afterbegin", '<div id="msa-close-btn" style="display:block"><img class="closeimg" alt="x" width="10" height="10"></div>');
+  let closePressed = 0;
+  doc.querySelector("#msa-close-btn").addEventListener("click", () => { closePressed++; });
+  const outcome = await run(job("6.5.1 — Application Software", { tree: { expander: { selectors: ["img.tg", "#msa-close-btn > img"] }, leaf: { selectors: ['input[type="checkbox"]'] } } }));
+  assert.equal(outcome.status, "saved");
+  assert.equal(closePressed, 0, "neither the button nor its image was pressed");
+  void state;
+});

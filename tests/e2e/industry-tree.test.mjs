@@ -107,6 +107,7 @@ const TREE = `<!doctype html><body style="font:13px sans-serif"><h3>Select Indus
 
 async function drive(ctx, base, code, auto, reuse, undo = false, focus = "", guard = false, late = 0) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+  await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
   const page = await ctx.newPage();
   const dialogsShown = [];
   page.on("dialog", (d) => { dialogsShown.push(d.message()); d.accept(); });

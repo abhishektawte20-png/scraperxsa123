@@ -73,7 +73,7 @@
       const rect = node.getBoundingClientRect();
       if (rect.width > 40 || rect.height > 40) continue;
       // The window's own close / cancel control is never a + button: pressing it would close the window.
-      if (/(^|[^a-z])(close|cancel|dismiss|exit)([^a-z]|$)/i.test(`${node.id} ${typeof node.className === "string" ? node.className : ""} ${node.getAttribute("aria-label") || ""} ${node.getAttribute("title") || ""}`) || /^(close|cancel|x|\u00d7)$/i.test(textOf(node))) continue;
+      if (/^(close|cancel|x|\u00d7)$/i.test(textOf(node)) || (() => { for (let n = node, hops = 0; n && n.nodeType === 1 && hops < 4; n = n.parentElement, hops += 1) if (/(^|[^a-z])(close|cancel|dismiss|exit)([^a-z]|$)/i.test(`${n.id} ${typeof n.className === "string" ? n.className : ""} ${n.getAttribute("aria-label") || ""} ${n.getAttribute("title") || ""}`)) return true; return false; })()) continue;
       const hint = `${node.className} ${node.getAttribute("alt") || ""} ${node.getAttribute("src") || ""} ${node.getAttribute("title") || ""}`;
       const clickable = /^(IMG|BUTTON)$/.test(node.tagName) || node.tagName === "INPUT" || node.hasAttribute("onclick") || /plus|minus|expand|collapse|toggle|tree|node|arrow|caret|open|close/i.test(hint) || window.getComputedStyle(node).cursor === "pointer" || SYMBOLS.test(own) && own;
       if (clickable) out.push(node);

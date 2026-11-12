@@ -91,42 +91,44 @@
     return { status: "willSave", value: envelope.value, before: current };
   }
 
+  // Research Notes (the act log). New text is only ever ADDED AFTER what is there: the box's own links, line breaks and
+  // text are left exactly as they are (nodes are appended, nothing is rewritten). Only "replaceAfterConfirmation" rewrites.
   async function applyResearchNotesValue(notes) {
     const field = entry("businessEntity.researchNotes");
     const editable = document.querySelector(field.form.editable.candidates[0]);
     if (!editable) throw new Error("Research Notes field was not found.");
+    const ce = globalThis.SXRTS.adapters.contentEditable;
 
-    let finalText = globalThis.SXRTS.adapters.contentEditable.readContentEditable(editable);
-    const added = [];
-    let changed = false;
+    const before = ce.readContentEditable(editable);
+    let seen = before;
+    const toAppend = [];
+    let replaceWith = null;
     let alreadyMarked = false;
 
     for (const note of notes) {
       if (note.action === "skip") continue;
-      if (note.action === "replaceAfterConfirmation") {
-        finalText = note.text;
-        added.length = 0;
-        added.push(note.text);
-        changed = true;
-        continue;
-      }
-      if (note.action === "updateIfBlank" && finalText.trim()) continue;
-      // The monitoring mark is only ever added once: any form of it already in the notes (this one or the older
-      // one-line wording) means it is there, and nothing is added.
-      if (/AIGEN_SRX_V1_Y/i.test(note.text) && /AIGEN_SRX_V1_Y/i.test(finalText)) { alreadyMarked = true; continue; }
-      if (normalize(finalText).includes(normalize(note.text))) continue;
-      finalText = finalText.trim() ? `${finalText}\n${note.text}` : note.text;
-      added.push(note.text);
-      changed = true;
+      if (note.action === "replaceAfterConfirmation") { replaceWith = note.text; toAppend.length = 0; continue; }
+      if (note.action === "updateIfBlank" && seen.trim()) continue;
+      // The monitoring mark is only ever added once: any form of it already in the notes means it is there.
+      if (/AIGEN_SRX_V1_Y/i.test(note.text) && /AIGEN_SRX_V1_Y/i.test(seen)) { alreadyMarked = true; continue; }
+      if (normalize(seen).includes(normalize(note.text))) continue;
+      toAppend.push(note.text);
+      seen = seen.trim() ? `${seen}\n\n${note.text}` : note.text;
     }
 
-    if (!changed) return { status: "skipped", reason: alreadyMarked ? "Research Notes already has the ANC mark (AIGEN_SRX_V1_Y); nothing new to add." : "Research Notes already has this text; nothing new to add." };
+    if (replaceWith === null && !toAppend.length) return { status: "skipped", reason: alreadyMarked ? "Research Notes already has the act log mark (AIGEN_SRX_V1_Y); nothing new to add." : "Research Notes already has this text; nothing new to add." };
 
-    await globalThis.SXRTS.adapters.contentEditable.applyContentEditable(editable, finalText);
-    if (!globalThis.SXRTS.adapters.contentEditable.verifyContentEditable(editable, finalText)) {
-      throw new Error("Research Notes did not retain the proposed text.");
+    if (replaceWith !== null) {
+      await ce.applyContentEditable(editable, replaceWith);
+      if (!ce.verifyContentEditable(editable, replaceWith)) throw new Error("Research Notes did not retain the proposed text.");
+      return { status: "willSave", added: [replaceWith] };
     }
-    return { status: "willSave", added };
+
+    for (const text of toAppend) await ce.appendContentEditable(editable, text);
+    const after = normalize(ce.readContentEditable(editable));
+    if (normalize(before) && !after.includes(normalize(before))) throw new Error("Research Notes lost some of its existing text, so nothing was saved. Reload the profile and try again.");
+    for (const text of toAppend) if (!after.includes(normalize(text))) throw new Error("Research Notes did not retain the proposed text.");
+    return { status: "willSave", added: toAppend };
   }
 
   async function saveGeneralGroup() {

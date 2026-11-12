@@ -56,27 +56,42 @@ test("a name in Latin letters is an ordinary Other Name even if the agent writes
   assert.deepEqual(types, [["Acme Trading", "Other Name"], ["Café Acme", "Other Name"], ["艾克美", "Native Other Name"], ["Акме", "Native Other Name"]]);
 });
 
-test("the ANC mark is always in the plan, once, and cannot be skipped", () => {
+const NOW = new Date(2026, 10, 12);
+const TAIL = "AGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research\n///";
+globalThis.SXRTS.researcher = "Abhishek.Tawte";
+
+test("the act log note is always in the plan, once, and cannot be skipped", () => {
   const ep = globalThis.SXRTS.executionPlan;
-  globalThis.SXRTS.registry = { getField: () => ({ evidenceStatus: "ready", area: "Business Entity", section: "General" }) };
+  globalThis.SXRTS.registry = { getField: () => ({ evidenceStatus: "ready", area: "Business Entity", section: "Entity > General" }) };
   globalThis.SXRTS.customFields = undefined;
   globalThis.SXRTS.outputFields = { FIELDS: [], recordsFor: () => [] };
   const doc = { profileIdentity: { companyName: "A", domain: "a.com" } };
   const plan = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
   assert.equal(plan.length, 1);
   assert.equal(plan[0].mandatory, true);
-  assert.equal(plan[0].proposedValue.text, "AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research");
   assert.equal(plan[0].proposedValue.action, "addIfMissing", "it is appended, never replaces existing notes");
+  assert.match(plan[0].proposedValue.text, /^\d{1,2}\/\d{1,2}\/\d{2} Abhishek\.Tawte: Completed New Co Research\. Added general from links \(NA\), site from link \(NA\), management from link \(NA\), rounds from links\(NA\), financials from links \(NA\)\n\n\nAGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research\n\/\/\/$/);
   const again = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
   assert.equal(again.length, 1, "building the plan twice never doubles it");
 });
 
-test("an agent's own research note stays, and the mark is added next to it", () => {
+test("an agent's own research note stays, and the act log note is added after it", () => {
   const ep = globalThis.SXRTS.executionPlan;
   const doc = { profileIdentity: { companyName: "A", domain: "a.com" }, businessEntity: { researchNotes: [{ text: "Checked registry", action: "addIfMissing" }] } };
   const plan = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
-  assert.deepEqual(plan.map((a) => a.proposedValue.text), ["Checked registry", ep.ANC_TEXT]);
+  assert.equal(plan[0].proposedValue.text, "Checked registry");
+  assert.ok(plan[1].proposedValue.text.endsWith(TAIL));
   assert.deepEqual(plan.map((a) => Boolean(a.mandatory)), [false, true]);
+});
+
+test("link numbers: three or more in a row are a range, one or two are listed, none is NA", () => {
+  const f = globalThis.SXRTS.executionPlan.linkNumbers;
+  assert.equal(f([1, 2, 3, 4]), "1-4");
+  assert.equal(f([3, 4]), "3,4");
+  assert.equal(f([2]), "2");
+  assert.equal(f([1, 2, 3, 5, 7, 8]), "1-3,5,7,8");
+  assert.equal(f([]), "NA");
+  assert.equal(globalThis.SXRTS.executionPlan.actLogDate(NOW), "11/12/26");
 });
 
 test("only aggregators and hosting addresses are warnings; an ordinary outside page is a quiet note", () => {
@@ -88,27 +103,39 @@ test("only aggregators and hosting addresses are warnings; an ordinary outside p
   assert.equal(C.externalCode("www.zoominfo.com"), "EXTERNAL_SOURCE");
 });
 
-test("the ANC note lists the sources the report gave, each link once, with the fields that used it", () => {
+test("the act log note numbers the report's sources once and says which links each part used (the example from RTS)", () => {
   const ep = globalThis.SXRTS.executionPlan;
-  globalThis.SXRTS.resultsSummary = { friendly: (path) => ({ "company.briefDescription": "Brief description", "company.fullDescription": "Full description", "businessEntity.websiteAddresses": "Website address" })[path] || path };
+  const L = ["https://capafair.com/company", "https://capafair.com/company/77155", "https://capafair.com/company/77155/intro", "https://capafair.com/company/77155/contactus"];
   const doc = {
     profileIdentity: { companyName: "A", domain: "a.com" },
-    businessEntity: { websiteAddresses: [{ value: "a.com", action: "addIfMissing", source: "https://a.com/" }] },
+    businessEntity: { websiteAddresses: [{ value: "capafair.com", action: "addIfMissing", source: L[0] }] },
     company: {
-      briefDescription: { value: "x", action: "addIfMissing", source: "https://a.com/about" },
-      fullDescription: { value: "y", action: "addIfMissing", source: "https://a.com/about" }
+      briefDescription: { value: "x", action: "addIfMissing", source: L[1] },
+      fullDescription: { value: "y", action: "addIfMissing", source: L[2] },
+      keywords: [{ value: "k", action: "addIfMissing", source: L[3] }],
+      sites: [{ city: "Pune", action: "addIfMissing", source: L[2] }, { city: "Pune", action: "addIfMissing", source: L[3] }]
     }
   };
-  const note = ep.ancNote(doc);
+  const note = ep.ancNote(doc, { now: new Date(2026, 8, 30), researcher: "Sharwari.Jadhav" });
   assert.equal(note, [
-    "AIGEN_SRX_V1_Y", "Used ScraperX UI Automation Tool for Research", "Sources:",
-    "[1] https://a.com/", "[2] https://a.com/about",
-    "Website address: [1]", "Brief description: [2]", "Full description: [2]"
+    "9/30/26 Sharwari.Jadhav: Completed New Co Research. Added general from links (1-4), site from link (3,4), management from link (NA), rounds from links(NA), financials from links (NA)",
+    "",
+    "1. https://capafair.com/company", "2. https://capafair.com/company/77155", "3. https://capafair.com/company/77155/intro", "4. https://capafair.com/company/77155/contactus",
+    "", "",
+    "AGENTS: AIGEN_SRX_V1_Y", "Used ScraperX UI Automation Tool for Research", "///"
   ].join("\n"));
   const plan = ep.buildExecutionPlan(doc).filter((a) => a.jsonPath === "businessEntity.researchNotes");
-  assert.equal(plan.at(-1).proposedValue.text, note);
+  assert.ok(plan.at(-1).proposedValue.text.includes("Added general from links (1-4), site from link (3,4)"));
   assert.equal(plan.at(-1).mandatory, true);
-  assert.equal(ep.ancNote({ profileIdentity: {} }), ep.ANC_TEXT, "no sources, just the two fixed lines");
+});
+
+test("management and rounds sources are counted in their own parts", () => {
+  const ep = globalThis.SXRTS.executionPlan;
+  globalThis.SXRTS.outputFields = { FIELDS: [{ path: "extras.management" }], recordsFor: (v, path) => (path === "extras.management" ? v.extras?.management ?? [] : []) };
+  const doc = { profileIdentity: { companyName: "A", domain: "a.com" }, extras: { management: [{ fullName: "A B", title: "CEO", action: "addIfMissing", source: "https://a.com/team" }] }, company: { briefDescription: { value: "x", action: "addIfMissing", source: "https://a.com/" } }, funding: { timeline: [{ source_1: "https://news.example/round" }] } };
+  const note = ep.ancNote(doc, { now: NOW, researcher: "A.B" });
+  assert.match(note, /Added general from links \(1\), site from link \(NA\), management from link \(2\), rounds from links\(3\), financials from links \(NA\)/);
+  globalThis.SXRTS.outputFields = { FIELDS: [], recordsFor: () => [] };
 });
 
 test("the full description in the plan starts with the brief description, once; the brief description is untouched", () => {

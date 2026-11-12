@@ -34,6 +34,7 @@ import "../core/workflows/companySic.js";
 import "../core/resultsSummary.js";
 import "../content/ui.js";
 import "../content/panel.js";
+import "./helpers/researcher.mjs";
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only" });
@@ -334,7 +335,7 @@ test("publishing Email Default Structure actually writes and saves it end to end
   assert.equal(emailSelect.value, "2");
   const statuses = shadow.querySelectorAll(".status");
   assert.match(statuses[statuses.length - 1].textContent, /Saved 3 · Already in RTS 3 · Needs attention 0/, "the email, the ANC mark and the business status row saved; the three drop-downs already showed the wanted values");
-  assert.match(document.querySelector(".highlight-textarea").textContent, /AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research/);
+  assert.match(globalThis.SXRTS.adapters.contentEditable.readContentEditable(document.querySelector(".highlight-textarea")), /Test\.Researcher: Completed New Co Research[\s\S]*AGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research/);
   const bar = shadow.querySelector(".pbar");
   assert.ok(!bar.classList.contains("hidden"), "the progress bar is shown after a publish");
   assert.ok(bar.classList.contains("done"), "and it is green when everything went through");

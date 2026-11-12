@@ -107,7 +107,40 @@ test("appends a research note only if not already present, and saves", async () 
     ]
   });
   assert.equal(result.status, "savedValueVerified");
-  assert.equal(editable.textContent, "Existing note about the business.\nBootstrapped, no external funding identified.");
+  assert.equal(globalThis.SXRTS.adapters.contentEditable.readContentEditable(editable), "Existing note about the business.\n\nBootstrapped, no external funding identified.");
+});
+
+test("research notes are added AFTER the existing act log, which keeps its links and line breaks exactly as they were", async () => {
+  setupDom();
+  const editable = document.querySelector(".highlight-textarea");
+  const original = '06/12/26, Aimee.Richardson: Please research per NBC NC process ///<br>7/22/26 somnath.payra:<br>1 <a title="Ctrl+Click to follow link" class="highlight-textarea__link" href="https://lungenarzt.com/">https://lungenarzt.com/</a><br>2 Following the takeover ///<br><br>10/30/26 Sampada.Mowade: IWF for M&amp;A, proceed normally. ///';
+  editable.innerHTML = original;
+  const note = "11/12/26 Abhishek.Tawte: Completed New Co Research. Added general from links (1-4), site from link (3,4), management from link (NA), rounds from links(NA), financials from links (NA)\n\n1. https://capafair.com/company\n\n\nAGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research\n///";
+  const result = await businessEntityGeneral.applyBusinessEntityGeneral({ researchNotes: [{ text: note, action: "addIfMissing" }] });
+  assert.equal(result.status, "savedValueVerified");
+  assert.ok(editable.innerHTML.startsWith(original), "the existing HTML (link, <br>, entities) is untouched and first");
+  assert.equal(editable.querySelectorAll("a.highlight-textarea__link").length, 1);
+  const text = globalThis.SXRTS.adapters.contentEditable.readContentEditable(editable);
+  assert.ok(text.startsWith("06/12/26, Aimee.Richardson: Please research per NBC NC process ///\n7/22/26 somnath.payra:\n1 https://lungenarzt.com/\n2 Following the takeover ///\n\n10/30/26 Sampada.Mowade: IWF for M&A, proceed normally. ///\n\n11/12/26 Abhishek.Tawte: Completed New Co Research."), text);
+  assert.ok(text.endsWith("AGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research\n///"));
+});
+
+test("an act log that already carries AIGEN_SRX_V1_Y is not added to again", async () => {
+  setupDom();
+  const editable = document.querySelector(".highlight-textarea");
+  editable.innerHTML = "10/30/26 Someone: done ///<br><br>AGENTS: AIGEN_SRX_V1_Y<br>///";
+  const before = editable.innerHTML;
+  const result = await businessEntityGeneral.applyBusinessEntityGeneral({ researchNotes: [{ text: "11/12/26 X.Y: Completed New Co Research.\n\n\nAGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research\n///", action: "addIfMissing" }] });
+  assert.equal(result.status, "skipped");
+  assert.match(result.results.researchNotes.reason, /already has the act log mark/);
+  assert.equal(editable.innerHTML, before);
+});
+
+test("the reader turns <br> and block boundaries into line breaks, and links into their text", () => {
+  setupDom();
+  const el = document.createElement("div");
+  el.innerHTML = 'a<br>b <a href="#">link</a><div>c</div>d';
+  assert.equal(globalThis.SXRTS.adapters.contentEditable.readContentEditable(el), "a\nb link\nc\nd");
 });
 
 test("replaceAfterConfirmation overwrites existing research notes", async () => {

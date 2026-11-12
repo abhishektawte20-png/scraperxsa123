@@ -269,7 +269,19 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 
 - **Statuses on every profile (Business Entity).** Financing Status = Corporation, Research Status = Does Not Qualify for Meth./Not Act. Tracked, Publish Status = Publish (overwritten when different, left alone when equal, saved with the group's one Save changes). Ownership Status History = start date the report found (MM/DD/YYYY; a bare year becomes 01/01/YYYY; no start date: skipped with the reason), status Privately Held. Business Status History = date of research (today), stage Generating Revenue. For both histories: a row that already matches is left alone; a different current row is overwritten; an empty table gets a new row; Save OSH / Save BSH; success only after the table is read back. These come from the extension, not the prompt, and each shows an "every profile" tag.
 - **Verticals (built in, nothing to map).** Published Verticals already listed are skipped; for the rest the Add New Vertical window is opened once, each vertical is found by the name printed in its row and its True button pressed, the window is closed, the section's Save changes is pressed once, and a vertical counts as saved only when it appears under Published Verticals. TMT and Industrials are never assigned.
-- **ANC note.** Two lines (`AIGEN_SRX_V1_Y` / `Used ScraperX UI Automation Tool for Research`), then `Sources:` with each link numbered once and a line per field naming the links it used. Added last; any form of the mark already in the notes (including the old one-line text) means it is not added again.
+- **Act log note (Research Notes).** One entry is added AFTER the notes already there (their links and line breaks are left exactly as they are; text is appended, never rewritten):
+  ```
+  11/12/26 Firstname.Lastname: Completed New Co Research. Added general from links (1-4), site from link (3,4), management from link (NA), rounds from links(NA), financials from links (NA)
+
+  1. https://…
+  2. https://…
+
+
+  AGENTS: AIGEN_SRX_V1_Y
+  Used ScraperX UI Automation Tool for Research
+  ///
+  ```
+  The links are the sources the report gave, numbered once; each part names the links it used (three or more in a row are a range). Site = the address fields, management = management, rounds = funding round sources, financials = always NA (this tool does not add them). The name comes from the new "Your name (for the act log)" box (asked once, kept on that computer); Publish waits until it is filled. An act log that already carries AIGEN_SRX_V1_Y is not added to again. The row is required and cannot be unticked.
 - **Full description** now starts with the brief description (brief first, then the full one), once. The Brief description field is unchanged. A rule step "Put another field's text in front" is also available for your own rules.
 - **Mappings** button: a read-only list of every data point with its steps (built-in, mapped, rules).
-- **Files:** copy your existing `core/teamDefaults.js` into the new folder (this build ships an empty one so that it never replaces your mappings).
+- **Team defaults** in this build are the file the team lead exported from v0.31.0 (8 mappings; the Close-button selector `#msa-close-btn > img` was removed from the Industry expanders, and a mapping can no longer press a window's Close button or its image in any case).

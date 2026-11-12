@@ -39,48 +39,80 @@
   const hasVerticalsWorkflow = () => Boolean(globalThis.SXRTS.workflows?.verticals);
   const hasSiteWorkflow = () => { const w = globalThis.SXRTS.workflows?.companySite; return Boolean(w) && (w.isEnabled ? w.isEnabled() : true); };
 
-  // The monitoring mark: every profile worked with the tool carries it in Research Notes, appended last. It is always
-  // added (never removed from the plan, never unticked) and only ever appended to what the notes already say. After the
-  // two fixed lines come the sources the report gave for each data point, so the note records where everything came from.
+  // The act log note. Every profile gets one entry added to Research Notes, after what is already there:
+  //
+  //   11/12/26 Firstname.Lastname: Completed New Co Research. Added general from links (1-4), site from link (3,4),
+  //   management from link (NA), rounds from links(NA), financials from links (NA)
+  //
+  //   1. https://...
+  //   2. https://...
+  //
+  //
+  //   AGENTS: AIGEN_SRX_V1_Y
+  //   Used ScraperX UI Automation Tool for Research
+  //   ///
+  //
+  // The links are the sources the report gave, numbered once; each category names the links it used.
+  // It is always added (never removed from the plan, never unticked); an entry that already carries AIGEN_SRX_V1_Y is not added again.
   const ANC_CODE = "AIGEN_SRX_V1_Y";
+  const ANC_TEXT = `AGENTS: ${ANC_CODE}\nUsed ScraperX UI Automation Tool for Research\n///`;
   // The values the team sets on every profile (Business Entity statuses).
   const FIXED_STATUS = { financing: "Corporation", research: "Does Not Qualify for Meth./Not Act. Tracked", publish: "Publish", ownership: "Privately Held", business: "Generating Revenue" };
   const ALWAYS = new Set(["businessEntity.financingStatus", "businessEntity.researchStatus", "businessEntity.publishStatus", "businessEntity.ownershipStatus", "businessEntity.businessStatus"]);
-  const ANC_TEXT = `${ANC_CODE}\nUsed ScraperX UI Automation Tool for Research`;
 
-  // Every record of the report that carries a source link, by field. Links are numbered once, in the order met.
+  const SITE_PATHS = new Set(["company.sites", "extras.address", "extras.city", "extras.state", "extras.country", "extras.postcode", "extras.phone", "extras.fax", "extras.siteEmail"]);
+  const MANAGEMENT_PATHS = new Set(["company.management", "extras.management"]);
+  const categoryOf = (path) => (SITE_PATHS.has(path) ? "site" : MANAGEMENT_PATHS.has(path) ? "management" : "general");
+
+  // Every record of the report that carries a source link, by category (general / site / management / rounds).
   function collectSources(validated) {
-    const friendly = (path) => globalThis.SXRTS.resultsSummary?.friendly?.(path) || path;
-    const links = [];
-    const byField = new Map();
-    const add = (path, url) => {
+    const urls = { general: [], site: [], management: [], rounds: [] };
+    const add = (category, url) => {
       if (typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) return;
       const link = url.trim();
-      let index = links.indexOf(link);
-      if (index < 0) { links.push(link); index = links.length - 1; }
-      const label = friendly(path);
-      const nums = byField.get(label) ?? [];
-      if (!nums.includes(index + 1)) nums.push(index + 1);
-      byField.set(label, nums);
+      if (!urls[category].includes(link)) urls[category].push(link);
     };
+    const skipPath = (path) => path === "businessEntity.researchNotes" || ALWAYS.has(path);
     for (const source of FIELD_SOURCES) {
-      if (source.jsonPath === "businessEntity.researchNotes") continue;
+      if (skipPath(source.jsonPath)) continue;
       const value = source.get(validated);
       if (value === undefined || value === null) continue;
-      for (const record of (source.kind === "array" ? value : [value])) if (record && record.action !== "skip") add(source.jsonPath, record.source);
+      for (const record of (source.kind === "array" ? value : [value])) if (record && record.action !== "skip") add(categoryOf(source.jsonPath), record.source);
     }
     for (const field of (globalThis.SXRTS.outputFields?.FIELDS ?? []).filter((f) => f.path.startsWith("extras."))) {
-      for (const record of globalThis.SXRTS.outputFields.recordsFor(validated, field.path)) if (record && record.action !== "skip") add(field.path, record.source);
+      for (const record of globalThis.SXRTS.outputFields.recordsFor(validated, field.path)) if (record && record.action !== "skip") add(categoryOf(field.path), record.source);
     }
-    return { links, byField };
+    for (const round of Array.isArray(validated.funding?.timeline) ? validated.funding.timeline : []) { add("rounds", round?.source_1); add("rounds", round?.source_2); }
+    const links = [];
+    for (const category of ["general", "site", "management", "rounds"]) for (const url of urls[category]) if (!links.includes(url)) links.push(url);
+    const numbers = Object.fromEntries(Object.entries(urls).map(([category, list]) => [category, list.map((url) => links.indexOf(url) + 1).sort((a, b) => a - b)]));
+    return { links, numbers };
   }
 
-  function ancNote(validated) {
-    const { links, byField } = collectSources(validated);
-    if (!links.length) return ANC_TEXT;
-    return [ANC_TEXT, "Sources:", ...links.map((url, i) => `[${i + 1}] ${url}`), ...Array.from(byField, ([label, nums]) => `${label}: ${nums.map((n) => `[${n}]`).join(" ")}`)].join("\n");
+  // 1,2,3,4 -> "1-4"; 3,4 -> "3,4"; nothing -> "NA".  (A run of three or more is written as a range.)
+  function linkNumbers(list) {
+    if (!list.length) return "NA";
+    const parts = [];
+    for (let i = 0; i < list.length;) {
+      let j = i;
+      while (j + 1 < list.length && list[j + 1] === list[j] + 1) j += 1;
+      if (j - i >= 2) parts.push(`${list[i]}-${list[j]}`);
+      else for (let k = i; k <= j; k += 1) parts.push(String(list[k]));
+      i = j + 1;
+    }
+    return parts.join(",");
   }
-  const isAncNote = (text) => typeof text === "string" && text.startsWith(ANC_CODE);
+
+  const actLogDate = (now = new Date()) => `${now.getMonth() + 1}/${now.getDate()}/${String(now.getFullYear()).slice(-2)}`;
+  const researcherName = () => String(globalThis.SXRTS.researcher || "").trim() || "[enter your name]";
+
+  function ancNote(validated, { now = new Date(), researcher = researcherName() } = {}) {
+    const { links, numbers } = collectSources(validated);
+    const head = `${actLogDate(now)} ${researcher}: Completed New Co Research. Added general from links (${linkNumbers(numbers.general)}), site from link (${linkNumbers(numbers.site)}), management from link (${linkNumbers(numbers.management)}), rounds from links(${linkNumbers(numbers.rounds)}), financials from links (NA)`;
+    const list = links.length ? ["", ...links.map((url, i) => `${i + 1}. ${url}`)] : [];
+    return [head, ...list, "", "", ANC_TEXT].join("\n");
+  }
+  const isAncNote = (text) => typeof text === "string" && text.includes(ANC_CODE);
 
   function buildExecutionPlan(validated) {
     const registry = globalThis.SXRTS.registry;
@@ -253,5 +285,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.executionPlan = { buildExecutionPlan, FIELD_SOURCES, SITE_EXTRAS, ANC_CODE, ANC_TEXT, FIXED_STATUS, ancNote, collectSources };
+  globalThis.SXRTS.executionPlan = { buildExecutionPlan, FIELD_SOURCES, SITE_EXTRAS, ANC_CODE, ANC_TEXT, FIXED_STATUS, ancNote, collectSources, linkNumbers, actLogDate };
 })();

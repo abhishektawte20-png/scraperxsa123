@@ -161,6 +161,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
       await page.addScriptTag({ path: path.join(repo, file) });
     }
 
+    await page.evaluate(() => { globalThis.SXRTS.researcher = "Test.Researcher"; });
     await page.evaluate(() => {
       const host = document.createElement("section");
       host.id = "sxrts-assistant-root";
@@ -216,7 +217,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
     assert.equal(domState.webURL, "www.aromagrowstore.com", "website address was not written correctly (RTS stores a bare host, not a full URL)");
     assert.equal(domState.emailDefaultStructure, "FirstInitialLastName@domain.com", "Email Default Structure dropdown did not land on the right option (this is the exact bug fixed in executionPlan.js)");
     assert.match(domState.researchNotes, /Retailer of hydroponic/, "research note was not appended");
-    assert.match(domState.researchNotes, /AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research/, "the ANC mark was not added");
+    assert.match(domState.researchNotes, /Test\.Researcher: Completed New Co Research[\s\S]*AGENTS: AIGEN_SRX_V1_Y/, "the ANC mark was not added");
     assert.ok(domState.sicCodes.includes("5261"), "SIC code was not added");
     assert.ok(domState.sicSources.includes("PitchBook"), "SIC source was not set correctly");
     assert.ok(domState.allSaveButtonsDisabled, "every Save button should have returned to disabled after a real save");

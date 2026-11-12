@@ -30,6 +30,7 @@ async function publishVerticals(options = {}, vertical = "E-Commerce") {
   ctx.on("page", (p) => p.on("dialog", (d) => d.accept()));
   try {
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+    await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
     const page = await ctx.newPage();
     await page.goto(`${base}/main.html`);
     const files = await worker.evaluate(() => ASSISTANT_FILES.filter((f) => f !== "content/bootstrap.js"));

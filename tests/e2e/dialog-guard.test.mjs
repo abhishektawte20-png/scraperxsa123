@@ -24,6 +24,7 @@ test("with the guard on, a page's alert and confirm return at once and are logge
   const ctx = await chromium.launchPersistentContext(path.join(work, "profile"), { executablePath: chromiumPath(), headless: false, args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`] });
   try {
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+    await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
     const page = await ctx.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await worker.evaluate(async () => {

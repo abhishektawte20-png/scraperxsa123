@@ -34,6 +34,7 @@ async function publishIndustry(options = {}, code = "1.2.4 — Consulting Servic
   ctx.on("page", (p) => p.on("dialog", (d) => { popupMessages.push(d.message()); if (process.env.DBG) console.log("POPUP DIALOG", d.message()); if (!options.nobodyThere || p.url().includes("/main.html")) d.accept(); }));
   try {
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+    await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
     const page = await ctx.newPage();
     await page.goto(`${base}/main.html`);
     if (fixedName) await page.evaluate((n) => { window.fixedName = n; }, fixedName);

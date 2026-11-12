@@ -37,6 +37,7 @@ import "../content/teach.js";
 import "../content/rules.js";
 import "../content/panel.js";
 import { TEXT_SAMPLE } from "./helpers/rovo-text-sample.mjs";
+import "./helpers/researcher.mjs";
 
 // These tests exercise the output-rule and mapping machinery with the agent's full links; the built-in handle-only step is covered in test-social-handle.mjs.
 globalThis.SXRTS.rovoContract.settings.handlesOnly = false;

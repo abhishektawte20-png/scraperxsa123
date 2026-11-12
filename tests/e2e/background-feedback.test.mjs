@@ -38,6 +38,7 @@ test("the worker starts, schedules the history purge, erases expired runs, and r
   });
   try {
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+    await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
     const page = await ctx.newPage();
     await page.goto(`${base}/`);
 
@@ -97,6 +98,7 @@ test("the weekly digest is posted once a week to the team channel, never without
   });
   try {
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+    await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
     const page = await ctx.newPage();
     await page.goto(`${base}/`);
     const day = 86400000;

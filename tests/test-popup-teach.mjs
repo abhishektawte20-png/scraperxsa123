@@ -33,6 +33,7 @@ import "../core/workflows/customField.js";
 import "../content/teach.js";
 import "../content/ui.js";
 import "../content/panel.js";
+import "./helpers/researcher.mjs";
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, timeout = 4000) {

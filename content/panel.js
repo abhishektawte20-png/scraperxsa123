@@ -306,6 +306,25 @@
       element("div", { className: "field" }, [domainLabel, domainInput])
     ]));
 
+    // The researcher's name goes in the act log entry ("11/12/26 Firstname.Lastname: Completed New Co Research..."). It is
+    // kept on this computer, asked once, and publishing waits until it is there.
+    const researcherInput = element("input", { id: "sxrts-researcher", value: globalThis.SXRTS.researcher || "" });
+    researcherInput.placeholder = "Firstname.Lastname";
+    const researcherLabel = element("label", { text: "Your name (for the act log)" });
+    researcherLabel.htmlFor = "sxrts-researcher";
+    identityCard.appendChild(element("div", { className: "row" }, [element("div", { className: "field" }, [researcherLabel, researcherInput])]));
+    (async () => {
+      try {
+        const stored = (await chrome.storage.local.get("sxrts_researcher"))?.sxrts_researcher;
+        if (stored && !globalThis.SXRTS.researcher) { globalThis.SXRTS.researcher = stored; researcherInput.value = stored; if (lastValidated) revalidate(); }
+      } catch { /* storage is not available: the name is simply asked each time */ }
+    })();
+    researcherInput.addEventListener("change", async () => {
+      globalThis.SXRTS.researcher = researcherInput.value.trim();
+      try { await chrome.storage.local.set({ sxrts_researcher: globalThis.SXRTS.researcher }); } catch { /* kept for this session only */ }
+      if (lastValidated) revalidate();
+    });
+
     const promptLabel = element("label", { text: "Prompt for ScraperX" });
     promptLabel.appendChild(globalThis.SXRTS.ui?.help("Send this to your ScraperX agent. It starts with the domain, then gives the exact JSON output format this tool validates.") ?? document.createTextNode(""));
     const promptArea = element("textarea", { id: "sxrts-prompt" });
@@ -1041,6 +1060,12 @@
       const selected = Array.from(rowsByActionId.values()).filter((entry) => entry.checkbox.checked && !entry.checkbox.disabled);
       if (!selected.length) {
         setStatus(publishStatus, "Nothing selected to publish.", "error");
+        return;
+      }
+      // The act log entry carries the researcher's name: it must be there before anything is written.
+      if (selected.some((entry) => entry.action.mandatory) && !/^[A-Za-z][A-Za-z.' -]{2,}$/.test(String(globalThis.SXRTS.researcher || "").trim())) {
+        setStatus(publishStatus, "Enter your name (Firstname.Lastname) in \"Your name (for the act log)\" first: the act log note needs it.", "error");
+        researcherInput.focus();
         return;
       }
       if (!window.confirm(`Publish ${selected.length} field(s) to RTS now? This makes live changes.`)) {

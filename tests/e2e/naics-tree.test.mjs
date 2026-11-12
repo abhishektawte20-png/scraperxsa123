@@ -63,6 +63,7 @@ async function scenario(teamFile, oneClick = false) {
 
 async function drive(ctx, base, teamFile, oneClick = false) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+  await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
   await page.goto(`${base}/main.html`);

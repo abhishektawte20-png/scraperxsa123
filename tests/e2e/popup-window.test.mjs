@@ -96,6 +96,7 @@ const POPUP = `<!doctype html><body style="font:13px sans-serif">
 
 async function drive(ctx, base, { teamFile } = {}) {
   const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker");
+  await worker.evaluate(() => chrome.storage.local.set({ sxrts_researcher: "Test.Researcher" }));
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
   await page.goto(`${base}/main.html`);
