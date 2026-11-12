@@ -194,3 +194,23 @@ test("skips the whole group with nothing to save when every field is already pop
   });
   assert.equal(result.status, "skipped");
 });
+
+test("with a Financing Status Note box above it, the act log goes into the box headed Research Notes, never the first box on the page", async () => {
+  setupDom();
+  const first = document.querySelector(".highlight-textarea");
+  first.remove();
+  document.body.insertAdjacentHTML("beforeend", '<div class="row"><span>Financing Status Note:</span><div contenteditable="" class="highlight-textarea" id="fin">Financing note stays.</div></div><div class="row"><span>Research Notes (Internal)</span><div contenteditable="" class="highlight-textarea" id="rn">old act log ///</div></div>');
+  for (const id of ["fin", "rn"]) document.getElementById(id).addEventListener("input", () => { document.getElementById("saveBusinessEntityButton").disabled = false; });
+  const result = await businessEntityGeneral.applyBusinessEntityGeneral({ researchNotes: [{ text: "11/12/26 A.B: Completed New Co Research.\n\n\nAGENTS: AIGEN_SRX_V1_Y\nUsed ScraperX UI Automation Tool for Research\n///", action: "addIfMissing" }] });
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(document.getElementById("fin").textContent, "Financing note stays.", "the Financing Status Note is untouched");
+  assert.match(document.getElementById("rn").textContent, /^old act log \/\/\/.*AGENTS: AIGEN_SRX_V1_Y/s);
+});
+
+test("several note boxes and no 'Research Notes' heading: nothing is written and the error says why", async () => {
+  setupDom();
+  document.querySelector(".highlight-textarea").remove();
+  document.body.insertAdjacentHTML("beforeend", '<span>Some note</span><div contenteditable="" class="highlight-textarea" id="a"></div><span>Other note</span><div contenteditable="" class="highlight-textarea" id="b"></div>');
+  await assert.rejects(businessEntityGeneral.applyBusinessEntityGeneral({ researchNotes: [{ text: "x", action: "addIfMissing" }] }), /could not be told apart, so nothing was written/);
+  assert.equal(document.getElementById("a").textContent + document.getElementById("b").textContent, "");
+});

@@ -91,11 +91,27 @@
     return { status: "willSave", value: envelope.value, before: current };
   }
 
+  // The Research Notes (Internal) box. RTS draws other note boxes with the same class (Financing Status Note sits just
+  // above it), so the first ".highlight-textarea" on the page may be the wrong one. With several, the box is the first one
+  // after the heading "Research Notes"; if that heading cannot be found, nothing is guessed.
+  function findResearchNotesBox(field) {
+    const boxes = field.form.editable.candidates.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+    if (boxes.length <= 1) return boxes[0] || null;
+    const squash = (text) => String(text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const headings = Array.from(document.querySelectorAll("span, label, div, b, strong, h1, h2, h3, h4, h5, td, th, p"))
+      .filter((node) => !node.matches(field.form.editable.candidates.join(",")) && !node.closest(field.form.editable.candidates.join(",")) && /^research notes\b/.test(squash(node.textContent)) && squash(node.textContent).length <= 40);
+    const heading = headings.find((node) => !headings.some((other) => other !== node && node.contains(other))) || headings[0];
+    if (!heading) throw new Error("Several note boxes are on the page and the one headed \"Research Notes\" could not be told apart, so nothing was written. Open the Business Entity tab so its Research Notes box is visible.");
+    const after = boxes.find((box) => Boolean(heading.compareDocumentPosition(box) & 4));
+    if (!after) throw new Error("The Research Notes heading was found, but no note box comes after it. Nothing was written.");
+    return after;
+  }
+
   // Research Notes (the act log). New text is only ever ADDED AFTER what is there: the box's own links, line breaks and
   // text are left exactly as they are (nodes are appended, nothing is rewritten). Only "replaceAfterConfirmation" rewrites.
   async function applyResearchNotesValue(notes) {
     const field = entry("businessEntity.researchNotes");
-    const editable = document.querySelector(field.form.editable.candidates[0]);
+    const editable = findResearchNotesBox(field);
     if (!editable) throw new Error("Research Notes field was not found.");
     const ce = globalThis.SXRTS.adapters.contentEditable;
 

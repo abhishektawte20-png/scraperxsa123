@@ -285,3 +285,8 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Full description** now starts with the brief description (brief first, then the full one), once. The Brief description field is unchanged. A rule step "Put another field's text in front" is also available for your own rules.
 - **Mappings** button: a read-only list of every data point with its steps (built-in, mapped, rules).
 - **Team defaults** in this build are the file the team lead exported from v0.31.0 (8 mappings; the Close-button selector `#msa-close-btn > img` was removed from the Industry expanders, and a mapping can no longer press a window's Close button or its image in any case).
+
+## 0.31.1
+
+- **The act log went to the wrong box.** RTS draws several note boxes with the same class (the Financing Status Note sits just above Research Notes), and the extension wrote to the first one on the page. It now writes only into the box headed "Research Notes"; if several boxes are on the page and that heading cannot be found, nothing is written and the error says so.
+- **Close button image in the Industry mapping.** A mapping made with "Detect everything" can list `#msa-close-btn > img` (the image inside the window's Close button). A mapping can no longer press that button or anything inside it. (v0.31.0 as first sent did not yet skip the image; this version does.)
