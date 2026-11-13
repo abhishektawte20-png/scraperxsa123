@@ -78,8 +78,19 @@
         }
         if (c === quote || (quote === "”" && CURLY[c])) { out += '"'; quote = null; i++; continue; }
         if (c === '"') return { ok: false, text: src, fixes: [] }; // a quote inside a curly-quoted value: a guess would be needed
-        if (c === "\n") { out += "\\n"; note("RAW_NEWLINE", i, "wrote a raw line break inside a text value as \\n"); i++; continue; }
-        if (c === "\r") { if (src[i + 1] !== "\n") out += "\\n"; i++; continue; }
+        // A line break inside a text value is how a chat window wraps a long line: it stands for a space.
+        if (c === "\n" || c === "\r") {
+          let j = i;
+          while (j < src.length && /[\r\n\t ]/.test(src[j])) j++;
+          out += out.endsWith(" ") ? "" : " ";
+          note("RAW_NEWLINE", i, "joined a line break inside a text value into a space");
+          i = j; continue;
+        }
+        // A web address that ends in %22 and is followed by a bracket or comma has lost its closing quote mark: the %22 IS that quote mark.
+        if (c === "%" && src.slice(i, i + 3) === "%22" && /^https?:\/\//i.test(out.slice(out.lastIndexOf('"') + 1))) {
+          const tail = /^\s*([},\]])/.exec(src.slice(i + 3));
+          if (tail) { out += '"'; quote = null; note("URL_QUOTE", i, "closed a web address whose closing quote mark was written as %22"); i += 3; continue; }
+        }
         if (c === "\t") { out += "\\t"; note("RAW_TAB", i, "wrote a raw tab inside a text value as \\t"); i++; continue; }
         out += c; i++; continue;
       }
@@ -100,8 +111,11 @@
       if (c === " ") { out += " "; note("NBSP", i, "replaced a non-breaking space"); i++; continue; }
       out += c; i++;
     }
-    if (quote) return { ok: false, text: src, fixes: [] };
-    try { JSON.parse(out); } catch { return { ok: false, text: src, fixes: [] }; }
+    if (quote) return { ok: false, text: src, fixes: [], tried: fixes, next: { reason: "A text value was opened with a quote mark but never closed.", text: "A text value was opened with a quote mark but never closed (the reply may be cut off, or a closing quote mark is missing).", near: "" } };
+    try { JSON.parse(out); } catch (error) {
+      // The safe fixes were made but something else is wrong too: say what, so it is not hidden behind the first message.
+      return { ok: false, text: src, fixes: [], tried: fixes, next: explain(error, out) };
+    }
     return { ok: true, text: out, fixes };
   }
 

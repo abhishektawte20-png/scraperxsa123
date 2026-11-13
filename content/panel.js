@@ -136,6 +136,7 @@
       button.btn.map:hover:not(:disabled) { background: var(--warn-soft); box-shadow: none; }
       button.btn:disabled { opacity: .45; cursor: not-allowed; }
 
+      .pause-banner { background: #fdeeec; color: #a3291c; border: 1px solid #f0c2bc; border-radius: 8px; padding: 8px 10px; margin: 8px 0; font-size: 12px; font-weight: 600; }
       .pbar { margin: 10px 0 4px; }
       .pbar-label { font-size: 12px; font-weight: 600; color: #1b2a47; margin-bottom: 5px; }
       .pbar-track { height: 10px; background: #e3e8f2; border-radius: 6px; overflow: hidden; }
@@ -352,7 +353,7 @@
       onMapped: (label) => setStatus(publishStatus, `Mapped "${label}". It is now in "Ready to publish" below.`, "success")
     });
     const teachButton = element("button", { className: "btn secondary", text: "Teach new field", type: "button", tip: "Teach the extension a brand-new RTS field, or review and delete your mappings. To fill a field the agent already researched, use \"Map this field\" on its row in the preview." });
-    teachButton.addEventListener("click", () => teach?.open());
+    teachButton.addEventListener("click", () => { if (globalThis.SXRTS.runControl?.isPaused()) { showPausedNotice?.(); return; } teach?.open(); });
 
     // Saved output rules (e.g. "Facebook: keep only the handle") are applied
     // when the output is validated; changing a rule re-validates what is pasted.
@@ -389,7 +390,18 @@
 
     const copyPromptButton = element("button", { className: "btn", text: "Copy prompt", type: "button", tip: "Copies the complete prompt for this domain: the domain on the first line, then the exact JSON output format the extension validates. Paste it into your ScraperX agent and run it." });
     const openRovoButton = element("button", { className: "btn secondary", text: "Open Rovo", type: "button", tip: "Opens Rovo in a new tab." });
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, mappingsButton, rulesButton, historyButton, feedbackButton, gameButton]));
+    // Pause: while on, the extension does not click, type or open windows in RTS (Publish, Map, Detect and Undo all refuse).
+    const rc = globalThis.SXRTS.runControl;
+    var showPausedNotice = () => { pauseBanner.classList.remove("hidden"); pauseBanner.scrollIntoView?.({ block: "nearest" }); };
+    const pauseButton = element("button", { className: "btn secondary", text: "Pause", type: "button", tip: "Stops the extension from touching RTS: no clicks, no typing, no windows. A publish that is running stops at its next step. Press Resume to carry on." });
+    const pauseBanner = element("div", { className: "pause-banner hidden", text: "Paused. The extension will not click, type or open windows in RTS until you press Resume." });
+    pauseBanner.id = "sxrts-paused";
+    const showPause = (on) => { pauseButton.textContent = on ? "Resume" : "Pause"; pauseBanner.classList.toggle("hidden", !on); };
+    pauseButton.addEventListener("click", () => rc?.set(!rc.isPaused()));
+    rc?.onChange(showPause);
+    rc?.load().then(() => showPause(rc.isPaused()));
+    identityCard.appendChild(pauseBanner);
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, mappingsButton, rulesButton, historyButton, pauseButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -431,7 +443,7 @@
     siteRegionalRow.title = "Two sites cannot both be the Current Primary HQ. On: the new site is added as a Regional HQ and the existing one is left alone. Off: the site is not added and the message says why.";
     siteAnywayRow.title = "Off: a site whose address (or city) is already listed is reported as Already in RTS and nothing is added. On: it is added anyway.";
     const undoButton = element("button", { className: "btn secondary", text: "Undo", type: "button", tip: "Takes back what a publish saved to RTS: unticks the industry choice, restores a replaced website or email structure, and lists exactly what to delete by hand for added rows." });
-    undoButton.addEventListener("click", () => undoUi?.open());
+    undoButton.addEventListener("click", () => { if (globalThis.SXRTS.runControl?.isPaused()) { showPausedNotice?.(); return; } undoUi?.open(); });
     previewCard.appendChild(element("div", { className: "buttons" }, [selectAllButton, publishButton, undoButton, captureHtmlButton, clearCacheButton]));
     previewCard.appendChild(siteAnywayRow);
     previewCard.appendChild(siteRegionalRow);
@@ -1027,7 +1039,7 @@
           const extra = (error.issues ?? []).filter((item) => item.severity !== "error" && item.code !== "SOURCE_NOTE").map((item) => ({ kind: item.severity === "warning" ? "warn" : "info", text: contract.formatIssue(item) }));
           const syntax = error.syntax;
           const errorLines = syntax
-            ? [{ kind: "err", text: `[JSON_SYNTAX] ${syntax.text}` }, ...(syntax.near ? [{ kind: "info", text: `Near: ${syntax.near}` }] : []), { kind: "info", text: "Simple mistakes (a comma before a closing bracket, curly quotes, raw line breaks in text) are fixed automatically. This one needs the agent to send the JSON again: press Generate Correct JSON Prompt." }]
+            ? [{ kind: "err", text: `[JSON_SYNTAX] ${syntax.text}` }, ...(syntax.near ? [{ kind: "info", text: `Near: ${syntax.near}` }] : []), ...(syntax.next ? [{ kind: "err", text: `[JSON_SYNTAX] ${syntax.fixed?.length ? `${syntax.fixed.join("; ")} were fixed automatically, but another problem remains: ` : "Another problem: "}${syntax.next.text}` }, ...(syntax.next.near ? [{ kind: "info", text: `Near: ${syntax.next.near}` }] : [])] : []), { kind: "info", text: "Simple mistakes (a comma before a closing bracket, curly quotes, raw line breaks in text) are fixed automatically. This one needs the agent to send the JSON again: press Generate Correct JSON Prompt." }]
             : error.errors.map((text) => ({ kind: "err", text }));
           renderValidation(false, [...errorLines, ...extra], halted ? "The agent halted this extraction" : syntax ? "The pasted text is not valid JSON" : "The output broke the rules below");
           saveRun(halted ? "halted" : "invalid", error.format, [...error.errors, ...extra.map((line) => line.text)], error.errors.length, null);
@@ -1062,13 +1074,34 @@
         setStatus(publishStatus, "Nothing selected to publish.", "error");
         return;
       }
+      if (globalThis.SXRTS.runControl?.isPaused()) {
+        setStatus(publishStatus, "Paused: press Resume first. Nothing was done in RTS.", "error");
+        return;
+      }
       // The act log entry carries the researcher's name: it must be there before anything is written.
       if (selected.some((entry) => entry.action.mandatory) && !/^[A-Za-z][A-Za-z.' -]{2,}$/.test(String(globalThis.SXRTS.researcher || "").trim())) {
         setStatus(publishStatus, "Enter your name (Firstname.Lastname) in \"Your name (for the act log)\" first: the act log note needs it.", "error");
         researcherInput.focus();
         return;
       }
-      if (!window.confirm(`Publish ${selected.length} field(s) to RTS now? This makes live changes.`)) {
+      // What will happen in RTS, said before it does: the windows that will open, and what RTS already says about edits.
+      const opensWindow = [];
+      for (const entry of selected) {
+        const def = entry.action.customKey ? globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey) : null;
+        if (def && (def.window || def.tree)) opensWindow.push(def.label || entry.action.section);
+        else if (entry.action.verticalGroup && !opensWindow.includes("Verticals")) opensWindow.push("Verticals");
+      }
+      const editsBefore = globalThis.SXRTS.navigation?.readLastEdits?.() ?? [];
+      const now = new Date();
+      const todayKey = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+      const sameDay = (d) => { const [m, dd, y] = d.split("/").map(Number); return `${m}/${dd}/${y}` === todayKey; };
+      const editedToday = editsBefore.filter((e) => sameDay(e.date));
+      const heads = [
+        `Publish ${selected.length} field(s) to RTS now? This makes live changes.`,
+        opensWindow.length ? `Windows that will open: ${Array.from(new Set(opensWindow)).join(", ")}. They close by themselves. Press Pause to stop at any time.` : "",
+        editedToday.length ? `RTS already shows an edit dated today (${Array.from(new Set(editedToday.map((e) => e.by))).join(", ")}) before this publish: the extension has not written anything yet.` : ""
+      ].filter(Boolean).join("\n\n");
+      if (!window.confirm(heads)) {
         return;
       }
 
@@ -1125,6 +1158,12 @@
       let applied = 0, skipped = 0, failed = 0;
       const allResults = {};
       const valueFor = (a) => rowsByActionId.get(a.actionId).getEditedValue();
+      // Pause: a step that has not started when Pause is pressed is not run, and says so.
+      const holdIfPaused = (entry) => {
+        if (!globalThis.SXRTS.runControl?.isPaused()) return false;
+        skipped++; setRowStatus(entry.action.actionId, "skipped", "Paused: this step was not run.");
+        return true;
+      };
 
       // Re-runs the real schema validator against a manually edited value
       // (wrapped back into a minimal envelope/array under its real
@@ -1209,7 +1248,7 @@
       for (const entry of customEntries.filter(isWindowField)) await publishCustom(entry);
 
       // Verticals: built in. Its window is opened right after the window fields, still close to the click on Publish.
-      const verticalEntries = selected.filter((entry) => entry.action.verticalGroup);
+      const verticalEntries = selected.filter((entry) => entry.action.verticalGroup).filter((entry) => !holdIfPaused(entry));
       if (verticalEntries.length) {
         progress.doing("Verticals (choose True in the window, save once)");
         await globalThis.SXRTS.navigation?.showTab("Company");
@@ -1236,6 +1275,7 @@
 
       const nameVariationActions = selected.filter((entry) => entry.action.jsonPath === "businessEntity.nameVariations");
       for (const entry of nameVariationActions) {
+        if (holdIfPaused(entry)) continue;
         progress.doing("Name variations");
         await globalThis.SXRTS.navigation?.showTab("Business Entity");
         const value = validatedValueFor(entry);
@@ -1253,7 +1293,7 @@
       }
 
       const generalJsonPaths = ["businessEntity.websiteAddresses", "businessEntity.emailDefaultStructure", "businessEntity.researchNotes", "businessEntity.financingStatus", "businessEntity.researchStatus", "businessEntity.publishStatus"];
-      const generalEntries = selected.filter((entry) => generalJsonPaths.includes(entry.action.jsonPath));
+      const generalEntries = selected.filter((entry) => generalJsonPaths.includes(entry.action.jsonPath)).filter((entry) => !holdIfPaused(entry));
       if (generalEntries.length) {
         progress.doing("Website, email and research notes");
         await globalThis.SXRTS.navigation?.showTab("Business Entity");
@@ -1307,6 +1347,7 @@
 
       // Ownership and Business Status History: each is its own small table with its own Save button.
       for (const entry of selected.filter((e) => e.action.jsonPath === "businessEntity.ownershipStatus" || e.action.jsonPath === "businessEntity.businessStatus")) {
+        if (holdIfPaused(entry)) continue;
         const kind = entry.action.jsonPath === "businessEntity.ownershipStatus" ? "ownership" : "business";
         progress.doing(kind === "ownership" ? "Ownership status history" : "Business status history");
         await globalThis.SXRTS.navigation?.showTab("Business Entity");
@@ -1325,6 +1366,7 @@
 
       const sicEntries = selected.filter((entry) => entry.action.jsonPath === "company.sicCodes");
       for (const entry of sicEntries) {
+        if (holdIfPaused(entry)) continue;
         progress.doing("SIC codes");
         await globalThis.SXRTS.navigation?.showTab("Company");
         const value = validatedValueFor(entry);
@@ -1342,8 +1384,8 @@
       }
 
       // The site: every address field of the report goes into ONE form and ONE save (Company > Site).
-      const siteExtras = selected.filter((entry) => entry.action.siteGroup);
-      const siteJson = selected.filter((entry) => entry.action.jsonPath === "company.sites" && !entry.action.customKey);
+      const siteExtras = selected.filter((entry) => entry.action.siteGroup).filter((entry) => !holdIfPaused(entry));
+      const siteJson = selected.filter((entry) => entry.action.jsonPath === "company.sites" && !entry.action.customKey).filter((entry) => !holdIfPaused(entry));
       const addAnyway = Boolean(siteAnywayBox.checked);
       const hqFallback = Boolean(siteRegionalBox.checked);
       async function publishSite(entries, record) {
@@ -1389,6 +1431,7 @@
       // One mapped field. A field that opens a window goes FIRST, right after the click on Publish: Chrome only lets a
       // page open a window shortly after a person's click, so it must not wait behind the slower saves.
       async function publishCustom(entry) {
+        if (holdIfPaused(entry)) return;
         const value = validatedValueFor(entry);
         if (value === undefined) return;
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
@@ -1415,6 +1458,7 @@
       for (const entry of customEntries.filter((e) => !isWindowField(e))) await publishCustom(entry);
 
       progress.finish(applied, skipped, failed);
+      const editsAfter = globalThis.SXRTS.navigation?.readLastEdits?.() ?? [];
       const rtsSaid = globalThis.SXRTS.dialogLog?.summarize(globalThis.SXRTS.dialogLog.end()) ?? [];
       const summary = globalThis.SXRTS.resultsSummary.buildSummary(allResults);
       const warningText = identityResult.reasons.length ? `\nIdentity warnings:\n${identityResult.reasons.join("\n")}` : "";
@@ -1424,6 +1468,13 @@
       publishStatus.textContent = "";
       publishStatus.appendChild(summaryDiv);
       publishStatus.className = `status ${failed ? "error" : "success"}`;
+      if (editsAfter.length || editsBefore.length) {
+        const text = (list) => (list.length ? Array.from(new Set(list.map((e) => `${e.by} ${e.date}`))).join(", ") : "none shown");
+        const edits = document.createElement("div");
+        edits.className = "helptext";
+        edits.textContent = `RTS "Last Edit By" before this publish: ${text(editsBefore)}. After: ${text(editsAfter)}.`;
+        publishStatus.appendChild(edits);
+      }
       if (rtsSaid.length) {
         const said = document.createElement("div");
         said.className = "helptext";

@@ -355,7 +355,9 @@
         if (isPlainObject(value)) return { value, fixes: repair.fixes };
       }
       const detail = globalThis.SXRTS.jsonRepair?.explain(error, body) ?? { reason: error.message, text: error.message };
-      throw syntaxFailure([`The pasted response is not valid JSON. ${detail.text}`], { kind: "invalid", ...detail });
+      // When safe fixes were possible but something else is wrong too, say what the next problem is.
+      const next = repair?.next && repair.tried?.length ? { fixed: globalThis.SXRTS.jsonRepair.summarize(repair.tried), next: repair.next } : (repair?.next && !repair.tried?.length ? { next: repair.next } : {});
+      throw syntaxFailure([`The pasted response is not valid JSON. ${detail.text}`], { kind: "invalid", ...detail, ...next });
     }
     if (!isPlainObject(parsed)) {
       const reason = "The response must be one JSON object.";

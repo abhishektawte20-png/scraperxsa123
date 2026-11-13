@@ -2,6 +2,7 @@
 
 const ASSISTANT_FILES = [
   "core/dialogLog.js",
+  "core/runControl.js",
   "core/jsonRepair.js",
   "core/rovoContract.js",
   "core/rovoText.js",
@@ -295,6 +296,10 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener(async (message) => {
     if (message?.type !== "start" || openerTabId === undefined) return;
+    // Paused: no window is opened or driven.
+    try {
+      if ((await chrome.storage.local.get("sxrts_paused"))?.sxrts_paused) { say({ type: "error", error: "The extension is paused, so no window was opened. Press Resume in the panel to continue." }); return; }
+    } catch { /* no storage: carry on */ }
     let adopted = false;
     try {
       let already = await popupTabs(openerTabId, message.origin);

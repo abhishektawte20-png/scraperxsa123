@@ -33,6 +33,9 @@ import "../core/workflows/businessEntityGeneral.js";
 import "../core/workflows/companySic.js";
 import "../core/resultsSummary.js";
 import "../content/ui.js";
+import "../core/runControl.js";
+import "../core/navigation.js";
+import "../core/customFields.js";
 import "../content/panel.js";
 import "./helpers/researcher.mjs";
 
@@ -409,4 +412,111 @@ test("the progress bar is hidden before a publish and amber, with the count of p
   const bar = shadow.querySelector(".pbar");
   assert.ok(bar.classList.contains("warn"), "nothing on this page can be saved, so the bar is amber");
   assert.match(bar.querySelector(".pbar-label").textContent, /Finished · 6 of 6 fields processed · 6 need attention/);
+});
+
+
+// ---- guardrails: nothing touches RTS until Publish, Pause stops everything, and the researcher is told what will happen ----
+
+// Watches the RTS page (everything outside the panel) for clicks, typing, focus changes and any change to the page itself.
+function watchPage(shadow) {
+  const host = shadow.host;
+  const seen = [];
+  for (const type of ["click", "input", "change", "focus", "focusin", "keydown", "keyup", "submit", "mousedown"]) {
+    document.addEventListener(type, (event) => { if (!event.composedPath().includes(host)) seen.push(`${type}:${event.target?.id || event.target?.tagName}`); }, true);
+  }
+  const observer = new window.MutationObserver((records) => { for (const r of records) if (!host.contains(r.target) && r.target !== host) seen.push(`mutation:${r.type}:${r.target.id || r.target.nodeName}`); });
+  observer.observe(document.body, { childList: true, attributes: true, characterData: true, subtree: true });
+  return { seen, flush: () => { for (const r of observer.takeRecords()) if (!host.contains(r.target) && r.target !== host) seen.push(`mutation:${r.type}:${r.target.id || r.target.nodeName}`); } };
+}
+const PAGE = `<span class="flat-button__caption-x1">PBID: PB-1</span>
+  <button class="navigation__button" id="navBE">Business Entity</button><button class="navigation__button" id="navCO">Company</button><a id="expandLink" href="#">Expand</a>
+  <input type="text" id="webURL" value=""><input type="button" value="Add/Edit Industry" id="addIndustry"><input type="button" id="saveBusinessEntityButton" value="Save changes" disabled>
+  <div>Input By: Poulomi.Roy, 09/16/2019 04:48 Last Edit By: T.K.R., 04/06/2026 11:43</div>`;
+const press = (shadow, label) => Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === label);
+const pasteValid = (shadow) => {
+  const area = shadow.querySelector("#sxrts-response");
+  area.value = JSON.stringify({ schemaVersion: "1.0", profileIdentity: { companyName: "Psypher", pbId: "PB-1", domain: "psypher.in" }, businessEntity: { websiteAddresses: [{ value: "www.psypher.in", action: "addIfMissing" }] } });
+  area.dispatchEvent(new window.Event("input", { bubbles: true }));
+};
+
+test("opening the panel, pasting, validating and opening every window of the panel never clicks, types into or changes the RTS page", async () => {
+  const { shadow } = setupDom();
+  document.body.insertAdjacentHTML("afterbegin", PAGE);
+  const watch = watchPage(shadow);
+  pasteValid(shadow);
+  press(shadow, "Validate JSON").click();
+  for (const label of ["Mappings", "Output rules", "Teach new field", "History", "Undo"]) press(shadow, label)?.click();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  watch.flush();
+  assert.deepEqual(watch.seen, [], "nothing on the RTS page was touched");
+  // the watcher itself works: a click on the page is seen
+  document.getElementById("addIndustry").click();
+  assert.ok(watch.seen.some((e) => e.startsWith("click:")), "the watcher sees a click on the RTS page");
+});
+
+test("Pause: Publish refuses, nothing in RTS is touched, and Resume lets it run again", async () => {
+  await globalThis.SXRTS.runControl.set(false);
+  const { shadow } = setupDom();
+  document.body.insertAdjacentHTML("afterbegin", PAGE);
+  const watch = watchPage(shadow);
+  pasteValid(shadow);
+  press(shadow, "Validate JSON").click();
+  press(shadow, "Pause").click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(press(shadow, "Resume") instanceof window.HTMLElement, true, "the button now says Resume");
+  assert.ok(!shadow.querySelector("#sxrts-paused").classList.contains("hidden"), "the banner says it is paused");
+  press(shadow, "Publish and save").click();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  watch.flush();
+  assert.match(shadow.querySelector(".pbar ~ .status, .status").textContent + shadow.querySelector("#sxrts-paused").textContent, /Paused|paused/);
+  assert.deepEqual(watch.seen, []);
+  press(shadow, "Teach new field").click();
+  assert.ok(!shadow.querySelector("#sxrts-paused").classList.contains("hidden"));
+  press(shadow, "Resume").click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(shadow.querySelector("#sxrts-paused").classList.contains("hidden"));
+  assert.equal(globalThis.SXRTS.runControl.isPaused(), false);
+});
+
+test("Pause pressed during a publish: the steps that had not started are not run, and each says so", async () => {
+  await globalThis.SXRTS.runControl.set(false);
+  const { shadow } = setupDom();
+  document.body.insertAdjacentHTML("afterbegin", PAGE);
+  pasteValid(shadow);
+  press(shadow, "Validate JSON").click();
+  const watch = watchPage(shadow);
+  window.confirm = () => { globalThis.SXRTS.runControl.set(true); return true; }; // Pause is pressed right after Publish is confirmed
+  press(shadow, "Publish and save").click();
+  for (let i = 0; i < 120 && !/Paused: this step was not run/.test(shadow.textContent); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  watch.flush();
+  const text = shadow.textContent;
+  assert.match(text, /Paused: this step was not run/);
+  assert.deepEqual(watch.seen.filter((e) => /^(click|input|change|keydown):/.test(e) && !/navBE|navCO|expandLink/.test(e)), [], "no field was clicked or typed into");
+  await globalThis.SXRTS.runControl.set(false);
+});
+
+test("before publishing, the researcher is told which windows will open and whether RTS already shows an edit today", async () => {
+  await globalThis.SXRTS.runControl.set(false);
+  const { shadow } = setupDom();
+  const today = new Date();
+  document.body.insertAdjacentHTML("afterbegin", PAGE.replace("T.K.R., 04/06/2026 11:43", `Abhishek.Tawte, ${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()} 09:15`));
+  await globalThis.SXRTS.customFields.saveDefinition({
+    key: "extrasIndustryCode", label: "Industry code", description: "", kind: "single",
+    fields: [{ key: "value", label: "Industry code", description: "", kind: "tree" }],
+    openButton: { selectors: ["#addIndustry"], text: "Add/Edit Industry" }, saveButton: { selectors: ["#save"], text: "Save Changes" },
+    window: { path: "/industryGroup/create.html", preSave: [], tree: { leaf: { selectors: ["div.controls_checkBox"], text: "" }, expander: { selectors: ["[id^=industryControlGroup]"], text: "" } } },
+    binds: { path: "extras.industryCode", map: { value: "value" } }
+  });
+  const area = shadow.querySelector("#sxrts-response");
+  area.value = JSON.stringify({ schemaVersion: "1.0", profileIdentity: { companyName: "Psypher", pbId: "PB-1", domain: "psypher.in" }, custom: {}, extras: { industryCode: { value: "1.2.4 — Consulting Services", action: "addIfMissing" } } });
+  area.dispatchEvent(new window.Event("input", { bubbles: true }));
+  press(shadow, "Validate JSON").click();
+  let asked = "";
+  window.confirm = (message) => { asked = message; return false; };
+  press(shadow, "Publish and save").click();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.match(asked, /Publish \d+ field\(s\) to RTS now\?/);
+  assert.match(asked, /Windows that will open: Industry code/);
+  assert.match(asked, /RTS already shows an edit dated today \(Abhishek\.Tawte\) before this publish: the extension has not written anything yet/);
+  await globalThis.SXRTS.customFields.removeDefinition("extrasIndustryCode");
 });

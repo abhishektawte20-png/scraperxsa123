@@ -33,7 +33,7 @@ test("each safe repair is applied, and only when the result parses", () => {
     assert.ok(r.fixes.some((f) => f.code === code), `${code} reported`);
     JSON.parse(r.text);
   }
-  assert.deepEqual(JSON.parse(jr.repair('{"a": "line one\nline two"}').text), { a: "line one\nline two" });
+  assert.deepEqual(JSON.parse(jr.repair('{"a": "line one\nline two"}').text), { a: "line one line two" }, "a line break inside text is a chat window's wrap: it becomes a space");
   assert.deepEqual(JSON.parse(jr.repair('{\u201Ca\u201D: \u201Cx\u201D}').text), { a: "x" });
 });
 
@@ -79,4 +79,31 @@ test("summaries say what was fixed and where", () => {
   assert.equal(r.ok, true);
   const [line] = jr.summarize(r.fixes);
   assert.match(line, /removed a comma before a closing bracket \(2 times\), lines 3, 4/);
+});
+
+test("a hard-wrapped fallback phrase is joined back into exactly the phrase the methodology prescribes", () => {
+  const r = jr.repair('{"former_name": { "value": "Not found\n   on the official website.", "source_url": null }}');
+  assert.equal(r.ok, true);
+  assert.equal(JSON.parse(r.text).former_name.value, "Not found on the official website.");
+});
+
+test("a web address whose closing quote mark was written as %22 is closed again; the same text elsewhere is left alone", () => {
+  const broken = '{"youtube": { "value": "https://www.youtube.com/@FarfallaEventsKC%22 }, "former_name": { "value": "Not found\non the official website." } }';
+  const r = jr.repair(broken);
+  assert.equal(r.ok, true, JSON.stringify(r.next));
+  const parsed = JSON.parse(r.text);
+  assert.equal(parsed.youtube.value, "https://www.youtube.com/@FarfallaEventsKC");
+  assert.equal(parsed.former_name.value, "Not found on the official website.");
+  assert.ok(r.fixes.some((f) => f.code === "URL_QUOTE") && r.fixes.some((f) => f.code === "RAW_NEWLINE"));
+  const fine = jr.repair('{"u": "https://x.com/a%22b", "v": "text %22 } more"}');
+  assert.equal(fine.ok, true);
+  assert.deepEqual(fine.fixes, []);
+  assert.equal(JSON.parse(fine.text).v, "text %22 } more");
+});
+
+test("when safe fixes are not enough, the NEXT problem is reported too, not just the first", () => {
+  const r = jr.repair('{"a": "x\ny", "b": ["p" "q"]}');
+  assert.equal(r.ok, false);
+  assert.ok(r.tried.some((f) => f.code === "RAW_NEWLINE"));
+  assert.match(r.next.text, /Something is missing between two items|Unexpected/);
 });

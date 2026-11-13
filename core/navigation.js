@@ -128,6 +128,16 @@
     return opened;
   }
 
+  // What RTS says about edits: every "Last Edit By: NAME, MM/DD/YYYY ..." on the page. Read-only; used to show that nothing
+  // was written before Publish and what changed after it.
+  function readLastEdits() {
+    const text = document.body?.innerText ?? document.body?.textContent ?? "";
+    const found = [];
+    const re = /Last Edit By:\s*([^,\n]+),\s*(\d{1,2}\/\d{1,2}\/\d{4})/gi;
+    for (let m; (m = re.exec(text));) found.push({ by: m[1].trim(), date: m[2] });
+    return found;
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.navigation = { expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
+  globalThis.SXRTS.navigation = { readLastEdits, expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
 })();
