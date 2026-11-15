@@ -34,6 +34,14 @@
     "company.sites": "Delete this site in Company > Site (use its Delete / remove control)."
   };
 
+  const STATUS_KEYS = ["businessEntity.financingStatus", "businessEntity.researchStatus", "businessEntity.publishStatus"];
+  const HISTORY_KINDS = { "businessEntity.ownershipStatus": "ownership", "businessEntity.businessStatus": "business" };
+  // "05/17/2022 · Privately Held" (what the table showed before the overwrite) -> { date, status }, or null when it was not a full row.
+  function historyBefore(text) {
+    const m = /^(\d{2}\/\d{2}\/\d{4}) · (.+)$/.exec(String(text ?? ""));
+    return m && m[2] !== "(no status)" ? { date: m[1], status: m[2] } : null;
+  }
+
   // How an undo can be done for one published item. `before` is the value RTS held before the run.
   function planFor(item) {
     const path = baseOf(item.path);
@@ -41,6 +49,10 @@
     if (path === "businessEntity.websiteAddresses") return { kind: "website", auto: item.before !== undefined && item.before !== null };
     if (path === "businessEntity.emailDefaultStructure") return { kind: "email", auto: Boolean(item.before) };
     if (item.customKey && item.single && item.before) return { kind: "single", auto: true };
+    if (path === "businessEntity.researchNotes") return Array.isArray(item.added) && item.added.length ? { kind: "researchNote", auto: true } : { kind: "manual", auto: false, hint: MANUAL_HINT[path] };
+    if (STATUS_KEYS.includes(path)) return { kind: "status", auto: Boolean(item.before) };
+    if (HISTORY_KINDS[path]) return historyBefore(item.before) ? { kind: "history", auto: true } : { kind: "manual", auto: false, hint: "Delete the row this tool added in the status history table, then Save." };
+    if (path === "company.keywords" && item.customKey) return { kind: "keyword", auto: true };
     return { kind: "manual", auto: false, hint: MANUAL_HINT[path] || "Remove this entry in RTS." };
   }
 
@@ -64,7 +76,7 @@
       return {
         id: `${i}`, path: String(item.path), label: String(item.label ?? item.path), value: String(item.value ?? "").slice(0, 400),
         before: item.before === undefined || item.before === null ? null : String(item.before).slice(0, 400),
-        customKey: item.customKey || null, kind: plan.kind, auto: plan.auto, hint: plan.hint || "", state: "pending", note: ""
+        customKey: item.customKey || null, added: Array.isArray(item.added) ? item.added.map((t) => String(t).slice(0, 4000)) : undefined, kind: plan.kind, auto: plan.auto, hint: plan.hint || "", state: "pending", note: ""
       };
     });
     if (!items.length) return null;
@@ -94,6 +106,33 @@
     await store()?.remove(KEY);
   }
 
+  // Removes ONE keyword tag (the one this run added, matched by its exact text) with its own x, saves with the mapping's own
+  // Save button and reads the tags again. No other tag is touched.
+  async function removeKeyword(item) {
+    const def = globalThis.SXRTS.customFields?.getDefinition(item.customKey);
+    if (!def) return { ok: false, message: "The mapping for this field no longer exists." };
+    const squash = (t) => String(t ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const pillsOf = () => Array.from(document.querySelectorAll(".base-pill")).filter((p) => squash(p.querySelector(".element-group__item:not(.base-pill__close-icon)")?.textContent ?? p.textContent) === squash(item.value));
+    const pills = pillsOf();
+    if (!pills.length) return { ok: true, message: "That keyword is not shown any more." };
+    if (pills.length > 1) return { ok: false, message: "The same keyword is shown more than once, so nothing was removed. Remove the right one by hand." };
+    const x = pills[0].querySelector(".base-pill__close-icon");
+    if (!x) return { ok: false, message: "The keyword's remove (x) control was not found." };
+    x.click();
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 20 && pillsOf().length; i++) await wait(50);
+    if (pillsOf().length) return { ok: false, message: "RTS still shows the keyword after pressing its x; nothing was saved." };
+    const save = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.saveButton);
+    if (!save) return { ok: false, message: "The Save button was not found; the keyword was removed on screen only. Reload the profile." };
+    for (let i = 0; i < 40 && save.disabled; i++) await wait(50);
+    if (save.disabled) return { ok: false, message: "Save stayed disabled; the keyword was removed on screen only. Reload the profile." };
+    save.click();
+    for (let i = 0; i < 100 && !(save.disabled || !save.isConnected); i++) await wait(50);
+    if (!(save.disabled || !save.isConnected)) return { ok: false, message: "Save did not complete. Check it in RTS." };
+    await wait(150);
+    return pillsOf().length ? { ok: false, message: "Saved, but the keyword is still shown. Check it in RTS." } : { ok: true, message: "Keyword removed and read back." };
+  }
+
   // Reverts one item in the open RTS page. Returns { ok, message }. Never reports ok without RTS showing the old state.
   async function undoItem(item) {
     const wf = globalThis.SXRTS.workflows;
@@ -121,6 +160,26 @@
         if (result.status === "savedValueVerified") return { ok: true, message: `Put back "${item.before}".` };
         return { ok: false, message: result.reason || result.detail || `Unexpected result (${result.status}).` };
       }
+      if (item.kind === "researchNote") {
+        const outcome = await wf.businessEntityGeneral.removeResearchNote(item.added);
+        if (outcome.status === "savedValueVerified") return { ok: true, message: outcome.detail };
+        if (outcome.status === "skipped") return { ok: true, message: outcome.reason };
+        return { ok: false, message: "RTS did not confirm the change." };
+      }
+      if (item.kind === "status") {
+        const key = item.path.split(".")[1];
+        const group = await wf.businessEntityGeneral.applyBusinessEntityGeneral({ [key]: { action: "replaceAfterConfirmation", value: item.before } });
+        const outcome = group.results?.[key];
+        if (outcome?.status === "savedValueVerified") return { ok: true, message: `Put back "${item.before}".` };
+        return { ok: false, message: outcome?.reason || group.reason || "RTS did not confirm the change." };
+      }
+      if (item.kind === "history") {
+        const before = historyBefore(item.before);
+        const outcome = await wf.statusHistory.applyStatusHistory(HISTORY_KINDS[item.path], before);
+        if (outcome.status === "savedValueVerified") return { ok: true, message: `Put back ${item.before}.` };
+        return { ok: false, message: outcome.reason || "RTS did not confirm the change." };
+      }
+      if (item.kind === "keyword") return await removeKeyword(item);
       return { ok: false, message: "This one has to be removed by hand." };
     } catch (error) {
       return { ok: false, message: error.message || String(error) };

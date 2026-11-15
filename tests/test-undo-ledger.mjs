@@ -61,7 +61,7 @@ test("each kind of published item gets the right undo plan", () => {
   assert.equal(plan({ path: "businessEntity.websiteAddresses" }).auto, false, "unknown previous value: by hand");
   assert.equal(plan({ path: "businessEntity.emailDefaultStructure", before: "" }).auto, false, "an empty select cannot be put back");
   assert.equal(plan({ path: "businessEntity.emailDefaultStructure", before: "First.Last" }).auto, true);
-  assert.equal(plan({ path: "company.keywords[2]", customKey: "kw" }).kind, "manual");
+  assert.equal(plan({ path: "company.keywords[2]", customKey: "kw" }).kind, "keyword", "a keyword tag can be removed by its own x");
   assert.match(plan({ path: "businessEntity.nameVariations[0]" }).hint, /Name Variations/);
 });
 

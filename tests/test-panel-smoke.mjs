@@ -520,3 +520,93 @@ test("before publishing, the researcher is told which windows will open and whet
   assert.match(asked, /RTS already shows an edit dated today \(Abhishek\.Tawte\) before this publish: the extension has not written anything yet/);
   await globalThis.SXRTS.customFields.removeDefinition("extrasIndustryCode");
 });
+
+// ---- no collateral changes: a whole publish touches the fields it maps, and nothing else on the page ----
+
+function describeNode(el) {
+  const attrs = Array.from(el.attributes).map((a) => `${a.name}=${a.value}`).sort().join("|");
+  const own = el.children.length ? "" : el.textContent;
+  return JSON.stringify({ attrs, value: "value" in el ? el.value : undefined, checked: "checked" in el ? el.checked : undefined, sel: el.tagName === "SELECT" ? el.selectedIndex : undefined, html: el.isContentEditable || el.hasAttribute("contenteditable") ? el.innerHTML : undefined, own });
+}
+const snapshotPage = (host) => { const map = new Map(); for (const el of document.body.querySelectorAll("*")) if (!host.contains(el) && el !== host) map.set(el, describeNode(el)); return map; };
+const nameOf = (el) => `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}${el.className && typeof el.className === "string" ? `.${el.className.split(" ").join(".")}` : ""}`;
+
+test("a whole publish changes only the fields it maps: decoy boxes, selects, checkboxes and buttons around them are not touched, clicked or typed into", async () => {
+  await globalThis.SXRTS.runControl.set(false);
+  const { shadow } = setupDom();
+  addIdentityWithNoStrongMatch();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="decoyZone">
+      <input type="text" id="decoyInput" value="keep me"><textarea id="decoyArea">keep this too</textarea>
+      <select id="decoySelect"><option>One</option><option selected>Two</option></select>
+      <input type="checkbox" id="decoyCheck" checked><input type="radio" name="decoyRadio" id="decoyRadio" checked>
+      <input type="button" id="decoyButton" value="Delete everything"><input type="button" id="decoySave" value="Save changes">
+      <span id="decoyLabel">Ownership</span>
+    </div>
+    <div class="row"><span>Financing Status Note:</span><div contenteditable="" class="highlight-textarea" id="finNote">Financing note: untouched ///<br>second line</div></div>
+    <div class="row"><span>Research Notes (Internal)</span><div contenteditable="" class="highlight-textarea" id="rn">06/12/26, Aimee: existing ///<br><a href="https://x.test">link</a></div></div>
+    <input type="text" id="webURL" value="" name="businessEntity.webURL">
+    <select name="businessEntity.emailDefaultStructure.id"><option value="-1" selected></option><option value="2">FirstInitialLastName@domain.com</option></select>
+    <input type="button" id="saveBusinessEntityButton" value="Save changes" disabled>
+    <div class="name-variation-row"><input type="text" value="Existing Name" data-defaultvalue="Existing Name" class="input businessEntityName"><select class="input input_select businessEntityNameType"><option value="LEGAL" selected="selected">Legal Name</option></select></div>
+    <input type="button" value="Add New Name Variation" class="btn" id="addNameVariation"><input type="button" value="Save" id="saveBusinessEntityNameVariation">
+    ${statusControlsHtml({ financing: "Angel-Backed", research: "ProxyCurl Automated", publish: "Do Not Publish" })}
+  `);
+  wireStatusControls(document);
+  const save = document.getElementById("saveBusinessEntityButton");
+  for (const sel of ["#webURL", 'select[name="businessEntity.emailDefaultStructure.id"]', "#rn"]) { document.querySelector(sel).addEventListener("input", () => { save.disabled = false; }); document.querySelector(sel).addEventListener("change", () => { save.disabled = false; }); }
+  save.addEventListener("click", () => { setTimeout(() => { save.disabled = true; }, 10); });
+  document.getElementById("addNameVariation").addEventListener("click", () => {
+    const row = document.createElement("div");
+    row.className = "name-variation-row";
+    row.innerHTML = '<input type="text" value="" data-defaultvalue="" class="input businessEntityName"><select class="input input_select businessEntityNameType"><option value="LEGAL" selected="selected">Legal Name</option></select>';
+    document.getElementById("addNameVariation").insertAdjacentElement("beforebegin", row);
+  });
+  document.getElementById("saveBusinessEntityNameVariation").addEventListener("click", () => { setTimeout(() => { const last = [...document.querySelectorAll(".businessEntityName")].pop(); last.dataset.defaultvalue = last.value; last.classList.add("savedNameVariation"); }, 10); });
+
+  const clicked = [];
+  document.addEventListener("click", (event) => { clicked.push(event.target.id || nameOf(event.target)); }, true);
+  const typedInto = [];
+  for (const type of ["input", "change", "keydown"]) document.addEventListener(type, (event) => { typedInto.push(`${type}:${event.target.id || nameOf(event.target)}`); }, true);
+
+  const area = shadow.querySelector("#sxrts-response");
+  area.value = JSON.stringify({
+    schemaVersion: "1.0",
+    profileIdentity: { companyName: "Aroma Grow Store", domain: "aromagrowstore.com" },
+    businessEntity: {
+      nameVariations: [{ name: "Best Supply Partners LLC", type: "Legal Name", action: "addIfMissing", source: "https://aromagrowstore.com/about" }],
+      websiteAddresses: [{ value: "aromagrowstore.com", action: "addIfMissing", source: "https://aromagrowstore.com/" }],
+      emailDefaultStructure: { value: "FirstInitialLastName@domain.com", action: "addIfMissing", source: "https://aromagrowstore.com/contact" }
+    }
+  });
+  area.dispatchEvent(new window.Event("input", { bubbles: true }));
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Validate JSON").click();
+  const before = snapshotPage(shadow.host);
+  const rnBefore = document.getElementById("rn").innerHTML;
+  window.confirm = () => true;
+  Array.from(shadow.querySelectorAll("button")).find((b) => b.textContent === "Publish and save").click();
+  await untilSummary(shadow, 12000);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  // 1. what changed among the elements that were already on the page
+  const allowed = [
+    "#webURL", 'select[name="businessEntity.emailDefaultStructure.id"]', "#rn", "#saveBusinessEntityButton", "#saveBusinessEntityNameVariation",
+    'select[name="company.financingStatus.id"]', "#companyResearchStatus", "select.profile-publish-status", "#saveOwnershipStatusHistory", "#saveTargetStageHistory", "#bsh .rows", "#osh .rows"
+  ];
+  const changed = [];
+  for (const [el, was] of before) if (describeNode(el) !== was) changed.push(el);
+  const outsideAllowed = changed.filter((el) => !allowed.some((sel) => el.matches(sel)) && !el.closest(".name-variation-row")?.matches(".name-variation-row") );
+  assert.deepEqual(outsideAllowed.map(nameOf), [], "only mapped fields (and the Save buttons that wake up) changed");
+  // 2. the decoys are exactly as they were
+  for (const id of ["decoyInput", "decoyArea", "decoySelect", "decoyCheck", "decoyRadio", "decoyButton", "decoySave", "decoyLabel", "finNote"]) assert.equal(describeNode(document.getElementById(id)), before.get(document.getElementById(id)), `${id} is untouched`);
+  assert.equal(document.getElementById("finNote").innerHTML, "Financing note: untouched ///<br>second line");
+  // 3. nothing was clicked or typed into except what a field needs
+  assert.deepEqual(clicked.filter((id) => /^decoy|^finNote$/.test(id)), [], "no decoy was clicked");
+  assert.deepEqual(typedInto.filter((e) => /decoy|finNote/.test(e)), [], "nothing was typed into a decoy");
+  // 4. the existing Research Notes (links, line breaks) are exactly as they were; the act log comes after them
+  assert.ok(document.getElementById("rn").innerHTML.startsWith(rnBefore));
+  assert.ok(document.getElementById("rn").querySelector('a[href="https://x.test"]'));
+  // 5. the existing name variation row is untouched, and exactly one row was added
+  const rows = Array.from(document.querySelectorAll(".businessEntityName")).map((i) => i.value);
+  assert.deepEqual(rows, ["Existing Name", "Best Supply Partners LLC"]);
+});

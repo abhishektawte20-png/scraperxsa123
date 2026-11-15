@@ -10,7 +10,7 @@
     var o = Object.assign({ collapsed: true, existing: [], labelsOnly: false, rejectSave: false, otherTab: false, real: false, slowStates: false, slowMs: 250, wipeOnCountry: false, keepOpenAfterSave: false, stateLabel: "State*", stateName: "", rejectSoftly: false, listNeverShows: false, slowSave: false, rejectRed: false, needsKeyup: false, previewRow: false, formatMode: "", silentFailWith: "", hqTaken: false }, options || {});
     var state = { opens: 0, saves: 0, sites: o.existing.slice(), barClicks: 0, cancels: 0, tabClicks: 0, lastForm: null };
     var nm = function (n) { return o.labelsOnly ? "" : ' name="' + n + '"'; };
-    var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + "</li>"; }).join(""); };
+    var rows = function () { return state.sites.map(function (s) { return "<li>" + s.name + " — " + s.address1 + ", " + s.city + ' <input type="button" value="View" class="btn buttonView" data-row="view"> <button type="button" class="btn__icon btn__icon_delete" data-row="delete"></button></li>'; }).join(""); };
     var opt = function (list) { return list.map(function (c) { return "<option>" + c + "</option>"; }).join(""); };
     var html = [
       '<div id="tabs"><button class="navigation__button" id="tabCompany">Company</button><button class="navigation__button" id="tabEntity">Business Entity</button></div>',

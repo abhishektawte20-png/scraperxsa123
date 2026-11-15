@@ -423,9 +423,17 @@
 
   // Buttons also fall back to their exact visible text when no selector
   // resolves, since a button's label is often more stable than its markup.
+  // A saved selector can be positional ("form > div:nth-of-type(2) > div > button") and hit a different button on another form.
+  // When the mapping also recorded the button's words, a node that is labelled with other words is not that button.
   function resolveButtonByDefinition(button) {
-    const bySelector = resolveFirst(button?.selectors);
-    if (bySelector) return bySelector;
+    const norm = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const want = norm(button?.text);
+    for (const selector of button?.selectors || []) {
+      let nodes = [];
+      try { nodes = matchesAll(selector); } catch { nodes = []; }
+      const hit = nodes.find((node) => { const label = norm(node.textContent || node.value); return !want || !label || label === want; });
+      if (hit) return hit;
+    }
     if (!button?.text) return null;
     return Array.from(document.querySelectorAll("button, [role=button], input[type=button], input[type=submit], a"))
       .find((node) => (node.textContent || node.value || "").trim().replace(/\s+/g, " ") === button.text) || null;

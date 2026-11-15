@@ -45,6 +45,11 @@
   }
 
   const BUTTONS = "button, [role=button], input[type=button], input[type=submit], a";
+
+  // A step that must be pressed BEFORE Save can never be the Save button itself: pressing it would save (and, for Industry,
+  // close the window) before the job is done. Such an entry in a mapping is ignored.
+  const sameButton = (a, b) => Boolean(a && b) && (Boolean(a.selectors?.[0]) && a.selectors[0] === b.selectors?.[0] || (Boolean(a.text) && Boolean(b.text) && String(a.text).trim().toLowerCase() === String(b.text).trim().toLowerCase()));
+  const stepsBeforeSave = (job) => (job.preSave || []).filter((button) => !sameButton(button, job.saveButton));
   const labelOf = (node) => (node.textContent || node.value || "").trim().replace(/\s+/g, " ");
 
   function findButton(button) {
@@ -373,7 +378,7 @@
     box.click();
     if (!(await waitFor(() => box.isConnected && isTicked(box, job.tree.leaf) === wantTick, TIMEOUTS.button))) throw new Error(`"${choice.name}" did not stay ${wantTick ? "ticked" : "unticked"} when it was clicked.`);
 
-    for (const button of job.preSave || []) {
+    for (const button of stepsBeforeSave(job)) {
       await waitFor(() => findButton(button), TIMEOUTS.button);
       const target = findButton(button);
       if (!target) throw new Error(`The window's button "${button.text || "(unnamed)"}" that must be pressed before Save was not found.`);
@@ -472,7 +477,7 @@
     }
     for (const [i, field] of job.fields.entries()) await write(field, controls[i], field.value);
 
-    for (const button of job.preSave || []) {
+    for (const button of stepsBeforeSave(job)) {
       await waitFor(() => findButton(button), TIMEOUTS.button);
       const target = findButton(button);
       if (!target) throw new Error(`The popup button "${button.text || "(unnamed)"}" that must be pressed before Save was not found.`);

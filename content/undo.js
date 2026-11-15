@@ -67,7 +67,7 @@
       x.title = "Close";
       x.addEventListener("click", close);
       card.replaceChildren(el("div", { className: "hx-head" }, [el("h2", { text: "Undo" }), x]));
-      card.appendChild(el("p", { className: "hx-muted", text: `What each publish saved to RTS, kept ${led().RETENTION_DAYS} days. Open the same profile in RTS before undoing. The extension reverts what it can and reads RTS again to confirm; rows that were added must be deleted by hand, and are listed exactly.` }));
+      card.appendChild(el("p", { className: "hx-muted", text: `What each publish saved to RTS, kept ${led().RETENTION_DAYS} days. Open the same profile in RTS before undoing. Undo takes out only what this tool added (the act log text, a keyword, the industry tick) and puts overwritten values back (website, email, statuses, history rows), then reads RTS again to confirm. Nothing else is touched. Rows the tool has not been taught to delete are listed exactly, to remove by hand.` }));
       if (note) card.appendChild(el("div", { className: "hx-note", text: note }));
       if (!runs.length) card.appendChild(el("p", { className: "hx-muted", text: "Nothing to undo yet. A publish that saves something appears here." }));
       for (const run of runs) {
@@ -79,7 +79,7 @@
         ]));
         for (const item of run.items) {
           const status = item.state === "undone" ? "undone" : item.state === "failed" ? "could not undo" : item.auto ? "can undo" : "remove by hand";
-          const detail = item.state !== "pending" && item.note ? ` — ${item.note}` : item.auto ? (item.kind === "industry" ? " — will be unticked" : item.before ? ` — will go back to "${item.before}"` : " — will be emptied") : ` — ${item.hint}`;
+          const detail = item.state !== "pending" && item.note ? ` — ${item.note}` : item.auto ? (item.kind === "industry" ? " — will be unticked" : item.kind === "researchNote" ? " — only this text is removed from Research Notes" : item.kind === "keyword" ? " — this tag is removed" : item.before ? ` — will go back to "${item.before}"` : " — will be emptied") : ` — ${item.hint}`;
           box.appendChild(el("div", { className: "hx-row" }, [
             el("span", { className: `hx-badge ${item.state === "undone" ? "hx-valid" : item.state === "failed" ? "hx-invalid" : item.auto ? "hx-halted" : "hx-halted"}`, text: status }),
             el("span", { text: `${item.label}: ${item.value}${detail}` })

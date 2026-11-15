@@ -74,11 +74,48 @@
     await wait(20);
   }
 
+  // The exact inverse of appendContentEditable: finds the nodes that adding `text` made (its text nodes and line breaks, the
+  // LAST such run in the box) and, when it was added after other text, the blank-line pair that kept it apart. Nothing else is
+  // touched. Returns the nodes to remove, or null when the box does not hold that run (RTS may have rewritten it).
+  function findAppendedNodes(el, text) {
+    const wanted = [];
+    String(text).split("\n").forEach((line, index) => {
+      if (index > 0) wanted.push({ br: true });
+      if (line !== "") wanted.push({ line });
+    });
+    if (!wanted.length) return null;
+    const kids = Array.from(el.childNodes);
+    const same = (node, want) => (want.br ? node.nodeName === "BR" : node.nodeType === 3 && node.data.trim() === want.line.trim());
+    for (let start = kids.length - wanted.length; start >= 0; start--) {
+      if (!wanted.every((want, i) => same(kids[start + i], want))) continue;
+      const nodes = kids.slice(start, start + wanted.length);
+      const before = kids.slice(0, start);
+      const separator = before.slice(-2);
+      const earlierText = before.slice(0, -2).map((n) => n.textContent).join("").trim();
+      if (separator.length === 2 && separator.every((n) => n.nodeName === "BR") && earlierText) nodes.unshift(...separator);
+      return nodes;
+    }
+    return null;
+  }
+
+  async function removeAppendedContentEditable(el, text) {
+    const nodes = findAppendedNodes(el, text);
+    if (!nodes) throw new Error("The text this tool added was not found in the box as it was added, so nothing was removed.");
+    el.scrollIntoView?.({ block: "center", inline: "nearest" });
+    el.focus();
+    await wait(0);
+    for (const node of nodes) node.remove();
+    el.dispatchEvent(typeof InputEvent === "function" ? new InputEvent("input", { bubbles: true, inputType: "deleteContent" }) : new Event("input", { bubbles: true }));
+    await wait(0);
+    el.blur();
+    await wait(20);
+  }
+
   function verifyContentEditable(el, expected) {
     return readContentEditable(el).trim() === String(expected).trim();
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.adapters = globalThis.SXRTS.adapters || {};
-  globalThis.SXRTS.adapters.contentEditable = { applyContentEditable, appendContentEditable, readContentEditable, verifyContentEditable, setContentEditableValue };
+  globalThis.SXRTS.adapters.contentEditable = { applyContentEditable, appendContentEditable, findAppendedNodes, removeAppendedContentEditable, readContentEditable, verifyContentEditable, setContentEditableValue };
 })();

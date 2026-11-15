@@ -147,6 +147,32 @@
     return { status: "willSave", added: toAppend };
   }
 
+  // Undo for the act log: takes out only the text this tool added (each entry exactly as it was added), saves, reads back.
+  async function removeResearchNote(texts) {
+    const field = entry("businessEntity.researchNotes");
+    const editable = findResearchNotesBox(field);
+    if (!editable) throw new Error("Research Notes field was not found.");
+    const ce = globalThis.SXRTS.adapters.contentEditable;
+    const wanted = (texts || []).map(String).filter((t) => t.trim());
+    if (!wanted.length) throw new Error("There is no recorded act log text to remove.");
+    const present = wanted.filter((text) => normalize(ce.readContentEditable(editable)).includes(normalize(text)));
+    if (!present.length) {
+      const now = normalize(ce.readContentEditable(editable));
+      const lines = wanted.flatMap((text) => text.split("\n")).map(normalize).filter(Boolean);
+      if (lines.some((line) => now.includes(line))) throw new Error("Part of the act log text is still in Research Notes but it was edited since this tool added it, so nothing was removed. Remove it by hand.");
+      return { status: "skipped", reason: "The act log text is no longer in Research Notes." };
+    }
+    for (const text of present) if (!ce.findAppendedNodes(editable, text)) throw new Error("The act log text is in Research Notes but not as this tool added it (it was edited since), so nothing was removed. Remove it by hand.");
+    for (const text of present) await ce.removeAppendedContentEditable(editable, text);
+    const left = normalize(ce.readContentEditable(editable));
+    if (present.some((text) => left.includes(normalize(text)))) throw new Error("The text was still in Research Notes after removing it, so nothing was saved.");
+    const saved = await saveGeneralGroup();
+    if (!saved.success) throw new Error(saved.reason);
+    const reread = normalize(ce.readContentEditable(findResearchNotesBox(field)));
+    if (present.some((text) => reread.includes(normalize(text)))) throw new Error("Saved, but the text is still shown in Research Notes. Check it in RTS.");
+    return { status: "savedValueVerified", detail: "Act log text removed and read back." };
+  }
+
   async function saveGeneralGroup() {
     const field = entry("businessEntity.websiteAddresses"); // any of the 3 entries share the same Save button
     const saveButton = document.querySelector(field.saveButton.candidates[0]);
@@ -211,6 +237,7 @@
     applyWebsiteAddressValue,
     applyEmailDefaultStructureValue,
     applyResearchNotesValue,
+    removeResearchNote,
     applyStatusSelect,
     saveGeneralGroup
   };

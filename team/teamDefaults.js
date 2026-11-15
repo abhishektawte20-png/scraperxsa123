@@ -314,17 +314,7 @@ globalThis.SXRTS.teamDefaults = {
       "updatedAt": "2026-11-09T09:57:07.190Z",
       "window": {
         "path": "/industryGroup/create.html",
-        "preSave": [
-          {
-            "selectors": [
-              "#saveIndustryButton",
-              "input.btn.buttonSave",
-              "input.btn",
-              "input.buttonSave"
-            ],
-            "text": "Save Changes"
-          }
-        ],
+        "preSave": [],
         "tree": {
           "expander": {
             "selectors": [

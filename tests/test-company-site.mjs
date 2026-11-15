@@ -522,3 +522,16 @@ test("when Primary HQ is free the site is added as Primary HQ exactly as before"
   assert.equal(state.lastForm.type, "Primary HQ");
   assert.equal(result.asRegional, undefined);
 });
+
+test("adding a site never clicks, opens or deletes the sites that are already listed (their View and delete buttons are never pressed)", async () => {
+  const { state, doc } = setup({ existing: [{ name: "Austin", address1: "1 Main St", city: "Austin" }, { name: "Dubai", address1: "", city: "Dubai" }] });
+  const pressed = [];
+  doc.addEventListener("click", (event) => { const row = event.target.getAttribute?.("data-row"); if (row) pressed.push(row); }, true);
+  const before = Array.from(doc.querySelectorAll("#sites li")).map((li) => li.textContent);
+  await site.applySite(TEXAS);
+  assert.deepEqual(pressed, [], "no row's View or delete button was pressed");
+  const after = Array.from(doc.querySelectorAll("#sites li")).map((li) => li.textContent);
+  assert.deepEqual(after.slice(0, before.length), before, "the existing sites are unchanged and in place");
+  assert.equal(after.length, before.length + 1);
+  assert.equal(state.saves, 1);
+});

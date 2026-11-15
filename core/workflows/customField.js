@@ -418,7 +418,7 @@
       tree: { expander: tree.expander || null, leaf: tree.leaf },
       value: String(record.value),
       ...(record.undo === true ? { untick: true } : {}),
-      preSave: def.window.preSave || [],
+      preSave: (def.window.preSave || []).filter((button) => !((Boolean(button.selectors?.[0]) && button.selectors[0] === def.saveButton?.selectors?.[0]) || (button.text && def.saveButton?.text && button.text.trim().toLowerCase() === def.saveButton.text.trim().toLowerCase()))),
       saveButton: def.saveButton
     } : {
       replace: record.action === "replaceAfterConfirmation",
@@ -427,7 +427,7 @@
         kind: field.kind,
         value: field.kind === "select" ? globalThis.SXRTS.customFields.findOption(field, record[field.key]).label : String(record[field.key])
       })),
-      preSave: def.window.preSave || [],
+      preSave: (def.window.preSave || []).filter((button) => !((Boolean(button.selectors?.[0]) && button.selectors[0] === def.saveButton?.selectors?.[0]) || (button.text && def.saveButton?.text && button.text.trim().toLowerCase() === def.saveButton.text.trim().toLowerCase()))),
       saveButton: def.saveButton
     };
     const name = label ? `${def.label} (${label})` : def.label;

@@ -1331,7 +1331,7 @@
               const reason = fieldResult?.reason ?? groupResult.reason ?? "";
               const result = { status, reason, detail: fieldResult?.detail };
               recordResult(entry.action.jsonPath, result);
-              keepForUndo(entry, valueFor(entry.action), { status, before: fieldResult?.before });
+              keepForUndo(entry, valueFor(entry.action), { status, before: fieldResult?.before }, { added: fieldResult?.added });
               setRowStatus(entry.action.actionId, status, status === "savedValueVerified" ? (fieldResult?.detail || "") : reason);
               if (status === "savedValueVerified") applied++; else if (status === "skipped") skipped++; else failed++;
             }
@@ -1356,6 +1356,7 @@
         try {
           const result = await lookAgain(() => globalThis.SXRTS.workflows.statusHistory.applyStatusHistory(kind, { date: value.date, status: value.value }));
           recordResult(entry.action.jsonPath, result);
+          keepForUndo(entry, `${value.date} · ${value.value}`, result);
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", result.detail || ""); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
