@@ -315,3 +315,7 @@ From the issue report on Jinee Jewels (18 fields needed attention):
 - **Start date.** A date that names a day ("12 Apr 2025") is typed as MM/DD/YYYY; a year or month and year stay as written.
 - **Verticals read-back** now compares the vertical NAMES listed under Published Verticals (not every word of the descriptions), waits up to 20 seconds, and the error lists what the section shows.
 - **Unmapped fields after Publish** (for example Management) now show a "Map ..." button in the results.
+
+## 0.33.2
+
+- **Industry code "button not found".** The mapped button's selector does match the Industry block in the captured RTS page, so the likely cause is timing: RTS draws parts of the Company tab a moment after the tab (or a section) is opened, and the extension looked once and gave up. It now keeps looking for up to 12 seconds (NAICS: up to 12 seconds too), opening closed sections along the way. If the button is still missing, the error says whether the Industry block is on the page, whether it is hidden, how many elements the mapped selector matches, and which tab buttons exist, so the next report shows the real cause.

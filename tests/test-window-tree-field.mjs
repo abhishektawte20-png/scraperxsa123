@@ -16,6 +16,7 @@ import "../core/selectorBuilder.js";
 import "../core/workflows/customField.js";
 import "../core/navigation.js";
 globalThis.SXRTS.workflows.customField.TIMEOUTS.retryPause = 0;
+Object.assign(globalThis.SXRTS.workflows.customField.TIMEOUTS, { appear: 600, appearStep: 100 });
 
 const cf = globalThis.SXRTS.customFields;
 const treeDef = {
@@ -181,10 +182,20 @@ test("the opening button sits inside a closed 'Industries and Verticals' section
 test("a section that is already open is not touched, and a button that never appears is an error that says so", async () => {
   setup(savedThenVerified);
   document.getElementById("addIndustry").remove();
-  await assert.rejects(run(), /was not found on this page, even after opening the "Industries and Verticals" section/);
+  await assert.rejects(run(), /was not found on this page after waiting/);
 });
 
 test("a window that says 'saved' is never trusted on its own: if the read-back shows the choice NOT ticked, it is an error", async () => {
   setup((job) => (job.verifyOnly ? result({ status: "verified", checked: false }) : result({ status: "saved", fieldRetained: true })));
   await assert.rejects(run(), /the choice is not ticked/);
+});
+
+test("the Industry button that RTS draws a moment late is waited for, then used (the long-standing 'button not found')", async () => {
+  setup(savedThenVerified);
+  const button = document.getElementById("addIndustry");
+  const holder = button.parentElement;
+  button.remove();
+  setTimeout(() => { holder.appendChild(button); }, 250);
+  const out = await run();
+  assert.equal(out.status, "savedValueVerified");
 });

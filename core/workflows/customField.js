@@ -29,7 +29,7 @@
   // do not have to sit through the real waits.
   // Sections of the Company tab whose bar is opened when a field's opening button is missing.
   const SECTION_TITLES = ["Industries and Verticals", "Industry Group", "Industry Tagging"];
-  const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000, retryPause: 1200, enable: 8000 };
+  const TIMEOUTS = { open: 5000, close: 1500, rowChange: 10000, retryPause: 1200, enable: 8000, appear: 12000, appearStep: 1500 };
 
   // jsdom and real pages both: hidden by the attribute, display:none or
   // visibility:hidden on the element or any ancestor.
@@ -429,7 +429,20 @@
         await globalThis.SXRTS.navigation?.ensureSectionOpen(() => globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton), SECTION_TITLES);
         opener = globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
       }
-      if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page, even after opening the "Industries and Verticals" section. Open the right tab/section, or re-map the field.`);
+      if (!opener) {
+        // RTS draws parts of the Company tab a moment after the tab is in front (and after a section is opened), so the
+        // button may simply not be there YET. Keep looking for a while, opening any closed section now and then.
+        const find = () => globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+        const deadline = Date.now() + TIMEOUTS.appear;
+        let rounds = 0;
+        while (!opener && Date.now() < deadline) {
+          await waitFor(() => Boolean(find()), TIMEOUTS.appearStep);
+          opener = find();
+          if (!opener && rounds++ % 2 === 0) await globalThis.SXRTS.navigation?.openClosedSections?.(() => Boolean(find()));
+          opener = opener || find();
+        }
+      }
+      if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page after waiting ${Math.round(TIMEOUTS.appear / 1000)} seconds and opening the closed sections. Open the right tab/section, or re-map the field. Page check: ${(() => { const g = document.querySelector("#containerIndustryGroup"); const sel = def.openButton?.selectors?.[0]; let n = 0; try { n = sel ? document.querySelectorAll(sel).length : 0; } catch { n = -1; } return `Industry block ${g ? (g.checkVisibility?.() === false ? "present but hidden" : "present") : "missing from the page"}, first mapped selector matches ${n} element(s), tab buttons: ${Array.from(document.querySelectorAll("button.navigation__button")).map((b) => b.textContent.trim()).join(" / ") || "none"}.`; })()}`);
     }
     if (opener.disabled) await waitFor(() => !opener.disabled, TIMEOUTS.enable);
     if (opener.disabled) throw new Error(`The button that opens the popup window for ${def.label} is disabled right now.`);
@@ -540,6 +553,7 @@
   async function applyCustomField(def, record) {
     // The field may sit in a section RTS shows closed: open sections one at a time, only until its control shows.
     if (!def.rowBy && !controlReady(def)) await globalThis.SXRTS.navigation?.openClosedSections?.(() => controlReady(def));
+    if (def.tree && !controlReady(def)) await waitFor(() => controlReady(def), TIMEOUTS.appear); // RTS draws the section a moment after it opens
     try {
       return await applyHere(def, record);
     } catch (error) {
