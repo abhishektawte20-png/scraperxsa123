@@ -128,9 +128,16 @@
     if ((m = /^(\d{4})/.exec(text))) return `01/01/${m[1]}`;
     return null;
   }
+  // A start date that names a DAY ("12 Apr 2025", "Apr 12, 2025", "2025-04-12", "04/12/2025") as MM/DD/YYYY, the form RTS's date box
+  // accepts; a year or a month and year is returned as written.
+  function startDateText(value) {
+    const text = squash(value);
+    const hasDay = /^\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}/.test(text) || /^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}/.test(text) || /^\d{4}-\d{1,2}-\d{1,2}/.test(text) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text);
+    return hasDay ? toMdy(text) || String(value) : String(value);
+  }
   const todayMdy = (now = new Date()) => `${two(now.getMonth() + 1)}/${two(now.getDate())}/${now.getFullYear()}`;
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.statusHistory = { applyStatusHistory, toMdy, todayMdy, TIMEOUTS, KINDS };
+  globalThis.SXRTS.workflows.statusHistory = { applyStatusHistory, toMdy, startDateText, todayMdy, TIMEOUTS, KINDS };
 })();

@@ -229,6 +229,21 @@
     return out;
   }
 
+  // A tag drawn as a pill / chip / tag element: its whole text counts (a pill may hold its word next to other markup), and the
+  // number of them tells that one more appeared even when its text could not be read.
+  const PILL = '[class*="pill"], [class*="chip"], [class*="tag"]';
+  const pillsIn = (container, input) => Array.from(container.querySelectorAll(PILL)).filter((node) => node !== input && !node.contains(input) && !node.querySelector(PILL) && node.tagName !== "INPUT");
+  const pillWords = (container, input) => pillsIn(container, input).map((node) => tagWord(node.textContent)).filter(Boolean);
+
+  // Suggestion rows RTS may draw under the box ("high jewellery" or "high jewellery (new)"): the one that is this word is clicked.
+  function suggestionFor(input, container, value) {
+    const want = tagWord(value);
+    const rows = Array.from(document.querySelectorAll('[role="option"], [role="listbox"] *, li, [class*="suggest"] *, [class*="option"], [class*="dropdown"] *, [class*="autocomplete"] *, [class*="menu"] *'))
+      .filter((node) => isShown(node) && node !== input && !container.contains(node) && node.children.length === 0 && !node.closest("#sxrts-assistant-root"));
+    const exact = rows.find((node) => tagWord(node.textContent.replace(/\(\s*new\s*\)/i, " ")) === want);
+    return exact || null;
+  }
+
   async function applyTagBox(def, record) {
     const field = def.fields[0];
     const value = String(record[field.key] ?? "").trim();
@@ -238,20 +253,26 @@
     if (!add || !input) throw new Error(`The ${def.label} box was not found on this page. Open the right tab/section, or re-map the field.`);
     const container = add.contains(input) && add !== input ? add : (input.parentElement || input);
     const want = tagWord(value);
-    if (tagsIn(container, input).includes(want)) return { status: "skipped", reason: "duplicate", detail: `${def.label}: "${value}" is already there.` };
+    if (tagsIn(container, input).includes(want) || pillWords(container, input).includes(want)) return { status: "skipped", reason: "duplicate", detail: `${def.label}: "${value}" is already there.` };
 
     input.focus();
     await globalThis.SXRTS.adapters.textField.applyText(input, value);
     // The suggestion list is fetched from RTS, so Enter pressed too early is ignored: wait for it to draw
     // (the exact tag if it exists, otherwise "(new)"), and press Enter again if nothing happened.
     let added = false;
+    const pillsBefore = pillsIn(container, input).length;
+    const isThere = () => tagsIn(container, input).includes(want) || pillWords(container, input).includes(want) || pillsIn(container, input).length > pillsBefore;
     for (let attempt = 0; attempt < TAG_ATTEMPTS.length && !added; attempt++) {
       await waitFor(() => false, TAG_ATTEMPTS[attempt].before);
       if (document.activeElement !== input) input.focus();
       for (const type of ["keydown", "keypress", "keyup"]) {
         input.dispatchEvent(new window.KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
       }
-      added = await waitFor(() => tagsIn(container, input).includes(want), TAG_ATTEMPTS[attempt].after);
+      added = await waitFor(isThere, TAG_ATTEMPTS[attempt].after);
+      if (!added) {
+        const row = suggestionFor(input, container, value);
+        if (row) { row.click(); added = await waitFor(isThere, TAG_ATTEMPTS[attempt].after); }
+      }
     }
     if (!added) throw new Error(`${def.label}: "${value}" was typed and Enter was pressed, but no tag appeared. The suggestion list may need a click: send the report so the box can be mapped.`);
 
@@ -259,7 +280,7 @@
     const save = findButton(def, def.saveButton);
     if (save && !save.disabled) await clickSave(def);
     await waitFor(() => false, 250); // a page that re-draws the list after saving would drop an unsaved tag
-    if (!tagsIn(container, input).includes(want)) throw new Error(`Save did not complete for ${def.label}: the tag "${value}" is no longer there.`);
+    if (!(tagsIn(container, input).includes(want) || pillWords(container, input).includes(want) || pillsIn(container, input).length > pillsBefore)) throw new Error(`Save did not complete for ${def.label}: the tag "${value}" is no longer there.`);
     return { status: "savedValueVerified", name: def.key };
   }
 
@@ -508,7 +529,17 @@
   // A mapped control that is "not found" is often just on the other tab (the run may have left the page on
   // Company while this field lives on Business Entity). Switch tab (which also expands the sections) and try once more.
   const NOT_ON_SCREEN = /was not found on this page|No row labelled|Add button .* was not found|box was not found|button that opens .* was not found/i;
+  // Is the control this mapping starts from on screen (its opening / Add button, else its first field)?
+  function controlReady(def) {
+    const sb = globalThis.SXRTS.selectorBuilder;
+    const button = def.openButton || def.addButton;
+    if (button) return Boolean(sb.resolveButtonByDefinition(button));
+    return Boolean(def.fields?.[0] && sb.resolveAll(def.fields[0].selectors).some(isShown));
+  }
+
   async function applyCustomField(def, record) {
+    // The field may sit in a section RTS shows closed: open sections one at a time, only until its control shows.
+    if (!def.rowBy && !controlReady(def)) await globalThis.SXRTS.navigation?.openClosedSections?.(() => controlReady(def));
     try {
       return await applyHere(def, record);
     } catch (error) {

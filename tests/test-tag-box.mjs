@@ -111,3 +111,40 @@ test("Enter pressed before the suggestions are ready is pressed again, and the t
   assert.equal(state.enters, 3, "pressed three times, the third one worked");
   assert.deepEqual(tags().at(-1), "beach club (0)");
 });
+
+test("a tag drawn as a pill whose word sits beside other markup is still recognised (RTS's .base-pill)", async () => {
+  const { doc, state } = setup({ enterAdds: false });
+  const input = doc.querySelector("input");
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || !input.value.trim()) return;
+    const pill = doc.createElement("div");
+    pill.className = "element-group base-pill";
+    pill.innerHTML = `<div class="element-group__item">${input.value.trim()}<i class="hint"> </i></div><div class="element-group__item base-pill__close-icon"><i class="rts-icon-close"></i></div>`;
+    input.before(pill);
+    input.value = "";
+    doc.querySelector("button").disabled = false;
+  });
+  const result = await run("high jewellery");
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(state.saves, 1);
+});
+
+test("when Enter alone adds nothing, the suggestion row for that word is clicked, once, and nothing else", async () => {
+  const { doc, state } = setup({ enterAdds: false });
+  const input = doc.querySelector("input");
+  let wrongClicks = 0;
+  doc.body.insertAdjacentHTML("beforeend", '<ul class="suggestions"><li id="other">something else</li><li id="mine">rare jewels (new)</li></ul>');
+  doc.getElementById("other").addEventListener("click", () => { wrongClicks++; });
+  doc.getElementById("mine").addEventListener("click", () => {
+    const tag = doc.createElement("span");
+    tag.className = "tag";
+    tag.innerHTML = '<span class="t">rare jewels (0)</span><b class="x">✖</b>';
+    input.before(tag);
+    input.value = "";
+    doc.querySelector("button").disabled = false;
+  });
+  const result = await run("rare jewels");
+  assert.equal(result.status, "savedValueVerified");
+  assert.equal(wrongClicks, 0);
+  assert.equal(state.saves, 1);
+});

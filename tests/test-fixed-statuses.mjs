@@ -86,7 +86,14 @@ test("a drop-down that already shows the wanted value is left alone: nothing is 
 test("a missing drop-down or a value RTS does not offer is an error that says what to do", async () => {
   page({});
   document.getElementById("companyResearchStatus").remove();
-  await assert.rejects(globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ researchStatus: { value: "Anything", action: "replaceAfterConfirmation" } }), /Research Status dropdown was not found.*Business Entity tab/);
+  const missing = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ researchStatus: { value: "Anything", action: "replaceAfterConfirmation" } });
+  assert.match(missing.results.researchStatus.reason, /Research Status dropdown was not found.*Business Entity tab/);
   page({});
-  await assert.rejects(globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ publishStatus: { value: "Nonsense", action: "replaceAfterConfirmation" } }), /not one of the dropdown's choices/);
+  const wrong = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ publishStatus: { value: "Nonsense", action: "replaceAfterConfirmation" } });
+  assert.match(wrong.results.publishStatus.reason, /not one of the dropdown's choices/);
+});
+
+test("a start date that names a day is typed as MM/DD/YYYY; a year or month and year stay as written", () => {
+  const f = globalThis.SXRTS.workflows.statusHistory.startDateText;
+  assert.deepEqual(["12 Apr 2025", "Apr 12, 2025", "2025-04-12", "2025", "05/2022"].map(f), ["04/12/2025", "04/12/2025", "04/12/2025", "2025", "05/2022"]);
 });

@@ -12,7 +12,7 @@
  * TMT and Industrials are system-managed and are never assigned.
  */
 (() => {
-  const TIMEOUTS = { open: 4000, enable: 8000, save: 12000, list: 10000 };
+  const TIMEOUTS = { open: 4000, enable: 8000, save: 12000, list: 20000 };
   const SYSTEM_MANAGED = new Set(["tmt", "industrials"]);
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const squash = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
@@ -44,7 +44,21 @@
     const end = rest.search(/recommended verticals/i);
     return plain(end >= 0 ? rest.slice(0, end) : rest);
   }
-  const listed = (section, name) => ` ${publishedText(section)} `.includes(` ${plain(name)} `);
+  // The vertical NAMES under "Published Verticals" (each row prints its name as a link): everything between the "Published
+  // Verticals" heading and the "Recommended Verticals" heading, in page order. Null when the rows draw no links.
+  function publishedNames(section) {
+    const all = Array.from(section.querySelectorAll("*"));
+    const heading = (re) => all.filter((node) => node.children.length === 0 && re.test(squash(node.textContent))).pop();
+    const from = all.find((node) => node.children.length === 0 && /^published verticals\b/i.test(squash(node.textContent)));
+    const to = heading(/^recommended verticals\b/i);
+    if (!from) return null;
+    const links = all.filter((node) => node.children.length === 0 && /typography_link/.test(String(node.className)) && Boolean(from.compareDocumentPosition(node) & 4) && (!to || Boolean(to.compareDocumentPosition(node) & 2)));
+    return links.length ? links.map((node) => plain(node.textContent)) : null;
+  }
+  const listed = (section, name) => {
+    const names = publishedNames(section);
+    return names ? names.includes(plain(name)) : ` ${publishedText(section)} `.includes(` ${plain(name)} `);
+  };
 
   // The section's own "Save changes" sits just below it: the first one that comes after the Add button on the page.
   function saveButtonOf(add) {
@@ -102,7 +116,7 @@
       const ok = await waitFor(() => listed(sectionOf(findAdd() || add), name), TIMEOUTS.list);
       results[name] = ok
         ? { status: "savedValueVerified", detail: `${name} is now in the Published Verticals list.` }
-        : { status: "failed", detail: `True was pressed for ${name}${save ? " and Save changes was pressed" : ""}, but ${name} is not in the Published Verticals list afterwards. Check the section in RTS.` };
+        : { status: "failed", detail: `True was pressed for ${name}${save ? " and Save changes was pressed" : ""}, but ${name} is not in the Published Verticals list afterwards (it shows: ${(publishedNames(sectionOf(findAdd() || add)) || []).join(", ") || "no names"}). Check the section in RTS.` };
     }
     return { results };
   }

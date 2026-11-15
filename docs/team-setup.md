@@ -304,3 +304,14 @@ RTS gives every branch its own box (`controls_emptyCheckBox`, inside a `controls
 - **Mapping audit.** A test loads the shipped team defaults and checks that each mapping is valid, bound to a report field, never lists a Close/Cancel control, and that its opening button / field resolves to exactly one control in the RTS structure (Keywords box, NAICS add button, Start date, Industry button, Employee count).
 - **Undo erases what this tool added, and only that.** Undo now takes out: the act log text (only the text the tool appended, the old notes, links and line breaks stay exactly as they were; if the text was edited since, nothing is removed), a keyword tag (its own x, exact text, then Save), the Industry tick, and puts back overwritten values: website, email, Financing / Research / Publish status, and an overwritten Ownership / Business history row. Each is read back from RTS. Rows added as new (name variations, SIC, NAICS, social media, sites, a history row added to an empty table, verticals, employee count) are still listed to remove by hand: the tool has not been taught the delete control for those, and will not guess.
 - **Teams channel.** "Send feedback" posts to the team's Teams channel (the web address is set in this package only, not in the source).
+
+## 0.33.1
+
+From the issue report on Jinee Jewels (18 fields needed attention):
+
+- **Fields in a closed section.** Website, Email, Financing / Research / Publish status, the act log, Keywords, NAICS and Industry code failed with "was not found" because RTS showed their section closed. When a needed control is not on screen, the extension now opens closed sections one at a time by their own arrow, stops as soon as the control shows, and never touches a section that is already open.
+- **One missing box no longer blocks the rest.** Website, Email, the three statuses and the act log are separate jobs; if one cannot be done, the others still run and are saved, and each reports its own reason. An act log that could not be written is put back exactly as it was before the group's Save.
+- **Keywords.** A new tag is recognised when its pill appears (by its word, or by one more pill), and when pressing Enter alone adds nothing the suggestion row for that exact word is clicked (once; nothing else is clicked).
+- **Start date.** A date that names a day ("12 Apr 2025") is typed as MM/DD/YYYY; a year or month and year stay as written.
+- **Verticals read-back** now compares the vertical NAMES listed under Published Verticals (not every word of the descriptions), waits up to 20 seconds, and the error lists what the section shows.
+- **Unmapped fields after Publish** (for example Management) now show a "Map ..." button in the results.

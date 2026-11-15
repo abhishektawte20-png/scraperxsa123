@@ -90,10 +90,9 @@ test("selects Email Default Structure by label or by code, only when currently b
 test("rejects an Email Default Structure value outside the evidenced catalog", async () => {
   setupDom();
   document.querySelector('select[name="businessEntity.emailDefaultStructure.id"]').value = "-1";
-  await assert.rejects(
-    () => businessEntityGeneral.applyBusinessEntityGeneral({ emailDefaultStructure: { value: "Not.A.Real@pattern.com", action: "addIfMissing" } }),
-    /not a supported Email Default Structure value/
-  );
+  const result = await businessEntityGeneral.applyBusinessEntityGeneral({ emailDefaultStructure: { value: "Not.A.Real@pattern.com", action: "addIfMissing" } });
+  assert.equal(result.status, "failed");
+  assert.match(result.results.emailDefaultStructure.reason, /not a supported Email Default Structure value/);
 });
 
 test("appends a research note only if not already present, and saves", async () => {
@@ -211,6 +210,8 @@ test("several note boxes and no 'Research Notes' heading: nothing is written and
   setupDom();
   document.querySelector(".highlight-textarea").remove();
   document.body.insertAdjacentHTML("beforeend", '<span>Some note</span><div contenteditable="" class="highlight-textarea" id="a"></div><span>Other note</span><div contenteditable="" class="highlight-textarea" id="b"></div>');
-  await assert.rejects(businessEntityGeneral.applyBusinessEntityGeneral({ researchNotes: [{ text: "x", action: "addIfMissing" }] }), /could not be told apart, so nothing was written/);
+  const result = await businessEntityGeneral.applyBusinessEntityGeneral({ researchNotes: [{ text: "x", action: "addIfMissing" }] });
+  assert.equal(result.status, "failed");
+  assert.match(result.results.researchNotes.reason, /could not be told apart, so nothing was written/);
   assert.equal(document.getElementById("a").textContent + document.getElementById("b").textContent, "");
 });

@@ -1433,8 +1433,9 @@
       // page open a window shortly after a person's click, so it must not wait behind the slower saves.
       async function publishCustom(entry) {
         if (holdIfPaused(entry)) return;
-        const value = validatedValueFor(entry);
+        let value = validatedValueFor(entry);
         if (value === undefined) return;
+        if (entry.action.jsonPath === "extras.startDate" && typeof value?.value === "string") value = { ...value, value: globalThis.SXRTS.workflows.statusHistory.startDateText(value.value) };
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
         progress.doing(def?.label || entry.action.section || "Mapped field");
         // The tab this field lives on is put in front first (names, website, social media, start date: Business Entity).
@@ -1469,6 +1470,20 @@
       publishStatus.textContent = "";
       publishStatus.appendChild(summaryDiv);
       publishStatus.className = `status ${failed ? "error" : "success"}`;
+      // Fields the report filled but RTS has no known place for: one button each, right here, to map them.
+      const unmapped = lastActions.filter((a) => /registry entry|evidence for this field/i.test(a.skipReason || "") && globalThis.SXRTS.outputFields?.get(a.jsonPath));
+      for (const action of unmapped) {
+        const info = globalThis.SXRTS.outputFields.get(action.jsonPath);
+        const row = document.createElement("div");
+        row.className = "map-row";
+        const mapNow = document.createElement("button");
+        mapNow.type = "button"; mapNow.className = "btn map"; mapNow.textContent = `Map "${info.label}"`;
+        mapNow.addEventListener("click", () => teach?.open({ bindPath: action.jsonPath, samples: globalThis.SXRTS.outputFields.recordsFor(lastValidated, action.jsonPath) }));
+        const why = document.createElement("span");
+        why.className = "why"; why.textContent = "Not filled: the extension does not know where this goes in RTS yet.";
+        row.append(mapNow, why);
+        publishStatus.appendChild(row);
+      }
       if (editsAfter.length || editsBefore.length) {
         const text = (list) => (list.length ? Array.from(new Set(list.map((e) => `${e.by} ${e.date}`))).join(", ") : "none shown");
         const edits = document.createElement("div");

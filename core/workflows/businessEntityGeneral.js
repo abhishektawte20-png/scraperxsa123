@@ -29,6 +29,19 @@
     return false;
   }
 
+  // The control may sit in a section RTS shows closed: open sections one by one (only until it shows), then look again.
+  function onScreen(node) {
+    if (!node) return false;
+    for (let current = node; current && current.nodeType === 1; current = current.parentElement) {
+      if (current.hidden || window.getComputedStyle(current).display === "none") return false;
+    }
+    return true;
+  }
+  async function ensureShown(find) {
+    if (onScreen(find())) return;
+    await globalThis.SXRTS.navigation?.openClosedSections?.(() => onScreen(find()));
+  }
+
   function entry(key) {
     const found = globalThis.SXRTS.registry.getField(key);
     if (!found) throw new Error(`No registry entry for ${key}.`);
@@ -37,6 +50,7 @@
 
   async function applyWebsiteAddressValue(record) {
     const field = entry("businessEntity.websiteAddresses");
+    await ensureShown(() => document.querySelector(field.form.input.candidates[0]));
     const input = document.querySelector(field.form.input.candidates[0]);
     if (!input) throw new Error("Website Address field was not found. Open the Business Entity tab and its Entity section so the Website Address box is visible, then publish again.");
     if (record.action === "skip") return { status: "skipped", reason: "action=skip" };
@@ -55,6 +69,7 @@
 
   async function applyEmailDefaultStructureValue(envelope) {
     const field = entry("businessEntity.emailDefaultStructure");
+    await ensureShown(() => document.querySelector(field.form.select.candidates[0]));
     const select = document.querySelector(field.form.select.candidates[0]);
     if (!select) throw new Error("Email Default Structure dropdown was not found.");
     if (envelope.action === "skip") return { status: "skipped", reason: "action=skip" };
@@ -79,7 +94,9 @@
   // option nothing is changed. A different value is overwritten (the team's rule), and what it was is reported.
   async function applyStatusSelect(key, label, envelope) {
     const field = entry(key);
-    const select = field.form.select.candidates.map((selector) => document.querySelector(selector)).find(Boolean);
+    const findSelect = () => field.form.select.candidates.map((selector) => document.querySelector(selector)).find(Boolean);
+    await ensureShown(findSelect);
+    const select = findSelect();
     if (!select) throw new Error(`${label} dropdown was not found. Open the Business Entity tab so it is on screen, then publish again.`);
     if (envelope.action === "skip") return { status: "skipped", reason: "action=skip" };
     const option = globalThis.SXRTS.adapters.nativeSelect.findExactOption(select, envelope.value);
@@ -111,6 +128,7 @@
   // text are left exactly as they are (nodes are appended, nothing is rewritten). Only "replaceAfterConfirmation" rewrites.
   async function applyResearchNotesValue(notes) {
     const field = entry("businessEntity.researchNotes");
+    await ensureShown(() => { try { return findResearchNotesBox(field); } catch { return null; } });
     const editable = findResearchNotesBox(field);
     if (!editable) throw new Error("Research Notes field was not found.");
     const ce = globalThis.SXRTS.adapters.contentEditable;
@@ -140,10 +158,16 @@
       return { status: "willSave", added: [replaceWith] };
     }
 
-    for (const text of toAppend) await ce.appendContentEditable(editable, text);
-    const after = normalize(ce.readContentEditable(editable));
-    if (normalize(before) && !after.includes(normalize(before))) throw new Error("Research Notes lost some of its existing text, so nothing was saved. Reload the profile and try again.");
-    for (const text of toAppend) if (!after.includes(normalize(text))) throw new Error("Research Notes did not retain the proposed text.");
+    const originalHtml = editable.innerHTML;
+    try {
+      for (const text of toAppend) await ce.appendContentEditable(editable, text);
+      const after = normalize(ce.readContentEditable(editable));
+      if (normalize(before) && !after.includes(normalize(before))) throw new Error("Research Notes lost some of its existing text, so nothing was saved. Reload the profile and try again.");
+      for (const text of toAppend) if (!after.includes(normalize(text))) throw new Error("Research Notes did not retain the proposed text.");
+    } catch (error) {
+      editable.innerHTML = originalHtml; // never leave a half-written note for the group's Save to pick up
+      throw error;
+    }
     return { status: "willSave", added: toAppend };
   }
 
@@ -191,34 +215,34 @@
   async function applyBusinessEntityGeneral(fields) {
     const results = {};
     const touched = [];
+    // Each field is its own job: one that cannot be done (its box is not on the page) does not stop the others.
+    const attempt = async (key, run) => {
+      try {
+        const outcome = await run();
+        results[key] = outcome;
+        if (outcome.status === "willSave") touched.push(key);
+      } catch (error) {
+        results[key] = { status: "failed", reason: error.message };
+      }
+    };
 
-    if (fields.websiteAddresses?.length) {
-      const outcome = await applyWebsiteAddressValue(fields.websiteAddresses[0]);
-      results.websiteAddresses = outcome;
-      if (outcome.status === "willSave") touched.push("websiteAddresses");
-    }
-
-    if (fields.emailDefaultStructure) {
-      const outcome = await applyEmailDefaultStructureValue(fields.emailDefaultStructure);
-      results.emailDefaultStructure = outcome;
-      if (outcome.status === "willSave") touched.push("emailDefaultStructure");
-    }
+    if (fields.websiteAddresses?.length) await attempt("websiteAddresses", () => applyWebsiteAddressValue(fields.websiteAddresses[0]));
+    if (fields.emailDefaultStructure) await attempt("emailDefaultStructure", () => applyEmailDefaultStructureValue(fields.emailDefaultStructure));
 
     for (const [key, name, label] of [["financingStatus", "Financing status", "Financing Status"], ["researchStatus", "Research status", "Research Status"], ["publishStatus", "Publish status", "Publish Status"]]) {
       if (!fields[key]) continue;
-      const outcome = await applyStatusSelect(`businessEntity.${key}`, label, fields[key]);
-      if (outcome.status === "willSave") outcome.detail = `${name} changed from "${outcome.before || "(blank)"}" to "${outcome.value}".`;
-      results[key] = outcome;
-      if (outcome.status === "willSave") touched.push(key);
+      await attempt(key, async () => {
+        const outcome = await applyStatusSelect(`businessEntity.${key}`, label, fields[key]);
+        if (outcome.status === "willSave") outcome.detail = `${name} changed from "${outcome.before || "(blank)"}" to "${outcome.value}".`;
+        return outcome;
+      });
     }
 
-    if (fields.researchNotes?.length) {
-      const outcome = await applyResearchNotesValue(fields.researchNotes);
-      results.researchNotes = outcome;
-      if (outcome.status === "willSave") touched.push("researchNotes");
-    }
+    if (fields.researchNotes?.length) await attempt("researchNotes", () => applyResearchNotesValue(fields.researchNotes));
 
     if (!touched.length) {
+      const failed = Object.values(results).find((r) => r.status === "failed");
+      if (failed) return { status: "failed", reason: failed.reason, results };
       return { status: "skipped", reason: "Nothing to save.", results };
     }
 

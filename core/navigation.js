@@ -87,6 +87,31 @@
     return true;
   }
 
+  // RTS sections are ".container" blocks with a header bar (".containerHeading" holding the ".collapseSection" arrow) and a body
+  // (".container-body-holder"); sub-sections have ".subSectionHeader" and ".subSectionBody". Called only when a needed control is
+  // missing: closed sections are opened one at a time, by their own arrow, and it stops as soon as isReady() is true. Sections
+  // that are already open are never touched. Returns whether isReady() is true.
+  async function openClosedSections(isReady) {
+    if (isReady()) return true;
+    const arrows = [];
+    for (const box of Array.from(document.querySelectorAll(".container"))) {
+      const body = box.querySelector(".container-body-holder");
+      const arrow = box.querySelector(".containerHeading .collapseSection") || box.querySelector(".containerHeading");
+      if (body && arrow && !isShown(body)) arrows.push(arrow);
+    }
+    for (const box of Array.from(document.querySelectorAll(".subSection"))) {
+      const body = box.querySelector(".subSectionBody");
+      const arrow = box.querySelector(".sub-section__icon-toggle") || box.querySelector(".subSectionHeader");
+      if (body && arrow && !isShown(body)) arrows.push(arrow);
+    }
+    for (const arrow of arrows) {
+      arrow.click();
+      const deadline = Date.now() + 1200;
+      while (Date.now() < deadline) { if (isReady()) return true; await wait(60); }
+    }
+    return Boolean(isReady());
+  }
+
   // The two tabs of a profile. Only the tab being shown has its fields on screen, so each group of fields is
   // published with its own tab in front: "Business Entity" (names, website, email, notes, social media, start date) or
   // "Company" (industry, SIC, NAICS, keywords, descriptions, sites, employees).
@@ -139,5 +164,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.navigation = { readLastEdits, expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar };
+  globalThis.SXRTS.navigation = { readLastEdits, expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar, openClosedSections };
 })();
