@@ -42,7 +42,7 @@ test("during a run the boxes are answered at once and written down", () => {
   assert.equal(shown.length, 1, "the guard is off again after the run");
 });
 
-test("a name in Latin letters is an ordinary Other Name even if the agent writes a script; real native script stays native", async () => {
+test("a name in Latin letters is an ordinary Other Name even if the agent writes a script; a name in another script is not taken (RTS does not accept it)", async () => {
   const { validOutput } = await import("./helpers/rovo-sample.mjs");
   const C = globalThis.SXRTS.rovoContract;
   const out = validOutput();
@@ -53,7 +53,7 @@ test("a name in Latin letters is an ordinary Other Name even if the agent writes
     { name: "Акме", script: "Cyrillic", source_url: "https://acme.com/" }
   ];
   const types = C.analyze(out).document.businessEntity.nameVariations.filter((n) => /Other/.test(n.type)).map((n) => [n.name, n.type]);
-  assert.deepEqual(types, [["Acme Trading", "Other Name"], ["Café Acme", "Other Name"], ["艾克美", "Native Other Name"], ["Акме", "Native Other Name"]]);
+  assert.deepEqual(types, [["Acme Trading", "Other Name"], ["Café Acme", "Other Name"]]);
 });
 
 const NOW = new Date(2026, 10, 12);

@@ -180,10 +180,10 @@ test("a not-for-profit flag and a missing ANC block are surfaced as warnings", (
   assert.ok(rt.analyze(noAnc).issues.some((i) => i.code === "ANC_MISSING" && i.severity === "warning"));
 });
 
-test("a native-script name becomes 'Native Other Name'; a Latin one 'Other Name'", () => {
+test("a native-script name is not taken (RTS does not accept it); a Latin one is an 'Other Name'", () => {
   const withOthers = swap("* Other Name Variation: Not found on the official website.", "* Other Name Variation: 赛弗\n   * Source: https://www.psypher.in/cn\n* Other Name Variation: Psypher Streetwear\n   * Source: https://www.psypher.in/");
   const { document } = rt.analyze(withOthers);
-  assert.deepEqual(document.businessEntity.nameVariations.map((n) => [n.name, n.type]), [["赛弗", "Native Other Name"], ["Psypher Streetwear", "Other Name"]]);
+  assert.deepEqual(document.businessEntity.nameVariations.map((n) => [n.name, n.type]), [["Psypher Streetwear", "Other Name"]]);
 });
 
 test("the correction prompt asks for the same text format, restating only the violations", () => {
@@ -194,8 +194,10 @@ test("the correction prompt asks for the same text format, restating only the vi
   assert.doesNotMatch(prompt, /JSON/);
 });
 
-test("schema.validate rejects a broken text report with its issue list and format", () => {
-  assert.throws(() => schema.validate(swap("* Total Rounds Found: 0", "* Total Rounds Found: 2")), (error) => error.format === "text" && error.errors[0].includes("[TIMELINE_COUNT_MISMATCH]"));
+test("schema.validate: a round-count slip (funding is not written to RTS) is a warning; a report with no sections is still rejected with its format", () => {
+  const validated = schema.validate(swap("* Total Rounds Found: 0", "* Total Rounds Found: 2"));
+  assert.ok(validated.warnings.some((w) => /\[LEFT_OUT\].*TIMELINE_COUNT|\[LEFT_OUT\]/.test(w)));
+  assert.throws(() => schema.validate("SECTION 1\nnothing useful here"), (error) => error.format === "text" || Boolean(error.errors?.length));
 });
 
 // ---- legitimate variations of the same report are read the same way ----

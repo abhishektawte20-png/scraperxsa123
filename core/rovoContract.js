@@ -351,6 +351,25 @@
     });
   }
 
+  // RTS does not take names written in another script (Chinese, Cyrillic, Arabic...). Those names are never written; each is
+  // reported as a warning so the researcher knows it was left out.
+  const isLatinName = (name) => !/\p{L}/u.test(String(name ?? "").replace(/\p{Script=Latin}/gu, ""));
+  function checkNonEnglish(src, issues) {
+    const nv = src.name_variations || {};
+    for (const key of ["legal_name", "familiar_name", "former_name"]) {
+      const name = real(nv[key]?.value);
+      if (name && !isLatinName(name)) issue(issues, "info", "NON_ENGLISH", `name_variations.${key}.value`, `"${name}" is not written in English letters; RTS does not take it, so it was left out.`);
+    }
+    (Array.isArray(nv.other_name_variations) ? nv.other_name_variations : []).forEach((other, index) => {
+      const name = real(other?.name);
+      if (name && !isLatinName(name)) issue(issues, "info", "NON_ENGLISH", `name_variations.other_name_variations[${index}].name`, `"${name}" is not written in English letters; RTS does not take it, so it was left out.`);
+    });
+    (Array.isArray(src.management) ? src.management : []).forEach((person, index) => {
+      const name = real(person?.full_name);
+      if (name && !isLatinName(name)) issue(issues, "info", "NON_ENGLISH", `management[${index}].full_name`, `"${name}" is not written in English letters; RTS does not take it, so this person was left out.`);
+    });
+  }
+
   function checkKeywords(src, issues) {
     const keywords = src.keywords;
     if (!Array.isArray(keywords)) return;
@@ -568,14 +587,14 @@
     const variations = [];
     const add = (entry, type) => {
       const name = real(entry?.value);
-      if (name) variations.push({ name, type, action: act, source: entry.source_url ?? null, confidence: null });
+      if (name && isLatinName(name)) variations.push({ name, type, action: act, source: entry.source_url ?? null, confidence: null });
     };
     add(nv.legal_name, "Legal Name");
     add(nv.familiar_name, "Familiar Name");
     add(nv.former_name, "Former Name");
     for (const other of Array.isArray(nv.other_name_variations) ? nv.other_name_variations : []) {
       const name = real(other?.name);
-      if (!name) continue;
+      if (!name || !isLatinName(name)) continue;
       // A name in another script is RTS's "Native Other Name"; a Latin-script
       // variant is "Other Name". The preview shows the type for confirmation.
       // Only a name that really contains letters of another script is native; "Latin" or "English" written in
@@ -626,7 +645,7 @@
     if (real(String(emp?.count ?? ""))) extras.employeeCount = { value: String(emp.count), action: act, source: emp.source_url ?? null };
     const verticals = (src.verticals?.assigned || []).map((v) => v?.vertical_name).filter(real);
     if (verticals.length) extras.verticals = verticals.map((value) => ({ value, action: act }));
-    const people = (Array.isArray(src.management) ? src.management : []).filter((m) => real(m?.full_name));
+    const people = (Array.isArray(src.management) ? src.management : []).filter((m) => real(m?.full_name) && isLatinName(m.full_name));
     if (people.length) extras.management = people.map((m) => ({ fullName: m.full_name, title: (m.titles || []).join(", "), action: act, source: m.source_url ?? null }));
     if (Object.keys(extras).length) doc.extras = extras;
     return doc;
@@ -660,21 +679,99 @@
     return CONTRACT_KEYS.filter((key) => key in parsed).length >= 2;
   }
 
+
+  // ---- lenient reading: a broken VALUE never blocks the whole paste ----
+  // A hard rule broken in one field (a 3-digit SIC code, a keyword with five words, a source on a prohibited site...) used to
+  // reject the entire paste and send the researcher back to the agent. Now only that value is left out (never written to RTS) and
+  // the finding is shown as a warning. What still rejects the paste: a halt, the wrong domain, an unidentified entity, a missing
+  // key, and anything that cannot be tied to one value.
+  const KEEP_BLOCKING = new Set(["HALTED", "DOMAIN_MISMATCH", "ENTITY_NOT_IDENTIFIED", "MISSING_KEY"]);
+  // Findings about a COUNT: nothing is removed (fewer keywords are still written); they are reported as warnings.
+  const COUNT_ONLY = new Set(["KEYWORD_COUNT", "TIMELINE_COUNT_MISMATCH"]);
+  const NOT_WRITTEN_TO_RTS = /^(funding|website_links|domain_confirmation|not_for_profit_flag|extraction_status|halt_reason|target_domain|extraction_date|anc)\b/;
+
+  function leaveOut(src, path) {
+    const tokens = String(path).match(/[^.\[\]]+|\[\d+\]/g) || [];
+    if (!tokens.length) return null;
+    const copy = JSON.parse(JSON.stringify(src));
+    let last = -1;
+    tokens.forEach((t, i) => { if (/^\[\d+\]$/.test(t)) last = i; });
+    const walkTo = (count) => tokens.slice(0, count).reduce((node, t) => (node == null ? node : node[/^\[/.test(t) ? Number(t.slice(1, -1)) : t]), copy);
+    if (last >= 0) {
+      const array = walkTo(last);
+      if (!Array.isArray(array)) return null;
+      array.splice(Number(tokens[last].slice(1, -1)), 1);
+      const top = tokens[0];
+      if (last === 1 && (top === "sic_codes" || top === "naics_codes")) {
+        // The prescribed "no code applies" entry when nothing is left; otherwise the rest keep ranks 1..n and one best fit.
+        if (!array.length) {
+          const sic = top === "sic_codes";
+          array.push({ rank: 1, best_fit: true, code: "Not defined in methodology.", title: sic ? "No SIC code identified — company's primary activity falls outside standard classification scope." : "No NAICS code identified — company's primary activity falls outside standard classification scope.", relevance: "No additional notes.", source: sic ? "OSHA SIC Manual" : "NAICS Manual" });
+        } else {
+          array.forEach((entry, i) => { entry.rank = i + 1; entry.best_fit = i === 0; });
+        }
+      }
+      return copy;
+    }
+    const parent = walkTo(tokens.length - 1);
+    const key = tokens[tokens.length - 1];
+    if (!parent || typeof parent !== "object") return null;
+    if ("value" in parent && "source_url" in parent) { parent.value = FALLBACKS[0]; parent.source_url = null; return copy; }
+    if (typeof parent[key] === "string") { parent[key] = FALLBACKS[0]; return copy; }
+    delete parent[key];
+    return copy;
+  }
+
+  // check(src) returns the findings for src. Returns { src, issues } where every hard error that belongs to one value was
+  // turned into a "left out" warning and, when it reaches RTS, its value removed from src.
+  function lenient(src0, check) {
+    let src = src0;
+    const left = [];
+    const ignored = new Set();
+    const strict = check(src0);
+    // If leaving values out creates a worse problem (a required key now missing), the paste is judged as it came.
+    const giveUp = () => ({ src: src0, issues: strict });
+    const run = (s) => check(s).filter((i) => !ignored.has(JSON.stringify(i)));
+    for (let pass = 0; pass < 80; pass++) {
+      const issues = run(src);
+      const errors = issues.filter((i) => i.severity === "error");
+      if (!errors.length) return { src, issues: [...issues, ...left] };
+      const blocks = (i) => !i.path || (KEEP_BLOCKING.has(i.code) && !(i.code === "MISSING_KEY" && !HEADER_KEYS.includes(String(i.path).split(/[.\[]/)[0])));
+      if (errors.some(blocks)) return src === src0 ? { src, issues } : giveUp();
+      const first = errors[0];
+      if (NOT_WRITTEN_TO_RTS.test(first.path) || COUNT_ONLY.has(first.code) || first.code === "MISSING_KEY") {
+        ignored.add(JSON.stringify(first));
+        left.push({ ...first, severity: "warning", code: "LEFT_OUT", message: first.code === "MISSING_KEY" ? `${first.message} Nothing is written for it.` : COUNT_ONLY.has(first.code) ? `${first.message} (what was given is still written)` : `${first.message} (this part is not written to RTS, so nothing is held back)` });
+        continue;
+      }
+      const next = leaveOut(src, first.path);
+      if (!next || JSON.stringify(next) === JSON.stringify(src)) return giveUp();
+      left.push({ ...first, severity: "warning", code: "LEFT_OUT", message: `${first.message} Left out: this value is not written to RTS.` });
+      src = next;
+    }
+    return giveUp();
+  }
+
   // The content/source/code rules that do not depend on the JSON layout, so
   // the text reader is held to exactly the same methodology checks.
-  function analyzeParsed(src, { extraIssues = [], extraRows = [], format = "text" } = {}) {
-    const issues = [...extraIssues];
-    checkSourcePolicy(src, issues);
-    checkDomain(src, issues);
-    checkCodes(src.sic_codes, "SIC", /^\d{4}$/, src, issues);
-    checkCodes(src.naics_codes, "NAICS", /^\d{6}$/, src, issues);
-    checkKeywords(src, issues);
-    checkIndustry(src, issues);
-    checkManagement(src, issues);
-    checkDescription(src, issues);
-    checkNames(src, issues);
+  function analyzeParsed(srcIn, { extraIssues = [], extraRows = [], format = "text", lenient: soft = false } = {}) {
+    const check = (src) => {
+      const issues = [...extraIssues];
+      checkSourcePolicy(src, issues);
+      checkDomain(src, issues);
+      checkCodes(src.sic_codes, "SIC", /^\d{4}$/, src, issues);
+      checkCodes(src.naics_codes, "NAICS", /^\d{6}$/, src, issues);
+      checkKeywords(src, issues);
+      checkIndustry(src, issues);
+      checkManagement(src, issues);
+      checkDescription(src, issues);
+      checkNames(src, issues);
+      checkNonEnglish(src, issues);
+      return issues;
+    };
+    const { src, issues: all } = soft ? lenient(srcIn, check) : { src: srcIn, issues: check(srcIn) };
     const seen = new Set();
-    const unique = issues.filter((i) => {
+    const unique = all.filter((i) => {
       const key = `${i.severity}|${i.code}|${i.path}|${i.message}`;
       return seen.has(key) ? false : (seen.add(key), true);
     });
@@ -718,28 +815,37 @@
     if (halted) {
       return { issues, document: null, rows: [], halted: true, notForProfit: false };
     }
-    walk(TEMPLATE, src, "", issues, null, "");
-    checkSourcePolicy(src, issues);
-    checkDomain(src, issues);
-    checkFunding(src, issues);
-    checkCodes(src.sic_codes, "SIC", /^\d{4}$/, src, issues);
-    checkCodes(src.naics_codes, "NAICS", /^\d{6}$/, src, issues);
-    checkKeywords(src, issues);
-    checkIndustry(src, issues);
-    checkManagement(src, issues);
-    checkSourceHosts(src, issues);
-    checkEmployeeCount(src, issues);
-    checkNotForProfit(src, issues);
-    checkDescription(src, issues);
-    checkNames(src, issues);
+    const check = (current) => {
+      const found = [...issues];
+      walk(TEMPLATE, current, "", found, null, "");
+      checkSourcePolicy(current, found);
+      checkDomain(current, found);
+      checkFunding(current, found);
+      checkCodes(current.sic_codes, "SIC", /^\d{4}$/, current, found);
+      checkCodes(current.naics_codes, "NAICS", /^\d{6}$/, current, found);
+      checkKeywords(current, found);
+      checkIndustry(current, found);
+      checkManagement(current, found);
+      checkSourceHosts(current, found);
+      checkEmployeeCount(current, found);
+      checkNotForProfit(current, found);
+      checkDescription(current, found);
+      checkNames(current, found);
+      checkNonEnglish(current, found);
+      return found;
+    };
+    const result = options.lenient ? lenient(src, check) : { src, issues: check(src) };
+    const finalSrc = result.src;
+    issues.length = 0;
+    issues.push(...result.issues);
 
     const hasErrors = issues.some((i) => i.severity === "error");
     return {
       issues,
-      document: hasErrors ? null : toInternalDocument(src),
-      rows: hasErrors ? [] : describeUnmapped(src),
+      document: hasErrors ? null : toInternalDocument(finalSrc),
+      rows: hasErrors ? [] : describeUnmapped(finalSrc),
       halted: false,
-      notForProfit: src.not_for_profit_flag?.is_not_for_profit === true,
+      notForProfit: finalSrc.not_for_profit_flag?.is_not_for_profit === true,
       format: "json"
     };
   }

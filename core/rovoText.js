@@ -239,7 +239,7 @@
 
   // ---------- the reader ----------
 
-  function analyze(raw) {
+  function analyze(raw, options = {}) {
     const issues = [];
     const extraRows = [];
     const notes = [];
@@ -513,7 +513,7 @@
       if (lower.includes(bad)) C().issue(issues, "error", "PROHIBITED_SOURCE", "output", `contains "${bad}", a prohibited source. The output must be rejected.`);
     }
 
-    const result = C().analyzeParsed(src, { extraIssues: issues, extraRows, format: "text" });
+    const result = C().analyzeParsed(src, { extraIssues: issues, extraRows, format: "text", lenient: Boolean(options?.lenient) });
     result.ignoredLines = ignoredBefore;
     result.notForProfit = issues.some((i) => i.code === "NOT_FOR_PROFIT");
     return result;

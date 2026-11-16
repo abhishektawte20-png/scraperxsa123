@@ -203,15 +203,16 @@ test("the dmcspain.com output is still recognised as the agent's output, with ex
   for (const key of ["extraction_status", "halt_reason", "target_domain", "extraction_date", "domain_confirmation"]) assert.match(text, new RegExp(`\\[MISSING_KEY\\] ${key}`));
 });
 
-test("with the researcher's domain, the dropped header is filled in, and the REAL problems are what remain", () => {
-  let error;
-  try { globalThis.SXRTS.schema.validate(dmc, { domain: "dmcspain.com" }); } catch (e) { error = e; }
-  assert.deepEqual(error.issues.filter((i) => i.severity === "error").map((i) => i.code), ["PROHIBITED_SOURCE"]);
-  assert.match(error.errors[0], /employee_count\.current\.source_url: uses prospeo\.io/);
-  const warnings = error.issues.filter((i) => i.severity === "warning").map((i) => i.code);
-  for (const code of ["HEADER_MISSING", "PAGES_TRAVERSED", "EMPLOYEE_DATE", "DESCRIPTION_RULE"]) assert.ok(warnings.includes(code), code);
-  assert.ok(warnings.includes("EXTERNAL_SOURCE"), "the aggregator (prospeo.io) is still a warning");
-  const external = error.issues.find((i) => i.code === "SOURCE_NOTE" && /esas\.org/.test(i.path));
+test("with the researcher's domain, the dropped header is filled in, and the one bad value (a prohibited source) is left out instead of rejecting the paste", () => {
+  const validated = globalThis.SXRTS.schema.validate(dmc, { domain: "dmcspain.com" });
+  assert.equal(validated.profileIdentity.domain, "dmcspain.com");
+  const left = validated.warnings.filter((w) => /^\[LEFT_OUT\]/.test(w));
+  assert.equal(left.length, 1);
+  assert.match(left[0], /employee_count\.current\.source_url: uses prospeo\.io/);
+  const codes = validated.rovo.issues.filter((i) => i.severity === "warning").map((i) => i.code);
+  for (const code of ["HEADER_MISSING", "PAGES_TRAVERSED", "DESCRIPTION_RULE", "LEFT_OUT"]) assert.ok(codes.includes(code), code);
+  assert.equal(validated.rovo.issues.filter((i) => i.severity === "error").length, 0);
+  const external = validated.rovo.issues.find((i) => i.code === "SOURCE_NOTE" && /esas\.org/.test(i.path));
   assert.equal(external.severity, "info", "an ordinary outside page is only a quiet note");
   assert.match(external.message, /8 field\(s\) are sourced from www\.esas\.org, not the official website \(dmcspain\.com\)/);
 });

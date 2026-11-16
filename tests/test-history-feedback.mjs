@@ -258,15 +258,13 @@ test("Validate saves the run to the history, and the History window lists it wit
 test("a rejected paste is saved too (so QA can see what the agent returned), flagged invalid", async () => {
   const { shadow, store } = mountPanel();
   shadow.querySelector("#sxrts-domain").value = "acme.com";
-  const bad = validOutput();
-  bad.keywords = ["fleet"];
-  shadow.querySelector("#sxrts-response").value = JSON.stringify(bad);
+  shadow.querySelector("#sxrts-response").value = '{"extraction_status": "success", "keywords": ['; // cut off: cannot be read at all
   btn(shadow, "Validate JSON").click();
   assert.ok(await until(() => store.get(history.KEY)?.length === 1));
   const saved = store.get(history.KEY)[0];
   assert.equal(saved.outcome, "invalid");
   assert.ok(saved.errors >= 1);
-  assert.ok(saved.issues.some((line) => /KEYWORD_COUNT/.test(line)));
+  assert.ok(saved.issues.length >= 1);
   assert.deepEqual(saved.facts, {});
 });
 

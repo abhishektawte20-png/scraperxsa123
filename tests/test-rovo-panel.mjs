@@ -66,7 +66,7 @@ test("a compliant Section 13 paste builds a preview; evidence-less fields read '
   assert.match(shadow.querySelector(".status").textContent, /Valid/);
   const cards = Array.from(shadow.querySelectorAll(".action-card"));
   const byPath = (p) => cards.filter((c) => c.querySelector(".action-card-field").textContent.startsWith(p));
-  assert.equal(byPath("businessEntity.nameVariations").length, 3);
+  assert.equal(byPath("businessEntity.nameVariations").length, 2);
   assert.equal(byPath("company.sicCodes").length, 2);
   assert.equal(byPath("businessEntity.nameVariations")[0].querySelector(".badge").textContent, "pending");
   assert.equal(byPath("company.keywords")[0].querySelector(".badge").textContent, "waiting for RTS evidence");
@@ -84,15 +84,11 @@ test("a compliant Section 13 paste builds a preview; evidence-less fields read '
 test("a paste that breaks the output rules is rejected with the exact list, and a correction prompt is offered", async () => {
   const { shadow, copied } = setup();
   const bad = validOutput();
-  bad.keywords = ["fleet"];
-  bad.funding.timeline[0].source_1 = "https://pitchbook.com/profiles/company/1";
-  delete bad.anc;
+  bad.domain_confirmation.url_accessed = "https://www.other-company.com/"; // the agent researched a different website: a hard block
   paste(shadow, bad);
   button(shadow, "Validate JSON").click();
   const status = shadow.querySelector(".status").textContent;
-  assert.match(status, /\[KEYWORD_COUNT\] keywords/);
-  assert.match(status, /\[PROHIBITED_SOURCE\] funding\.timeline\[0\]\.source_1/);
-  assert.match(status, /\[MISSING_KEY\] anc/);
+  assert.match(status, /\[DOMAIN_MISMATCH\]/);
   assert.equal(shadow.querySelectorAll(".action-card").length, 0);
 
   const fix = button(shadow, "Copy correction prompt");
@@ -100,7 +96,7 @@ test("a paste that breaks the output rules is rejected with the exact list, and 
   fix.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(copied.length, 1);
-  assert.match(copied[0], /\[PROHIBITED_SOURCE\]/);
+  assert.match(copied[0], /\[DOMAIN_MISMATCH\]/);
   assert.doesNotMatch(copied[0], /Required JSON shape/);
 
   // Re-pasting a corrected output clears the error state and the button.
@@ -166,19 +162,15 @@ import { fileURLToPath } from "node:url";
 import nodePath from "node:path";
 const dmcOutput = readFileSync(nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), "helpers/dmcspain-output.json"), "utf8");
 
-test("the real dmcspain.com output: with the domain in the panel only the genuine problem is shown, and the correction prompt names it", async () => {
-  const { shadow, copied } = setup();
+test("the real dmcspain.com output: it validates the first time; the one prohibited source is left out and said so, no correction needed", () => {
+  const { shadow } = setup();
   shadow.querySelector("#sxrts-domain").value = "dmcspain.com";
   paste(shadow, dmcOutput);
   button(shadow, "Validate JSON").click();
   const status = shadow.querySelector(".status").textContent;
   assert.doesNotMatch(status, /schemaVersion|profileIdentity/);
-  assert.match(status, /\[PROHIBITED_SOURCE\] employee_count\.current\.source_url: uses prospeo\.io/);
-  assert.equal(shadow.querySelectorAll(".issue.err").length, 1);
-  button(shadow, "Copy correction prompt").click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.match(copied[0], /\[PROHIBITED_SOURCE\] employee_count\.current\.source_url/);
-  assert.match(copied[0], /How to fix: Remove this source and use only valid sources/);
+  assert.match(status, /\[LEFT_OUT\] employee_count\.current\.source_url: uses prospeo\.io/);
+  assert.equal(shadow.querySelectorAll(".issue.err").length, 0);
 });
 
 test("the real dmcspain.com output with no domain entered: exact missing-key errors, never the old-format message", () => {
@@ -192,21 +184,15 @@ test("the real dmcspain.com output with no domain entered: exact missing-key err
   assert.match(status, /\[MISSING_KEY\] domain_confirmation/);
 });
 
-test("when validation fails, the warnings are shown in the same pass, and the correction prompt asks the agent to fix them too", async () => {
+test("warnings are shown in the same pass as the left-out value, and the optional correction prompt lists them", async () => {
   const { shadow, copied } = setup();
   shadow.querySelector("#sxrts-domain").value = "dmcspain.com";
   paste(shadow, dmcOutput);
   button(shadow, "Validate JSON").click();
-  assert.equal(shadow.querySelectorAll(".issue.err").length, 1);
-  assert.ok(shadow.querySelectorAll(".issue.warn").length >= 4, "warnings are listed under the error");
-  assert.match(shadow.querySelector(".status").textContent, /\[EXTERNAL_SOURCE\] prospeo\.io/);
+  assert.equal(shadow.querySelectorAll(".issue.err").length, 0);
+  assert.ok(shadow.querySelectorAll(".issue.warn").length >= 4, "warnings are listed");
+  assert.match(shadow.querySelector(".status").textContent, /\[LEFT_OUT\] employee_count\.current\.source_url/);
   assert.doesNotMatch(shadow.querySelector(".status").textContent, /esas\.org: \d+ field/, "an ordinary outside page is not shown as a warning");
-  button(shadow, "Copy correction prompt").click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.match(copied[0], /Also fix these/);
-  assert.match(copied[0], /\[EXTERNAL_SOURCE\] prospeo\.io/);
-  assert.match(copied[0], /\[EMPLOYEE_DATE\] employee_count\.current\.date/);
-  assert.match(copied[0], /How to fix: Use a page on the official website/);
 });
 
 test("output that is not in the agent's format at all still gets a correction prompt, with the exact format resent", async () => {
@@ -311,4 +297,46 @@ test("fields with no RTS mapping put the page area around them into the report a
   assert.doesNotMatch(report, /zq-typed-9|private chip/);
   assert.match(report, /businessEntity\.socialMediaIdentifiers[^\n]*Not on screen/);
   area.remove();
+});
+
+test("Copy prompt carries only the website; ticking 'no website' switches to the company's name(s), English letters only, and the found domain is taken from the answer", async () => {
+  const { shadow, copied } = setup();
+  shadow.querySelector("#sxrts-company-name").value = "Acme Holdings";
+  shadow.querySelector("#sxrts-domain").value = "acme.com";
+  shadow.querySelector("#sxrts-company-name").dispatchEvent(new window.Event("input"));
+  button(shadow, "Copy prompt").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(copied[0].split("\n")[0], "acme.com");
+  assert.doesNotMatch(copied[0].split("THIS RUN")[0] + copied[0].split("THIS RUN")[1].split("\n").slice(0, 5).join("\n"), /Acme Holdings/, "the name is not given to the agent when there is a website");
+
+  // no website: its name(s) go in, the non-English one stays out
+  shadow.querySelector("#sxrts-domain").value = "";
+  const box = shadow.querySelector("#sxrts-no-site");
+  box.checked = true;
+  box.dispatchEvent(new window.Event("change"));
+  const names = shadow.querySelector("#sxrts-names");
+  names.value = "Acme Holdings\nAcme Trading\n艾克美";
+  names.dispatchEvent(new window.Event("input"));
+  button(shadow, "Copy prompt").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const byName = copied[copied.length - 1];
+  assert.match(byName, /no official website is known/);
+  assert.match(byName, /Company name: Acme Holdings\nOther names it is known by: Acme Trading\n/);
+  assert.doesNotMatch(byName, /艾克美/);
+  assert.match(byName, /find this company's official website/);
+
+  // the answer names the website it found: that becomes the domain of the run
+  paste(shadow, validOutput());
+  button(shadow, "Validate JSON").click();
+  assert.equal(shadow.querySelector("#sxrts-domain").value, "acme.com");
+  assert.match(shadow.querySelector(".status").textContent, /Valid/);
+});
+
+test("Copy prompt refuses an empty website unless 'no website' is ticked", async () => {
+  const { shadow, copied } = setup();
+  shadow.querySelector("#sxrts-domain").value = "";
+  button(shadow, "Copy prompt").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(copied.length, 0);
+  assert.match(shadow.querySelector(".status").textContent, /Enter the company's website first/);
 });

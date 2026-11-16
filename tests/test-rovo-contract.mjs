@@ -50,7 +50,8 @@ test("FROZEN CONTRACT: top-level key order, fallback phrases, and ANC values nev
 
 test("a compliant Rovo output has no errors and no warnings", () => {
   const result = rc.analyze(validOutput());
-  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.issues.filter((i) => i.severity !== "info"), []);
+  assert.ok(result.issues.some((i) => i.code === "NON_ENGLISH"), "the Chinese name is reported as left out");
   assert.ok(result.document);
 });
 
@@ -61,7 +62,7 @@ test("compliant output is translated: names, website, EDS, SMI, SIC, keywords; f
   assert.equal(document.profileIdentity.domain, "acme.com");
   assert.equal(document.profileIdentity.companyName, "Acme");
   assert.deepEqual(document.businessEntity.nameVariations.map((n) => [n.name, n.type]), [
-    ["Acme Holdings Ltd", "Legal Name"], ["ACM", "Familiar Name"], ["艾克美", "Native Other Name"]
+    ["Acme Holdings Ltd", "Legal Name"], ["ACM", "Familiar Name"]
   ]);
   assert.equal(document.businessEntity.websiteAddresses[0].value, "https://www.acme.com/");
   assert.equal(document.businessEntity.emailDefaultStructure.value, "First.Last@domain.com");
@@ -76,7 +77,7 @@ test("the translated document passes the normal validator and builds an executio
   assert.ok(validated.rovo);
   const actions = globalThis.SXRTS.executionPlan.buildExecutionPlan(validated);
   const byPath = (p) => actions.filter((a) => a.jsonPath === p);
-  assert.equal(byPath("businessEntity.nameVariations").length, 3);
+  assert.equal(byPath("businessEntity.nameVariations").length, 2);
   assert.equal(byPath("company.sicCodes").length, 2);
   assert.equal(byPath("company.sicCodes")[0].executionStatus, "pending");
   // evidence-less fields are still shown, and flagged as waiting, not hidden

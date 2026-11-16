@@ -240,8 +240,9 @@ test("validation result is structured: a verdict banner plus one coloured line p
   assert.ok(shadow.querySelectorAll(".issue.warn").length >= 2);
   shadow.querySelector("#sxrts-response").value = TEXT_SAMPLE.replace("* Total Rounds Found: 0", "* Total Rounds Found: 2");
   btn(shadow, "Validate JSON").click();
-  assert.match(shadow.querySelector(".verdict.bad").textContent, /problem/);
-  assert.match(shadow.querySelector(".issue.err .chip").textContent, /TIMELINE_COUNT_MISMATCH/);
+  // The round count only concerns funding, which is not written to RTS: it is a warning, not a block.
+  assert.equal(shadow.querySelector(".verdict.bad"), null);
+  assert.ok(Array.from(shadow.querySelectorAll(".issue.warn .chip")).some((chip) => /LEFT_OUT/.test(chip.textContent)));
 });
 
 test("branding: header and footer name the developer; the prompt carries the checklist; hover help is wired", async () => {

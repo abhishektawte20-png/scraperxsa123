@@ -514,13 +514,13 @@
     const contract = globalThis.SXRTS.rovoContract;
     const textReader = globalThis.SXRTS.rovoText;
     if (textReader?.isText(raw)) {
-      analysis = textReader.analyze(raw);
+      analysis = textReader.analyze(raw, { lenient: true });
     } else {
       const read = parseRawJson(raw);
       parsed = read.value;
       repairs = read.fixes;
       if (repairs.length) warnings.push(`[JSON_REPAIRED] The pasted JSON had small syntax mistakes that were fixed automatically (meaning unchanged): ${globalThis.SXRTS.jsonRepair.summarize(repairs).join("; ")}.`);
-      if (contract?.isContract(parsed)) analysis = contract.analyze(parsed, { domain: options.domain });
+      if (contract?.isContract(parsed)) analysis = contract.analyze(parsed, { domain: options.domain, lenient: true });
     }
     if (analysis) {
       const blocking = analysis.issues.filter((item) => item.severity === "error");

@@ -307,6 +307,26 @@
       element("div", { className: "field" }, [domainLabel, domainInput])
     ]));
 
+    // Normally the agent is given ONLY the website. For a company with no website, this box switches the prompt to the company's
+    // name(s) so the agent first finds the website. The names are read from the RTS name boxes (English letters only) and can be edited.
+    const noSiteBox = element("input", { type: "checkbox", id: "sxrts-no-site" });
+    const noSiteLabel = element("label", { className: "check-row" }, [noSiteBox, document.createTextNode(" This company has no website (search by its name instead)")]);
+    const latinOnly = (name) => !/\p{L}/u.test(String(name || "").replace(/\p{Script=Latin}/gu, ""));
+    const namesInput = element("textarea", { id: "sxrts-names" });
+    namesInput.rows = 3;
+    namesInput.placeholder = "One name per line (English letters only)";
+    const namesField = element("div", { className: "field hidden" }, [element("label", { text: "Names to search by" }), namesInput]);
+    const readNamesFromPage = () => Array.from(document.querySelectorAll("input[data-entity-name]")).map((n) => String(n.value || "").trim()).filter((n) => n && latinOnly(n));
+    identityCard.appendChild(noSiteLabel);
+    identityCard.appendChild(namesField);
+    const searchNames = () => Array.from(new Set(namesInput.value.split("\n").map((n) => n.trim()).filter((n) => n && latinOnly(n))));
+    noSiteBox.addEventListener("change", () => {
+      namesField.classList.toggle("hidden", !noSiteBox.checked);
+      if (noSiteBox.checked && !namesInput.value.trim()) namesInput.value = Array.from(new Set([companyNameInput.value.trim(), ...readNamesFromPage()].filter((n) => n && latinOnly(n)))).join("\n");
+      regeneratePrompt();
+    });
+    namesInput.addEventListener("input", () => regeneratePrompt());
+
     // The researcher's name goes in the act log entry ("11/12/26 Firstname.Lastname: Completed New Co Research..."). It is
     // kept on this computer, asked once, and publishing waits until it is there.
     const researcherInput = element("input", { id: "sxrts-researcher", value: globalThis.SXRTS.researcher || "" });
@@ -336,7 +356,10 @@
     // configuration owns the methodology and the output contract, and
     // nothing sent from here may override either.
     function regeneratePrompt() {
-      promptArea.value = globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain: domainInput.value });
+      const names = searchNames();
+      promptArea.value = noSiteBox.checked
+        ? globalThis.SXRTS.promptBuilder.buildRunPrompt({ byName: { companyName: names[0] || "", names: names.slice(1) } })
+        : globalThis.SXRTS.promptBuilder.buildRunPrompt({ domain: domainInput.value });
     }
     regeneratePrompt();
     companyNameInput.addEventListener("input", regeneratePrompt);
@@ -640,6 +663,8 @@
     offerRestoreLastJson();
 
     copyPromptButton.addEventListener("click", async () => {
+      if (!noSiteBox.checked && !domainInput.value.trim()) { setStatus(validateStatus, "Enter the company's website first. (No website? Tick \"This company has no website\".)", "error"); return; }
+      if (noSiteBox.checked && !searchNames().length) { setStatus(validateStatus, "Enter at least one name to search by (English letters).", "error"); return; }
       regeneratePrompt();
       try {
         await navigator.clipboard.writeText(promptArea.value);
@@ -977,6 +1002,12 @@
     }
 
     validateButton.addEventListener("click", () => {
+      // A company searched by name: the website the agent found is the domain of this run.
+      if (!domainInput.value.trim()) {
+        const found = /"target_domain"\s*:\s*"([^"]+)"/.exec(textarea.value)?.[1];
+        const domain = found ? globalThis.SXRTS.identityLock.normalizeDomain(found) : "";
+        if (domain) { domainInput.value = domain; regeneratePrompt(); }
+      }
       lastIssues = [];
       lastUnreadable = null;
       lastSyntax = null;

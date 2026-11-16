@@ -180,10 +180,33 @@
   // domain and date filled in. The specification text comes from
   // docs/rovo-agent-json-output-block.txt (core/agentSpec.js is generated from
   // it), so what is pasted into the agent and what is sent here are identical.
-  function buildRunPrompt({ domain, now } = {}) {
+  function buildRunPrompt({ domain, now, byName } = {}) {
     const spec = globalThis.SXRTS.agentSpec;
-    const target = String(domain ?? "").trim() || "[enter the company domain]";
     const date = todayText(now);
+    const fill = (text, target) => text.split(spec.DOMAIN_TOKEN).join(target).split(spec.DATE_TOKEN).join(date);
+
+    // Special case, only when the researcher ticks "no website": the agent is given the company's name (and its other names,
+    // English letters only) and must first find the official website; from then on it is the same run as always.
+    if (byName) {
+      const names = Array.from(new Set([byName.companyName, ...(byName.names || [])].map((n) => String(n ?? "").trim()).filter(Boolean)));
+      const main = names[0] || "[enter the company name]";
+      const others = names.slice(1);
+      const found = "<the domain of the official website you identified in step 1>";
+      return [
+        main,
+        "",
+        "THIS RUN (no official website is known for this company)",
+        `Company name: ${main}`,
+        ...(others.length ? [`Other names it is known by: ${others.join("; ")}`] : []),
+        `Today's date: ${date}`,
+        "Step 1: use the name(s) above to find this company's official website. Accept a website only if it clearly belongs to this exact company. If you cannot identify it with confidence, stop with the halt for an unidentifiable entity.",
+        "Step 2: the domain of that website is the target domain. From here run the full ScraperX extraction for it exactly as your instructions require (the names above are only for finding the website; every value still comes from the official website), then write your answer ONLY in the output format below, with the domain you found wherever the domain is asked for.",
+        "",
+        fill(spec.TEXT, found)
+      ].join("\n");
+    }
+
+    const target = String(domain ?? "").trim() || "[enter the company website]";
     return [
       target,
       "",
@@ -192,7 +215,7 @@
       `Today's date: ${date}`,
       "Run the full ScraperX extraction for this domain exactly as your instructions require, then write your answer ONLY in the output format below.",
       "",
-      spec.TEXT.split(spec.DOMAIN_TOKEN).join(target).split(spec.DATE_TOKEN).join(date)
+      fill(spec.TEXT, target)
     ].join("\n");
   }
 
