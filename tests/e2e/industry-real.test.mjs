@@ -17,7 +17,7 @@ const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH |
 async function publishIndustry(options = {}, code = "1.2.4 — Consulting Services", { fixedName = "", preopen = false } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-real-"));
   const ext = path.join(work, "ext"); fs.mkdirSync(ext);
-  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(repo, item), path.join(ext, item), { recursive: true });
+  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(process.env.SX_PKG || repo, item), path.join(ext, item), { recursive: true });
   const manifestPath = path.join(ext, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.host_permissions = ["http://127.0.0.1/*"];
@@ -66,11 +66,16 @@ async function publishIndustry(options = {}, code = "1.2.4 — Consulting Servic
       await page.waitForTimeout(500);
     }
     await page.waitForTimeout(1500);
+    let assistAnswer = "";
+    if (options.clickTry || options.clickMine) {
+      await page.evaluate((label) => { const root = document.getElementById("sx-test-root").shadowRoot; [...root.querySelectorAll(".assist-box button")].find((b) => b.textContent.startsWith(label)).click(); }, options.clickTry ? "Try Industry code again" : "I ticked it myself");
+      for (let i = 0; i < 120 && !/^(Done|Already|Checked|Not)/.test(assistAnswer); i++) { await page.waitForTimeout(500); assistAnswer = await page.evaluate(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll(".assist-box .helptext")].map((n) => n.textContent).find((t) => /^(Done|Already|Checked|Not)/.test(t)) || ""); }
+    }
     const text = await page.evaluate(() => document.getElementById("sx-test-root").shadowRoot.textContent);
     const progressLabel = await page.evaluate(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".pbar-label")?.textContent || "");
     return {
       summary: text.match(/Saved \d+ · Already in RTS \d+ · Needs attention \d+/)?.[0], text, progressLabel,
-      server: JSON.parse(JSON.stringify(site.state)), model: site.MODEL, popupMessages,
+      assistAnswer, server: JSON.parse(JSON.stringify(site.state)), model: site.MODEL, popupMessages,
       openWindows: ctx.pages().filter((p) => p.url().includes("/industryGroup/create.html")).length
     };
   } finally { await ctx.close(); server.close(); fs.rmSync(work, { recursive: true, force: true }); }
@@ -95,10 +100,14 @@ test("RTS's Industry window with a slow server and a confirmation from validateO
 
 test("RTS refuses the save (its own error box): the extension says so, and never reports the industry as saved", { timeout: 180000 }, async () => {
   const r = await publishIndustry({ saveError: "The industry group could not be saved." });
+  if (process.env.DBG) console.log("SERVER", JSON.stringify(r.server), "RESULT", [...r.text.replace(/\s+/g, " ").matchAll(/.{0,300}(Industry code was not saved|RTS said|did not accept).{0,400}/g)].map((m) => m[0]).join(" ||| "));
   assert.deepEqual(r.server.saved, []);
   assert.match(r.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/, r.text);
-  if (process.env.DBG) 
   assert.match(r.text, /RTS said: "The industry group could not be saved\."/, "RTS's own message is in the result, since nobody was there to read the box");
+  assert.match(r.text, /was not saved automatically/, "the researcher is offered a way to finish it, not left with a dead end");
+  assert.match(r.text, /Try Industry code again/);
+  assert.match(r.text, /I ticked it myself: check it/);
+  assert.ok(r.server.loadRequests <= 3, `at most 3 windows were opened, not ${r.server.loadRequests}`);
 });
 
 test("RTS answers 'ok' but stores nothing: the read-back finds the choice not ticked, so it is an error, not a success", { timeout: 180000 }, async () => {
@@ -130,4 +139,46 @@ test("nobody is at the computer: RTS's confirmation before saving is answered by
   assert.equal(r.popupMessages.filter((m) => /Industry Group will change/.test(m)).length, 0, "the confirmation never reached a person");
   assert.deepEqual(r.server.saved, [consulting(r.model)], `server: ${JSON.stringify(r.server)}`);
   assert.match(r.summary, /Saved 1 · Already in RTS 0 · Needs attention 0/, r.text);
+});
+
+test("a slow RTS (the Industry window takes 8 seconds to draw its tree): it waits, ticks, saves, and reads back with no extra windows", { timeout: 180000 }, async () => {
+  const r = await publishIndustry({ loadMs: 8000, validateMs: 600, saveMs: 800 });
+  assert.deepEqual(r.server.saved, [consulting(r.model)], `server: ${JSON.stringify(r.server)}`);
+  assert.match(r.summary, /Saved 1 · Already in RTS 0 · Needs attention 0/, r.text);
+  assert.equal(r.server.loadRequests, 2, "one window to tick and save, one to read the tick back");
+});
+
+test("a choice that is not in RTS's tree: the REAL reason reaches the researcher, and only one window is opened (it used to be repeated in 4 windows with the reason lost)", { timeout: 180000 }, async () => {
+  const r = await publishIndustry({}, "1.2.4 — Made Up Services");
+  assert.deepEqual(r.server.saved, []);
+  assert.match(r.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/, r.text);
+  assert.match(r.text, /Check the name the report gives against RTS's list|RTS lists|was not found in the tree/);
+  assert.equal(r.server.loadRequests, 1, `one window, not ${r.server.loadRequests}`);
+  assert.match(r.text, /was not saved automatically/);
+});
+
+test("the first Industry window goes away by itself before it can report: a clean one is opened, the job is done, and it never takes more than 4 windows", { timeout: 180000 }, async () => {
+  const r = await publishIndustry({ dieFirst: 1 });
+  assert.deepEqual(r.server.saved, [consulting(r.model)], `server: ${JSON.stringify(r.server)}`);
+  assert.match(r.summary, /Saved 1 · Already in RTS 0 · Needs attention 0/, r.text);
+  assert.ok(r.server.windowsOpened <= 4, `windows opened: ${r.server.windowsOpened}`);
+});
+
+test("the first TWO Industry windows go away: the extension stops opening windows, and offers the guided way to finish (never a silent failure)", { timeout: 180000 }, async () => {
+  const r = await publishIndustry({ dieFirst: 3 });
+  assert.match(r.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/, r.text);
+  assert.match(r.text, /was not saved automatically/);
+  assert.ok(r.server.windowsOpened <= 4, `windows opened: ${r.server.windowsOpened}`);
+});
+
+test("after the windows went away, 'Try Industry code again' (a real click) opens a clean window, saves, and reads the tick back", { timeout: 240000 }, async () => {
+  const r = await publishIndustry({ dieFirst: 3, clickTry: true });
+  assert.match(r.assistAnswer, /^Done: Industry code is saved and was read back from RTS/, r.assistAnswer);
+  assert.deepEqual(r.server.saved, [consulting(r.model)]);
+});
+
+test("'I ticked it myself: check it' reads the tick: not ticked says so, never a success", { timeout: 240000 }, async () => {
+  const r = await publishIndustry({ dieFirst: 3, clickMine: true });
+  assert.match(r.assistAnswer, /^Not ticked yet/, r.assistAnswer);
+  assert.deepEqual(r.server.saved, []);
 });

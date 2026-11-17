@@ -11,7 +11,7 @@
 (() => {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   // Exposed so tests do not have to sit through the real waits.
-  const TIMEOUTS = { fields: 12000, button: 8000, settle: 8000, after: 700, branch: 1500, poll: 40, search: 60000, afterSave: 15000, rowsSettle: 1500 };
+  const TIMEOUTS = { fields: 30000, button: 8000, settle: 8000, after: 700, branch: 1500, poll: 40, search: 60000, afterSave: 15000, rowsSettle: 1500 };
 
   async function waitFor(check, timeout) {
     const deadline = Date.now() + timeout;

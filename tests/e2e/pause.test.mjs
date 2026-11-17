@@ -15,7 +15,7 @@ const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH |
 test("paused: no window is opened or driven, and the page is not clicked; resumed: the same request opens the window", { timeout: 120000 }, async () => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-pause-"));
   const ext = path.join(work, "ext"); fs.mkdirSync(ext);
-  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(repo, item), path.join(ext, item), { recursive: true });
+  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(process.env.SX_PKG || repo, item), path.join(ext, item), { recursive: true });
   const manifestPath = path.join(ext, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.host_permissions = ["http://127.0.0.1/*"];

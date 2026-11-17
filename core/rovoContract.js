@@ -680,6 +680,10 @@
   }
 
 
+  // A check that meets a structure it cannot read (a list that is an object, text where a section belongs) is skipped: the
+  // structure walk has already reported that value, and a skipped check must not crash the whole paste.
+  const safely = (fn) => { try { fn(); } catch { /* reported by the structure walk */ } };
+
   // ---- lenient reading: a broken VALUE never blocks the whole paste ----
   // A hard rule broken in one field (a 3-digit SIC code, a keyword with five words, a source on a prohibited site...) used to
   // reject the entire paste and send the researcher back to the agent. Now only that value is left out (never written to RTS) and
@@ -708,7 +712,7 @@
           const sic = top === "sic_codes";
           array.push({ rank: 1, best_fit: true, code: "Not defined in methodology.", title: sic ? "No SIC code identified — company's primary activity falls outside standard classification scope." : "No NAICS code identified — company's primary activity falls outside standard classification scope.", relevance: "No additional notes.", source: sic ? "OSHA SIC Manual" : "NAICS Manual" });
         } else {
-          array.forEach((entry, i) => { entry.rank = i + 1; entry.best_fit = i === 0; });
+          array.forEach((entry, i) => { if (entry && typeof entry === "object") { entry.rank = i + 1; entry.best_fit = i === 0; } });
         }
       }
       return copy;
@@ -744,7 +748,8 @@
         left.push({ ...first, severity: "warning", code: "LEFT_OUT", message: first.code === "MISSING_KEY" ? `${first.message} Nothing is written for it.` : COUNT_ONLY.has(first.code) ? `${first.message} (what was given is still written)` : `${first.message} (this part is not written to RTS, so nothing is held back)` });
         continue;
       }
-      const next = leaveOut(src, first.path);
+      let next = null;
+      try { next = leaveOut(src, first.path); } catch { next = null; }
       if (!next || JSON.stringify(next) === JSON.stringify(src)) return giveUp();
       left.push({ ...first, severity: "warning", code: "LEFT_OUT", message: `${first.message} Left out: this value is not written to RTS.` });
       src = next;
@@ -757,16 +762,16 @@
   function analyzeParsed(srcIn, { extraIssues = [], extraRows = [], format = "text", lenient: soft = false } = {}) {
     const check = (src) => {
       const issues = [...extraIssues];
-      checkSourcePolicy(src, issues);
-      checkDomain(src, issues);
-      checkCodes(src.sic_codes, "SIC", /^\d{4}$/, src, issues);
-      checkCodes(src.naics_codes, "NAICS", /^\d{6}$/, src, issues);
-      checkKeywords(src, issues);
-      checkIndustry(src, issues);
-      checkManagement(src, issues);
-      checkDescription(src, issues);
-      checkNames(src, issues);
-      checkNonEnglish(src, issues);
+      safely(() => checkSourcePolicy(src, issues));
+      safely(() => checkDomain(src, issues));
+      safely(() => checkCodes(src.sic_codes, "SIC", /^\d{4}$/, src, issues));
+      safely(() => checkCodes(src.naics_codes, "NAICS", /^\d{6}$/, src, issues));
+      safely(() => checkKeywords(src, issues));
+      safely(() => checkIndustry(src, issues));
+      safely(() => checkManagement(src, issues));
+      safely(() => checkDescription(src, issues));
+      safely(() => checkNames(src, issues));
+      safely(() => checkNonEnglish(src, issues));
       return issues;
     };
     const { src, issues: all } = soft ? lenient(srcIn, check) : { src: srcIn, issues: check(srcIn) };
@@ -818,20 +823,20 @@
     const check = (current) => {
       const found = [...issues];
       walk(TEMPLATE, current, "", found, null, "");
-      checkSourcePolicy(current, found);
-      checkDomain(current, found);
-      checkFunding(current, found);
-      checkCodes(current.sic_codes, "SIC", /^\d{4}$/, current, found);
-      checkCodes(current.naics_codes, "NAICS", /^\d{6}$/, current, found);
-      checkKeywords(current, found);
-      checkIndustry(current, found);
-      checkManagement(current, found);
-      checkSourceHosts(current, found);
-      checkEmployeeCount(current, found);
-      checkNotForProfit(current, found);
-      checkDescription(current, found);
-      checkNames(current, found);
-      checkNonEnglish(current, found);
+      safely(() => checkSourcePolicy(current, found));
+      safely(() => checkDomain(current, found));
+      safely(() => checkFunding(current, found));
+      safely(() => checkCodes(current.sic_codes, "SIC", /^\d{4}$/, current, found));
+      safely(() => checkCodes(current.naics_codes, "NAICS", /^\d{6}$/, current, found));
+      safely(() => checkKeywords(current, found));
+      safely(() => checkIndustry(current, found));
+      safely(() => checkManagement(current, found));
+      safely(() => checkSourceHosts(current, found));
+      safely(() => checkEmployeeCount(current, found));
+      safely(() => checkNotForProfit(current, found));
+      safely(() => checkDescription(current, found));
+      safely(() => checkNames(current, found));
+      safely(() => checkNonEnglish(current, found));
       return found;
     };
     const result = options.lenient ? lenient(src, check) : { src, issues: check(src) };

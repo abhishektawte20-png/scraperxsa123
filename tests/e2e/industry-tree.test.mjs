@@ -25,7 +25,7 @@ function chromiumPath() {
 }
 
 function buildExtension(target, teamFile) {
-  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(repo, item), path.join(target, item), { recursive: true });
+  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(process.env.SX_PKG || repo, item), path.join(target, item), { recursive: true });
   const manifestPath = path.join(target, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.host_permissions = ["http://127.0.0.1/*"];

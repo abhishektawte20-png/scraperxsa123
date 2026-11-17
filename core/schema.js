@@ -336,6 +336,15 @@
     if (typeof raw !== "string" || !raw.trim()) {
       throw new SchemaValidationError(["Paste the ScraperX Rovo JSON response first."]);
     }
+    // A chat window may turn "https://a.com" into "[https://a.com](https://a.com)". When the words of the link are the address
+    // itself the address is what was meant, so it is written plainly again (and said). Any other link is still refused below.
+    const preFixes = [];
+    const bare = (u) => String(u).replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+    raw = raw.replace(/\[([^\]\s]+)\]\((https?:\/\/[^)\s]+)\)/g, (all, words, url) => {
+      if (bare(words) !== bare(url)) return all;
+      preFixes.push({ code: "MARKDOWN_LINK", message: "turned a link written as [address](address) back into the plain address" });
+      return url;
+    });
     detectMarkdownLinkCorruption(raw);
     const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     const firstBrace = cleaned.indexOf("{");
@@ -352,7 +361,7 @@
       const repair = globalThis.SXRTS.jsonRepair?.repair(body);
       if (repair?.ok) {
         const value = JSON.parse(repair.text);
-        if (isPlainObject(value)) return { value, fixes: repair.fixes };
+        if (isPlainObject(value)) return { value, fixes: [...preFixes, ...repair.fixes] };
       }
       const detail = globalThis.SXRTS.jsonRepair?.explain(error, body) ?? { reason: error.message, text: error.message };
       // When safe fixes were possible but something else is wrong too, say what the next problem is.
@@ -363,7 +372,7 @@
       const reason = "The response must be one JSON object.";
       throw syntaxFailure([reason], { kind: "notObject", reason, text: reason, line: null, column: null, near: "", caret: "" });
     }
-    return { value: parsed, fixes: [] };
+    return { value: parsed, fixes: preFixes };
   }
 
   function validateProfileIdentity(value, errors) {

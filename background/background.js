@@ -259,9 +259,15 @@ async function runInWindowOnce(tabId, job) {
   try {
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: (windowJob) => globalThis.SXRTS.workflows.popupWindow.run(windowJob),
+      // Chrome does NOT reject when the injected function throws: it answers with an empty result, and the message would be lost
+      // (it used to look like "the window closed", and the whole job was repeated in new windows). So the error is caught here
+      // inside the window and handed back as a value.
+      func: async (windowJob) => {
+        try { return await globalThis.SXRTS.workflows.popupWindow.run(windowJob); } catch (error) { return { __sxError: String((error && error.message) || error) }; }
+      },
       args: [job]
     });
+    if (injection?.result && typeof injection.result === "object" && "__sxError" in injection.result) throw new Error(injection.result.__sxError);
     // A page that navigates or closes itself as soon as Save is accepted (RTS submits the industry form)
     // ends the script without a result: that is "the window went away after Save", not a value.
     if (injection?.result === undefined || injection?.result === null) {
@@ -295,6 +301,15 @@ chrome.runtime.onConnect.addListener((port) => {
   const say = (message) => { try { port.postMessage(message); } catch { /* the page went away */ } };
 
   port.onMessage.addListener(async (message) => {
+    if (message?.type === "cleanup" && openerTabId !== undefined) {
+      // Only pop-up windows that THIS tab opened are closed; nothing else is touched.
+      try {
+        const stray = (await popupTabs(openerTabId, message.origin)).filter((tab) => tab.openerTabId === openerTabId);
+        if (stray.length) { await chrome.tabs.remove(stray.map((tab) => tab.id)).catch(() => {}); await new Promise((resolve) => setTimeout(resolve, 400)); }
+      } catch { /* nothing to clean */ }
+      say({ type: "cleaned" });
+      return;
+    }
     if (message?.type !== "start" || openerTabId === undefined) return;
     // Paused: no window is opened or driven.
     try {

@@ -22,7 +22,7 @@ function fixture(name) {
 // The very list background/background.js injects into a real tab (read from it,
 // so this test can never drift from the extension), minus the bootstrap that
 // mounts the panel by itself.
-const ASSISTANT_FILES = JSON.parse(/const ASSISTANT_FILES = (\[[\s\S]*?\]);/.exec(readFileSync(path.join(repo, "background/background.js"), "utf8"))[1]).filter((file) => file !== "content/bootstrap.js");
+const ASSISTANT_FILES = JSON.parse(/const ASSISTANT_FILES = (\[[\s\S]*?\]);/.exec(readFileSync(path.join(process.env.SX_PKG || repo, "background/background.js"), "utf8"))[1]).filter((file) => file !== "content/bootstrap.js");
 
 // The only piece not covered by an existing fixture file: the PBID header
 // and (initially blank) Domain field the identity lock reads. Kept
@@ -158,7 +158,7 @@ test("full panel -> execution plan -> workflow chain works in a real browser aga
     await page.evaluate(`(${wireStatusControls.toString()})(document)`);
 
     for (const file of ASSISTANT_FILES) {
-      await page.addScriptTag({ path: path.join(repo, file) });
+      await page.addScriptTag({ path: path.join(process.env.SX_PKG || repo, file) });
     }
 
     await page.evaluate(() => { globalThis.SXRTS.researcher = "Test.Researcher"; });

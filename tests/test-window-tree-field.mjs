@@ -46,6 +46,7 @@ function setup(replyFor) {
           onDisconnect: { addListener() {} },
           disconnect() {},
           postMessage(message) {
+            if (message.type === "cleanup") { state.cleanups = (state.cleanups || 0) + 1; setTimeout(() => listeners.forEach((fn) => fn({ type: "cleaned" })), 1); return; }
             state.jobs.push(message.job);
             const say = (m) => setTimeout(() => listeners.forEach((fn) => fn(m)), 5);
             say({ type: "armed" });
@@ -103,14 +104,14 @@ test("a window that goes away before reporting is opened again and the whole job
   assert.equal(state.jobs[2].verifyOnly, true);
 });
 
-test("a window that keeps going away is an error after 3 tries, never a success", async () => {
+test("a window that keeps going away is an error after 2 tries, never a success, and never more than 3 windows", async () => {
   const state = setup(() => ({ type: "error", error: "Frame with ID 0 was removed." }));
   await assert.rejects(run(), /Frame with ID 0/);
-  assert.equal(state.jobs.length, 5, "four tries, then one last look that only READS the tick");
-  assert.equal(state.jobs[4].verifyOnly, true);
+  assert.equal(state.jobs.length, 3, "two tries, then one last look that only READS the tick");
+  assert.equal(state.jobs[2].verifyOnly, true);
 });
 
-test("after three windows went away, a last read-back that shows the choice ticked is reported as saved by state, not as an error", async () => {
+test("after two windows went away, a last read-back that shows the choice ticked is reported as saved by state, not as an error", async () => {
   setup((job) => (job.verifyOnly ? result({ status: "verified", checked: true }) : { type: "error", error: "The window closed before it reported back (last step it reached: none). Nothing was confirmed." }));
   const outcome = await run();
   assert.equal(outcome.status, "savedStateVerified");
@@ -198,4 +199,22 @@ test("the Industry button that RTS draws a moment late is waited for, then used 
   setTimeout(() => { holder.appendChild(button); }, 250);
   const out = await run();
   assert.equal(out.status, "savedValueVerified");
+});
+
+test("leftover windows are closed once before the first window opens, never when undoing", async () => {
+  const state = setup(savedThenVerified);
+  await run();
+  assert.equal(state.cleanups, 1);
+});
+
+test("RTS redrew the button after it was found: the live button is pressed, not the detached one", async () => {
+  const state = setup(savedThenVerified);
+  const old = document.getElementById("addIndustry");
+  const fresh = old.cloneNode(true);
+  let freshClicks = 0;
+  fresh.addEventListener("click", () => freshClicks++);
+  setTimeout(() => old.replaceWith(fresh), 10); // after it was found, before the worker says "armed"
+  const out = await run();
+  assert.equal(out.status, "savedValueVerified");
+  assert.ok(freshClicks >= 1, "the new button got the click");
 });

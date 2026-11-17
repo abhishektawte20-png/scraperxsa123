@@ -252,7 +252,7 @@
         element("div", { className: "brand-mark", text: "SX" }),
         element("div", { className: "brand-text" }, [
           element("h1", { text: "ScraperX" }),
-          element("p", { className: "sub", text: "UI Automation Tool" }),
+          element("p", { className: "sub", text: `UI Automation Tool${globalThis.SXRTS.ui?.version?.() ? ` · v${globalThis.SXRTS.ui.version()}` : ""}` }),
           element("p", { className: "by", text: globalThis.SXRTS.ui?.CREDIT ?? "Developed by Abhishek Tawte" })
         ])
       ]),
@@ -1275,6 +1275,7 @@
       }
 
       const isWindowField = (entry) => { const d = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey); return Boolean(d && (d.window || d.tree)); };
+      const industryAssist = []; // window fields that could not be finished by themselves: a person is offered a way to finish them
       const customEntries = selected.filter((entry) => entry.action.customKey);
       for (const entry of customEntries.filter(isWindowField)) await publishCustom(entry);
 
@@ -1486,6 +1487,7 @@
         } catch (error) {
           failed++; setRowStatus(entry.action.actionId, "failed", error.message);
           recordResult(entry.action.jsonPath, { status: "error", error: error.message });
+          if (def.window?.tree) industryAssist.push({ def, value, why: error.message });
         }
       }
       for (const entry of customEntries.filter((e) => !isWindowField(e))) await publishCustom(entry);
@@ -1501,6 +1503,33 @@
       publishStatus.textContent = "";
       publishStatus.appendChild(summaryDiv);
       publishStatus.className = `status ${failed ? "error" : "success"}`;
+      // A window field that could not be done by itself is never left as a dead end: one click opens the window again (a real click
+      // always lets the window open), or the researcher ticks it by hand and has the extension check it.
+      for (const { def, value, why } of industryAssist) {
+        const box = document.createElement("div");
+        box.className = "assist-box";
+        const wanted = typeof value === "string" ? value : value?.value ?? JSON.stringify(value);
+        const note = document.createElement("div");
+        note.className = "helptext";
+        note.textContent = `${def.label} was not saved automatically: "${wanted}". Nothing was reported as saved. Reason: ${why}`;
+        const result = document.createElement("div");
+        result.className = "helptext";
+        const mk = (text, onClick) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn map"; b.textContent = text; b.addEventListener("click", async () => { b.disabled = true; result.textContent = "Working…"; try { result.textContent = await onClick(); } catch (error) { result.textContent = `Not done: ${error.message}`; } b.disabled = false; }); return b; };
+        const record = () => globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value);
+        const again = mk(`Try ${def.label} again`, async () => {
+          if (globalThis.SXRTS.runControl?.isPaused()) throw new Error("the extension is paused.");
+          const out = await globalThis.SXRTS.workflows.customField.applyCustomField(def, record());
+          if (out.status === "savedValueVerified" || out.status === "savedStateVerified") return `Done: ${def.label} is saved and was read back from RTS.`;
+          if (out.status === "skipped") return `Already in RTS: ${out.reason || ""}`;
+          return `Not confirmed (${out.status}).`;
+        });
+        const mine = mk("I ticked it myself: check it", async () => {
+          const out = await globalThis.SXRTS.workflows.customField.verifyTree(def, wanted);
+          return out.checked ? `Checked: "${wanted}" is ticked in RTS.` : `Not ticked yet: "${wanted}" is not ticked in RTS. Tick it in the Industry window, press Save, then check again.`;
+        });
+        box.append(note, again, mine, result);
+        publishStatus.appendChild(box);
+      }
       // Fields the report filled but RTS has no known place for: one button each, right here, to map them.
       const unmapped = lastActions.filter((a) => /registry entry|evidence for this field/i.test(a.skipReason || "") && globalThis.SXRTS.outputFields?.get(a.jsonPath));
       for (const action of unmapped) {

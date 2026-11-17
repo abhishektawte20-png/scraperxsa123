@@ -18,7 +18,7 @@ async function openGame(page) {
     window.__store = store;
     window.chrome = { storage: { local: { async get(k) { return k in store ? { [k]: JSON.parse(JSON.stringify(store[k])) } : {}; }, async set(o) { Object.assign(store, JSON.parse(JSON.stringify(o))); } } } };
   });
-  await page.addScriptTag({ path: path.join(repo, "content/game.js") });
+  await page.addScriptTag({ path: path.join(process.env.SX_PKG || repo, "content/game.js") });
   await page.evaluate(() => {
     const host = document.createElement("section");
     document.body.appendChild(host);

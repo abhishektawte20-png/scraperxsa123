@@ -91,6 +91,13 @@
           const tail = /^\s*([},\]])/.exec(src.slice(i + 3));
           if (tail) { out += '"'; quote = null; note("URL_QUOTE", i, "closed a web address whose closing quote mark was written as %22"); i += 3; continue; }
         }
+        // A chat window may turn a web address inside a value into a link: "[https://a.com](https://a.com)". When the words of the
+        // link ARE the address, the address itself is what was meant.
+        if (c === "[" && out.endsWith('"')) {
+          const m = /^\[([^\]\s]+)\]\((https?:\/\/[^)\s]+)\)/.exec(src.slice(i));
+          const bare = (u) => String(u).replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+          if (m && bare(m[1]) === bare(m[2])) { out += m[2]; note("MARKDOWN_LINK", i, "turned a link written as [address](address) back into the plain address"); i += m[0].length; continue; }
+        }
         if (c === "\t") { out += "\\t"; note("RAW_TAB", i, "wrote a raw tab inside a text value as \\t"); i++; continue; }
         out += c; i++; continue;
       }

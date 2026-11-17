@@ -376,7 +376,7 @@
 
   // Click the opener once the background worker is watching, then wait for
   // the worker to report what happened inside the window.
-  function runInWindowOnce(opener, job, fresh) {
+  function runInWindowOnce(opener, job, fresh, refind) {
     return new Promise((resolve, reject) => {
       const port = chrome.runtime.connect({ name: "sx-window" });
       let settled = false;
@@ -388,8 +388,20 @@
         action(value);
       };
       const timer = setTimeout(() => finish(reject, new Error("The popup window did not finish in time.")), WINDOW_TIMEOUT);
+      // RTS may have redrawn the button since it was found (the element in hand is then detached and clicking it does nothing),
+      // or it may still be greyed out for a moment: press the live, enabled button.
+      const pressOpener = async () => {
+        let el = opener;
+        const deadline = Date.now() + TIMEOUTS.enable;
+        while (Date.now() < deadline) {
+          if (!el?.isConnected && refind) el = refind() || el;
+          if (el?.isConnected && !el.disabled) break;
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        }
+        el.click();
+      };
       port.onMessage.addListener((message) => {
-        if (message.type === "armed") opener.click();
+        if (message.type === "armed") pressOpener();
         else if (message.type === "result") finish(resolve, message.result);
         else if (message.type === "error") finish(reject, Object.assign(new Error(message.error), { stale: message.stale === true }));
       });
@@ -400,13 +412,26 @@
 
   // If the window that was already open (RTS brings it to the front instead of opening a new one) turns out
   // to hold an old page, it is closed and the button is pressed once more to get a clean window.
-  async function runInWindow(opener, job) {
+  async function runInWindow(opener, job, refind) {
     try {
-      return await runInWindowOnce(opener, job, false);
+      return await runInWindowOnce(opener, job, false, refind);
     } catch (error) {
       if (error?.stale !== true) throw error;
-      return runInWindowOnce(opener, job, true);
+      return runInWindowOnce(opener, job, true, refind);
     }
+  }
+
+  // Closes any pop-up window of this site that this page opened earlier (left over from a failed run). RTS reuses one named
+  // window, so a leftover one would be brought to the front instead of a clean one opening, and then be mistaken for the new one.
+  function closeStrayWindows() {
+    return new Promise((resolve) => {
+      let port;
+      try { port = chrome.runtime.connect({ name: "sx-window" }); } catch { resolve(); return; }
+      const timer = setTimeout(() => { try { port.disconnect(); } catch { /* gone */ } resolve(); }, 4000);
+      port.onMessage.addListener((message) => { if (message.type === "cleaned") { clearTimeout(timer); try { port.disconnect(); } catch { /* gone */ } resolve(); } });
+      port.onDisconnect.addListener(() => { clearTimeout(timer); resolve(); });
+      port.postMessage({ type: "cleanup", origin: window.location.origin });
+    });
   }
 
   async function applyWindowed(def, record) {
@@ -469,9 +494,11 @@
     // whole job is run again: it is safe to repeat, because a choice that is already ticked is only reported.
     let result;
     let firstFailure = "";
+    const refind = def.rowBy ? null : () => globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+    if (tree && !record.undo) await closeStrayWindows();
     for (let attempt = 0; ; attempt++) {
       try {
-        result = await runInWindow(opener, job);
+        result = await runInWindow(opener, job, refind);
         break;
       } catch (error) {
         // A later try can fail for a different reason than the first. Both are shown, so the cause is not hidden.
@@ -483,12 +510,12 @@
         if (!firstFailure) firstFailure = String(error?.message);
         if (!tree || !/Frame with ID|was removed|No tab with id|closed before it reported back/i.test(String(error?.message))) throw error;
         const next = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
-        if (attempt >= 3) {
-          // Three windows went away without reporting. Before calling it a failure, open the window once more only to
+        if (attempt >= 1) {
+          // Two windows went away without reporting. Before calling it a failure, open the window once more only to
           // READ whether the choice is ticked: if RTS did save it, that is a real read-back, not a guess.
           if (next && !next.disabled) {
             try {
-              const look = await runInWindow(next, { tree: job.tree, value: job.value, verifyOnly: true });
+              const look = await runInWindow(next, { tree: job.tree, value: job.value, verifyOnly: true }, refind);
               const wanted = job.untick !== true;
               if (look?.status === "verified" && look.checked === wanted) return { status: "savedStateVerified", name: def.key, detail: `${name}: the window kept closing before it could report, but RTS shows the choice ${wanted ? "ticked" : "not ticked"}.` };
             } catch { /* fall through to the original error */ }
@@ -510,7 +537,7 @@
       if (result.status !== "saved" && result.status !== "windowClosedAfterSave") throw new Error(`${name}: the window ended unexpectedly (${result.status}).`);
       const again = def.rowBy ? null : globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
       if (!again || again.disabled) return { status: "savedStateVerified", name: def.key, detail: "Save was accepted, but the window could not be reopened to read the tick back. Check it in RTS." };
-      const check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true });
+      const check = await runInWindow(again, { tree: job.tree, value: job.value, verifyOnly: true }, refind);
       const wanted = job.untick !== true;
       if (check?.status === "verified" && check.checked === wanted) return { status: "savedValueVerified", name: def.key };
       throw new Error(`${name}: Save was clicked, but when the window was opened again the choice is ${wanted ? "not ticked" : "still ticked"}. Please check it in RTS.`);
@@ -578,7 +605,19 @@
     return def.kind === "single" ? applySingle(def, record) : applyRecord(def, record);
   }
 
+  // Opens the window ONCE and reads whether the choice is ticked (nothing is changed). Used after a person did it by hand.
+  async function verifyTree(def, value) {
+    const find = () => globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+    const opener = find();
+    if (!opener) throw new Error(`The button that opens the window for ${def.label} was not found. Open the Company tab and try again.`);
+    const tree = def.window?.tree;
+    if (!tree) throw new Error(`${def.label} is not a tree of choices.`);
+    const check = await runInWindow(opener, { tree: { expander: tree.expander || null, leaf: tree.leaf }, value: String(value), verifyOnly: true }, find);
+    if (check?.status !== "verified") throw new Error(`The window could not be read (${check?.status || "no answer"}).`);
+    return { checked: check.checked === true };
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow };
+  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow, verifyTree };
 })();

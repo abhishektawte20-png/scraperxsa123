@@ -102,14 +102,18 @@ function popupPage() {
 }
 
 // state: what the server holds. options: how slowly it answers and whether validateOnSave asks for a confirmation.
-export function createHandler({ loadMs = 400, validateMs = 300, saveMs = 500, confirmMessage = "", saveError = "", silentNoSave = false, alreadySaved = false } = {}) {
+export function createHandler({ dieFirst = 0, loadMs = 400, validateMs = 300, saveMs = 500, confirmMessage = "", saveError = "", silentNoSave = false, alreadySaved = false } = {}) {
   const state = { saved: alreadySaved ? [CONSULTING_ID()] : [], saveRequests: 0, validateRequests: 0, loadRequests: 0, saveFinished: 0 };
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const handler = async (req, res) => {
     const url = req.url.split("?")[0];
     const send = (body, type = "text/html") => { res.setHeader("content-type", type); res.end(body); };
     if (url === "/main.html") return send(mainPage());
-    if (url === "/industryGroup/create.html") return send(popupPage());
+    if (url === "/industryGroup/create.html") {
+      state.windowsOpened = (state.windowsOpened || 0) + 1;
+      if (state.windowsOpened <= dieFirst) return send("<!doctype html><script>window.close()</script>"); // a window that goes away by itself
+      return send(popupPage());
+    }
     if (url === "/jquery.min.js") return send(read("jquery.min.js"), "text/javascript");
     if (url === "/rts-industry-control.js") return send(read("rts-industry-control.js"), "text/javascript");
     if (url === "/state") return send(JSON.stringify(state), "application/json");

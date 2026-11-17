@@ -1,0 +1,327 @@
+{
+"extraction_status": "success",
+"halt_reason": null,
+"target_domain": "http://las.app.br",
+"extraction_date": "17 Nov 2026",
+"domain_confirmation": {
+"domain_provided": "http://las.app.br",
+"url_accessed": "https://las.app.br",
+"tld_match_confirmed": true
+},
+"not_for_profit_flag": {
+"is_not_for_profit": false,
+"note": "Not applicable"
+},
+"entity_details": {
+"entity_identified": true,
+"official_website": {
+"value": "https://las.app.br",
+"source_url": "https://las.app.br"
+}
+},
+"funding": {
+"timeline": [],
+"total_rounds_found": 0,
+"total_confirmed_funding": "Not found on the official website.",
+"latest_round": {
+"type": "Not found on the official website.",
+"date": "Not found on the official website.",
+"amount": "Not found on the official website."
+},
+"latest_investors": [],
+"backing_status": "Corporation / Bootstrapped",
+"team_routing": "All-Rounders/Private Company Team",
+"routing_logic": "No funding rounds were identified after a full website scan and comprehensive web search sweep.",
+"researcher_note": "The company appears to be a bootstrapped corporation owned by its founders.",
+"out_of_scope_rounds": [
+{
+"round_type": "No round identified under PB methodology",
+"status": "Not applicable",
+"date": "Not applicable",
+"amount": "Not applicable",
+"key_detail": "Not applicable",
+"source_url": null,
+"source_type": "Not applicable"
+}
+]
+},
+"website_links": {
+"pages_traversed": [
+"https://las.app.br",
+"https://las.app.br/pages/sobre-nos",
+"https://las.app.br/pages/contato",
+"https://las.app.br/policies/privacy-policy",
+"https://las.app.br/policies/refund-policy"
+],
+"key_links": [
+{
+"label": "Sobre Nós",
+"url": "https://las.app.br/pages/sobre-nos"
+},
+{
+"label": "Contato",
+"url": "https://las.app.br/pages/contato"
+}
+]
+},
+"name_variations": {
+"formal_name": {
+"value": "LAS",
+"source_url": "https://las.app.br/pages/sobre-nos"
+},
+"legal_name": {
+"value": "L.A.S. DO BRASIL COMÉRCIO DE PRODUTOS ANALÍTICOS E LABORATORIAIS LTDA",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"familiar_name": {
+"value": "Laboratory Analytical Solutions",
+"source_url": "https://las.app.br/pages/sobre-nos"
+},
+"former_name": {
+"value": "Not found on the official website.",
+"source_url": null
+},
+"other_name_variations": [
+{
+"name": "LAS do Brasil",
+"script": "Latin",
+"source_url": "https://br.indeed.com/cmp/Las-Do-Brasil"
+}
+]
+},
+"site_and_contact": {
+"full_address": {
+"value": "Av. Tanner de Melo s/n, Quadra 10, Lote 04, Pq. Ind. VP José de Alencar, Aparecida de Goiânia – GO, CEP: 74.993-500",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"city": {
+"value": "Aparecida de Goiânia",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"state_or_region": {
+"value": "Goiás",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"country": {
+"value": "Brazil",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"postcode": {
+"value": "74.993-500",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"phone": {
+"value": "+55 (62) 3085-1900",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+"fax": {
+"value": "Not found on the official website.",
+"source_url": null
+},
+"site_email": {
+"value": "ecommerce@las.app.br",
+"source_url": "https://las.app.br/policies/privacy-policy"
+},
+"start_date": {
+"value": "2004",
+"source_url": "https://br.indeed.com/cmp/Las-Do-Brasil",
+"corroborating_source_url": "https://revistaanalytica.com.br/las-do-brasil-investe-no-desenvolvimento-de-seus-processos-e-colaboradores/%22,
+"selection_logic": "The founding year 2004 is explicitly stated in the company profile on Indeed and corroborated by news articles mentioning the company has been operating for nearly two decades."
+}
+},
+"email_default_structure": {
+"value": "FirstName@domain.com",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf",
+"sample_emails_observed": [
+"ecommerce@las.app.br",
+"sac@las.app.br",
+"comunicacao@las.app.br",
+"licitacao@las.app.br",
+"comercial@las.app.br"
+]
+},
+"social_media_identifiers": {
+"linkedin": {
+"value": "Not found on the official website.",
+"source_url": null,
+"note": null
+},
+"twitter_x": {
+"value": "Not found on the official website.",
+"source_url": null,
+"note": null
+},
+"facebook": {
+"value": "Not found on the official website.",
+"source_url": null,
+"note": null
+},
+"instagram": {
+"value": "Not found on the official website.",
+"source_url": null,
+"note": null
+},
+"youtube": {
+"value": "https://www.youtube.com/@LasdoBrasil-ofc%22,
+"source_url": "https://www.youtube.com/@LasdoBrasil-ofc%22,
+"note": null
+},
+"other": []
+},
+"management": [
+{
+"full_name": "Marcelo Rocha da Silva",
+"titles": [
+"Sócio-Administrador",
+"Fundador"
+],
+"is_founder": true,
+"regional_title_equivalent": "Chief Executive Officer",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+},
+{
+"full_name": "Giselle Callegari",
+"titles": [
+"Sócia",
+"Fundadora"
+],
+"is_founder": true,
+"regional_title_equivalent": null,
+"source_url": "https://portaldatransparencia.gov.br/contratos/667195589/pessoa-juridica/06880842000161"
+}
+],
+"industry_classification": {
+"buyer_type": {
+"primary": "B2B",
+"evidence_1": {
+"quote": "Importadora e distribuidora de insumos analíticos, químicos e equipamentos que nasceu com a motivação em servir as necessidades de nossos clientes no mercado nacional.",
+"source_url": "https://las.app.br/pages/sobre-nos"
+},
+"evidence_2": {
+"quote": "CONTRATO DE AQUISIÇÃO DE INSUMOS DE LABORATÓRIO PARA O IAPF",
+"source_url": "https://sistema.comprasnet.se.gov.br/publico/temp/doc016732815.pdf"
+}
+},
+"primary_business_activity": "Import and distribution of analytical supplies, chemicals, and laboratory equipment for industrial and scientific use.",
+"public_identity_test": "Most people would call this company a laboratory equipment distributor.",
+"primary_industry_code": {
+"number": "1.1.3",
+"name": "Distributors/Wholesale"
+},
+"primary_industry_sector": "B2B",
+"evidence_for_primary_code": {
+"quote": "Importadora e distribuidora de insumos analíticos, químicos e equipamentos",
+"source_url": "https://las.app.br/pages/sobre-nos"
+},
+"logic": "The company identifies as an importer and distributor of laboratory supplies and chemicals, serving the national market in Brazil. It acts as a wholesaler connecting international brands with domestic clients.",
+"secondary_industry_codes": [
+{
+"number": "1.1.5",
+"name": "Industrial Supplies and Parts",
+"evidence": {
+"quote": "insumos analíticos, químicos e equipamentos",
+"source_url": "https://las.app.br/pages/sobre-nos"
+}
+}
+],
+"confidence": "High",
+"confidence_rationale": "The company's business model as a distributor is explicitly stated on its website and confirmed by government procurement contracts.",
+"additional_information_needed": null
+},
+"verticals": {
+"assigned": [
+{
+"vertical_name": "Life Sciences",
+"trigger_evidence": {
+"quote": "insumos analíticos, químicos e equipamentos... catalisador do desenvolvimento científico",
+"source_url": "https://las.app.br/pages/sobre-nos"
+},
+"definition_match_confirmation": "The company provides products and services rooted in biological and chemical sciences, including reference standards and laboratory equipment.",
+"gate_question_passed": "Q1, Q4"
+}
+],
+"evaluated_not_assigned": [
+{
+"vertical_name": "HealthTech",
+"rejection_reason": "The company distributes physical laboratory supplies and does not sell a digital health platform or IT infrastructure."
+}
+],
+"pages_reviewed": [
+"https://las.app.br/pages/sobre-nos",
+"https://las.app.br"
+]
+},
+"description": {
+"classification_prefix": "Distributor of",
+"transition_phrase": "intended for",
+"business_description": "Distributor of analytical supplies and laboratory equipment intended for scientific research and industrial analysis based in Aparecida de Goiânia, Goiás.",
+"full_description": "The company offers products such as chemical reagents, analytical instruments, reference standards, microbiology supplies, and laboratory consumables, enabling scientific laboratories to source high-quality materials for research and quality control processes."
+},
+"employee_count": {
+"current": {
+"count": "51-200",
+"date": "Nov 2026",
+"source_url": "https://revenuebase.ai/companies/chromatography-manufacturers/brazil"
+},
+"history": [
+{
+"count": "51-200",
+"date": "2004",
+"source_url": "https://br.indeed.com/cmp/Las-Do-Brasil"
+}
+],
+"notes": "Headcount range is reported by external business databases and career platforms."
+},
+"sic_codes": [
+{
+"rank": 1,
+"best_fit": true,
+"code": "5047",
+"title": "Medical, Dental, and Hospital Equipment and Supplies",
+"relevance": "The company distributes laboratory and analytical equipment often used in medical and pharmaceutical research.",
+"source": "OSHA SIC Manual"
+},
+{
+"rank": 2,
+"best_fit": false,
+"code": "5169",
+"title": "Chemicals and Allied Products, Not Elsewhere Classified",
+"relevance": "The company is a distributor of chemical reagents and analytical inputs.",
+"source": "OSHA SIC Manual"
+}
+],
+"naics_codes": [
+{
+"rank": 1,
+"best_fit": true,
+"code": "423450",
+"title": "Medical, Dental, and Hospital Equipment and Supplies Merchant Wholesalers",
+"relevance": "The company acts as a merchant wholesaler of laboratory and scientific equipment.",
+"source": "2022 NAICS Manual"
+},
+{
+"rank": 2,
+"best_fit": false,
+"code": "424690",
+"title": "Other Chemical and Allied Products Merchant Wholesalers",
+"relevance": "The company distributes chemical inputs and analytical reagents to laboratories.",
+"source": "2022 NAICS Manual"
+}
+],
+"keywords": [
+"analytical supplies",
+"laboratory equipment",
+"chemical reagents",
+"reference standards",
+"microbiology products",
+"scientific instruments",
+"pharmaceutical inputs",
+"chromatography consumables",
+"laboratory consumables",
+"industrial chemicals"
+],
+"anc": {
+"accepted_used": "AIGEN_SRX_V1_Y",
+"rejected_not_used": "AIGEN_SRX_V1_N"
+}
+}

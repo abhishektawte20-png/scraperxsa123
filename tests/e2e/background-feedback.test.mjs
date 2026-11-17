@@ -23,7 +23,7 @@ test("the worker starts, schedules the history purge, erases expired runs, and r
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-bg-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
-  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(repo, item), path.join(ext, item), { recursive: true });
+  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(process.env.SX_PKG || repo, item), path.join(ext, item), { recursive: true });
   const manifestPath = path.join(ext, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.host_permissions = [...manifest.host_permissions, "http://127.0.0.1/*"];
@@ -84,7 +84,7 @@ test("the weekly digest is posted once a week to the team channel, never without
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-digest-"));
   const ext = path.join(work, "ext");
   fs.mkdirSync(ext);
-  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(repo, item), path.join(ext, item), { recursive: true });
+  for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(process.env.SX_PKG || repo, item), path.join(ext, item), { recursive: true });
   const manifestPath = path.join(ext, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.host_permissions = [...manifest.host_permissions, "http://127.0.0.1/*"];

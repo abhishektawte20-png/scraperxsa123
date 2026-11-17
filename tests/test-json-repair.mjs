@@ -107,3 +107,13 @@ test("when safe fixes are not enough, the NEXT problem is reported too, not just
   assert.ok(r.tried.some((f) => f.code === "RAW_NEWLINE"));
   assert.match(r.next.text, /Something is missing between two items|Unexpected/);
 });
+
+test("an address the chat turned into a link, [address](address), is written plainly again; a link whose words differ from the address is NOT touched", () => {
+  const jr = globalThis.SXRTS.jsonRepair;
+  const fixed = jr.repair('{"a": "[https://x.com/a](https://x.com/a)", "b": "ok"}');
+  assert.equal(fixed.ok, true);
+  assert.deepEqual(JSON.parse(fixed.text), { a: "https://x.com/a", b: "ok" });
+  assert.ok(fixed.fixes.some((f) => f.code === "MARKDOWN_LINK"));
+  const other = jr.repair('{"a": "[click here](https://x.com/a)"}');
+  assert.deepEqual(JSON.parse(other.ok ? other.text : '{"a":"[click here](https://x.com/a)"}'), { a: "[click here](https://x.com/a)" });
+});
