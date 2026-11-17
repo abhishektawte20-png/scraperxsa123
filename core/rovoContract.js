@@ -201,7 +201,7 @@
       walk(template[name], value[name], childPath, issues, value, name);
     }
     for (const name of Object.keys(value)) {
-      if (!(name in template)) {
+      if (!(name in template) && !(name === "group" && /industry_classification\.(primary_industry_code|secondary_industry_codes\[\d+\])$/.test(path))) {
         issue(issues, "warning", "UNKNOWN_FIELD", path ? `${path}.${name}` : name, "is not part of the output contract and was not used.");
       }
     }
@@ -640,7 +640,11 @@
     one("address", sc.full_address); one("city", sc.city); one("state", sc.state_or_region); one("country", sc.country);
     one("postcode", sc.postcode); one("phone", sc.phone); one("fax", sc.fax); one("siteEmail", sc.site_email); one("startDate", sc.start_date);
     const ic = src.industry_classification?.primary_industry_code;
-    if (real(ic?.number)) extras.industryCode = { value: real(ic.name) ? `${ic.number} — ${ic.name}` : ic.number, action: act, source: null };
+    // The NAME is what RTS is searched by; the code is only a label (and breaks a tie between two choices with one name).
+    if (real(ic?.name) || real(ic?.number)) {
+      const value = real(ic.name) ? (real(ic.number) ? `${ic.number} — ${ic.name}` : ic.name) : ic.number;
+      extras.industryCode = { value, action: act, source: null, ...(real(ic.group) ? { group: ic.group } : {}) };
+    }
     const emp = src.employee_count?.current;
     if (real(String(emp?.count ?? ""))) extras.employeeCount = { value: String(emp.count), action: act, source: emp.source_url ?? null };
     const verticals = (src.verticals?.assigned || []).map((v) => v?.vertical_name).filter(real);

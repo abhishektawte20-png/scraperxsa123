@@ -181,8 +181,8 @@ test("a code that points at a different name ticks nothing", async () => {
 test("Other without a usable code is refused instead of guessing", async () => {
   const { state } = setup();
   indentByDepth();
-  await assert.rejects(run(job("Other")), /does not say which/);
-  await assert.rejects(run(job("2.2 — Other")), /does not say which/);
+  await assert.rejects(run(job("Other")), /cannot be told apart|does not say which/);
+  await assert.rejects(run(job("2.2 — Other")), /cannot be told apart|does not say which/);
   assert.equal(state.saves, 0);
 });
 

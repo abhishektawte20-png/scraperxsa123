@@ -326,6 +326,73 @@
     return treeShown(job.tree.leaf.selectors).map(choiceLabel).filter((text) => words.some((w) => plain(text).includes(w))).slice(0, 5);
   }
 
+  // Opens every branch of the tree (each once) so that every choice is on screen. A branch that was already open and just got
+  // closed by the click is opened again.
+  async function expandEverything(job) {
+    if (!job.tree.expander) return;
+    const leaves = () => treeShown(job.tree.leaf.selectors);
+    const expanders = () => treeShownAll(job.tree.expander.selectors);
+    const count = () => leaves().length + expanders().length;
+    const keyed = () => {
+      const seen = {};
+      return expanders().map((node) => {
+        const label = nextText(node);
+        seen[label] = (seen[label] || 0) + 1;
+        return { key: `${label}#${seen[label]}`, node };
+      });
+    };
+    const done = new Set();
+    const deadline = Date.now() + TIMEOUTS.search;
+    for (let pass = 0; pass < 80; pass++) {
+      const fresh = keyed().filter((item) => !done.has(item.key));
+      if (!fresh.length) break;
+      for (const item of fresh) {
+        if (Date.now() > deadline) throw new Error("Opening every branch of the tree took too long. The list may still be loading; try again.");
+        const live = keyed().find((x) => x.key === item.key);
+        if (!live) continue;
+        const before = count();
+        live.node.click();
+        await treeSettled(count);
+        done.add(item.key);
+        if (count() < before) {
+          const again = keyed().find((x) => x.key === item.key);
+          if (again) { again.node.click(); await treeSettled(count); }
+        }
+      }
+    }
+  }
+
+  // The names of the branches a choice sits under, outermost first (for RTS: its Group, then its Segment).
+  function pathOf(job, leaf) {
+    const names = [];
+    for (const selector of (job.tree.expander?.selectors || []).slice(0, 2)) {
+      const before = treeShown([selector]).filter((node) => after(node, leaf));
+      const last = before[before.length - 1];
+      names.push(last ? nextText(last) : "");
+    }
+    return names.filter(Boolean);
+  }
+  const groupMatches = (job, leaf) => {
+    const want = plain(job.group);
+    if (!want) return true;
+    const path = pathOf(job, leaf);
+    return [plain(path.join(" ")), plain(path[path.length - 1] || ""), plain(path[0] || "")].includes(want);
+  };
+
+  // The whole tree as lines: "Group > Segment > Name (code)". The code is RTS's own place for the choice (counted from 1).
+  async function runList(job) {
+    const present = await waitFor(() => treeShown(job.tree.leaf.selectors).length || treeShownAll(job.tree.expander?.selectors).length, TIMEOUTS.fields);
+    if (!present) throw new Error("The window opened, but its tree of choices was not found. Re-map the field.");
+    await expandEverything(job);
+    const items = treeShown(job.tree.leaf.selectors).map((leaf) => {
+      const place = tupleOf(leaf);
+      return { path: pathOf(job, leaf), name: choiceLabel(leaf), code: place ? place.map((n) => n + 1).join(".") : "" };
+    }).filter((item) => item.name);
+    window.setTimeout(() => window.close(), 150);
+    if (!items.length) throw new Error("The tree was found but no choices could be read from it.");
+    return { status: "list", items };
+  }
+
   // job: { tree: { expander?, leaf }, value, replace?, verifyOnly?, preSave, saveButton }
   async function runTree(job) {
     const choice = parseChoice(job.value);
@@ -333,32 +400,35 @@
     const present = await waitFor(() => treeShown(job.tree.leaf.selectors).length || treeShownAll(job.tree.expander?.selectors).length, TIMEOUTS.fields);
     if (!present) throw new Error("The window opened, but its tree of choices was not found. Re-map the field.");
 
-    // The place RTS gives the choice (when it says so) is the surest way: it never confuses two "Other"s.
+    // The NAME decides. The code the report carries is only used to tell apart two choices that share a name (the several
+    // "Other"s), and the group the report names does the same. A choice whose name is not in the tree is never ticked.
     const want = wantTuple(choice.code);
-    const here = () => treeShown(job.tree.leaf.selectors).filter((l) => sameTuple(tupleOf(l), want));
-    let hits = want ? here() : [];
-    if (!hits.length) hits = await findChoice(job, choice.name);
-    let placed = want ? hits.some((h) => sameTuple(tupleOf(h), want)) && hits.length === 1 : false;
-    if (!placed && want && (!hits.length || GENERIC.has(plain(choice.name)) || hits.length > 1)) {
-      const byPlace = await descendByTuple(job, want);
-      if (byPlace.length === 1) { hits = byPlace; placed = true; }
-    }
-    if (!placed && (GENERIC.has(plain(choice.name)) || hits.length > 1)) {
-      hits = await descendByCode(job, choice);
-    }
-    // Whatever was found must be where the report says and carry the reported name.
-    if (hits.length === 1 && want && sameTuple(tupleOf(hits[0]), want) && plain(choiceLabel(hits[0])) !== plain(choice.name)) {
-      throw new Error(`The report says ${choice.code} is "${choice.name}", but RTS lists "${choiceLabel(hits[0])}" at that code. Nothing was ticked: check the code and name.`);
-    }
-    if (hits.length === 1 && want) {
+    const generic = GENERIC.has(plain(choice.name));
+    let hits = await findChoice(job, choice.name);
+    if (hits.length === 1 && !generic && job.tree.expander) {
+      // Another choice with the same name may sit in a closed branch. When the report's code confirms the one found, that is
+      // settled; otherwise every branch is opened to be sure.
       const place = tupleOf(hits[0]);
-      if (place && !sameTuple(place, want)) throw new Error(`The report says ${choice.code} is "${choice.name}", but RTS lists "${choiceLabel(hits[0])}" at ${place.map((n) => n + 1).join(".")}, not at ${choice.code}. Nothing was ticked: check the code and name.`);
+      if (!(want && place && sameTuple(place, want))) {
+        await expandEverything(job);
+        hits = treeShown(job.tree.leaf.selectors).filter((leaf) => plain(choiceLabel(leaf)) === plain(choice.name));
+      }
+    }
+    if (hits.length > 1 || (generic && hits.length)) {
+      let all = hits;
+      if (job.tree.expander) { await expandEverything(job); all = treeShown(job.tree.leaf.selectors).filter((leaf) => plain(choiceLabel(leaf)) === plain(choice.name)); }
+      let narrowed = all.filter((leaf) => groupMatches(job, leaf));
+      if (narrowed.length > 1 && want) narrowed = narrowed.filter((leaf) => sameTuple(tupleOf(leaf), want));
+      hits = narrowed.length ? narrowed : all.filter((leaf) => want && sameTuple(tupleOf(leaf), want));
+      if (!hits.length && want) hits = await descendByTuple(job, want);
+      if (!hits.length && want) hits = await descendByCode(job, choice);
     }
     if (!hits.length) {
       const near = nearbyNames(job, choice.name);
-      throw new Error(`"${choice.name}" was not found in the tree of choices${near.length ? ` (similar: ${near.join(", ")})` : ""}. Check the name the report gives against RTS's list.`);
+      const atCode = want ? treeShown(job.tree.leaf.selectors).filter((leaf) => sameTuple(tupleOf(leaf), want)).map(choiceLabel)[0] : "";
+      throw new Error(`"${choice.name}" was not found in the tree of choices${near.length ? ` (similar: ${near.join(", ")})` : ""}${atCode ? ` (RTS lists "${atCode}" at ${choice.code})` : ""}. Check the name the report gives against RTS's list.`);
     }
-    if (hits.length > 1) throw new Error(`More than one choice in the tree is called "${choice.name}", so the right one cannot be told apart. Tick it by hand.`);
+    if (hits.length > 1) throw new Error(`More than one choice in the tree is called "${choice.name}"${job.group ? ` in "${job.group}"` : ""}, so the right one cannot be told apart. Tick it by hand.`);
     const box = hits[0];
     await report("choiceFound");
 
@@ -465,6 +535,7 @@
   // job: { replace, fields: [{ selectors, kind, value }], preSave: [button], saveButton }
   async function run(job) {
     if (job.rows) return runRows(job);
+    if (job.tree && job.list) return runList(job);
     if (job.tree) return runTree(job);
     const present = await waitFor(() => job.fields.every((field) => shownMatches(field.selectors).length), TIMEOUTS.fields);
     if (!present) throw new Error("The popup window opened, but the mapped fields were not found in it. Re-map the field.");

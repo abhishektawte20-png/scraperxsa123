@@ -48,6 +48,13 @@ async function publishIndustry(options = {}, code = "1.2.4 — Consulting Servic
         globalThis.SXRTS.panel.mount(host.attachShadow({ mode: "open" }));
       } });
     }, { tabId, files });
+    if (options.listOnly) {
+      await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+      await page.evaluate(() => [...document.getElementById("sx-test-root").shadowRoot.querySelectorAll("button")].find((b) => b.textContent === "Copy RTS industry list").click());
+      let copied = "";
+      for (let i = 0; i < 90 && !copied; i++) { await page.waitForTimeout(500); copied = await page.evaluate(() => navigator.clipboard.readText().catch(() => "")); }
+      return { copied, status: await page.evaluate(() => document.getElementById("sx-test-root").shadowRoot.querySelector(".status")?.textContent || ""), server: JSON.parse(JSON.stringify(site.state)), model: site.MODEL, openWindows: ctx.pages().filter((p) => p.url().includes("/industryGroup/create.html")).length };
+    }
     await page.evaluate((text) => {
       const root = document.getElementById("sx-test-root").shadowRoot;
       const area = root.querySelector("#sxrts-response");
@@ -181,4 +188,18 @@ test("'I ticked it myself: check it' reads the tick: not ticked says so, never a
   const r = await publishIndustry({ dieFirst: 3, clickMine: true });
   assert.match(r.assistAnswer, /^Not ticked yet/, r.assistAnswer);
   assert.deepEqual(r.server.saved, []);
+});
+
+test("'Copy RTS industry list' opens the window once, opens every branch and copies every choice as Group > Segment > Name (code)", { timeout: 240000 }, async () => {
+  const r = await publishIndustry({ listOnly: true });
+  if (process.env.DBG) console.log("COPIED", JSON.stringify(r.copied).slice(0, 800), "STATUS", r.status);
+  const lines = r.copied.split("\n");
+  const everyChoice = r.model.flatMap((g) => g.segs.flatMap((s) => s.codes.map((c) => c.n)));
+  assert.equal(lines.length, everyChoice.length, `one line per choice (${everyChoice.length}), got ${lines.length}`);
+  for (const name of everyChoice) assert.ok(lines.some((l) => l.includes(`> ${name}`) || l.startsWith(name)), `missing: ${name}`);
+  assert.ok(lines.every((l) => /\(\d+\.\d+\.\d+\)$/.test(l)), "every line ends with its code, e.g. (1.2.4)");
+  assert.ok(lines.some((l) => /Consulting Services$|Consulting Services  \(1\.2\.4\)$/.test(l)));
+  assert.equal(r.server.loadRequests, 1, "the window is opened once");
+  assert.deepEqual(r.server.saved, [], "nothing is changed in RTS");
+  assert.equal(r.openWindows, 0, "the window is closed again");
 });

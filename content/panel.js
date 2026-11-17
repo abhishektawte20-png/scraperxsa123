@@ -391,6 +391,27 @@
     const mappingsUi = globalThis.SXRTS.mappingsUi?.mount(shadow);
     const mappingsButton = element("button", { className: "btn secondary", text: "Mappings", type: "button", tip: "Every data point and the steps used to fill it: built-in fields, mapped fields and rules. Read-only." });
     mappingsButton.addEventListener("click", () => mappingsUi?.open());
+    // One click: opens the Industry window once, opens every branch, and copies every choice as "Group > Segment > Name (code)", the
+    // list the agent is given so that it writes industry names exactly as RTS prints them.
+    const industryListButton = element("button", { className: "btn secondary", text: "Copy RTS industry list", type: "button", tip: "Opens the Industry window once (on the Company tab), reads every industry choice and copies them as lines: Group > Segment > Name (code). Paste the list into the agent's instructions so it writes industry names exactly as RTS has them. Nothing is changed in RTS." });
+    industryListButton.addEventListener("click", async () => {
+      if (globalThis.SXRTS.runControl?.isPaused()) { showPausedNotice?.(); return; }
+      const def = globalThis.SXRTS.customFields?.getBoundDef?.("extras.industryCode");
+      if (def && !def.window?.tree) { setStatus(validateStatus, "The Industry code mapping is not a window with a tree of choices.", "error"); return; }
+      if (!def) { setStatus(validateStatus, "The Industry code mapping is not set up on this computer, so the list cannot be read.", "error"); return; }
+      industryListButton.disabled = true;
+      setStatus(validateStatus, "Reading the Industry window (it opens once and closes by itself)…", "success");
+      try {
+        await globalThis.SXRTS.navigation?.showTab("Company");
+        const lines = await globalThis.SXRTS.workflows.customField.listTree(def);
+        const text = lines.join("\n");
+        try { await navigator.clipboard.writeText(text); setStatus(validateStatus, `Copied ${lines.length} industry choices. Paste them into the agent's instructions (the "THE COMPLETE RTS INDUSTRY LIST" place).`, "success"); }
+        catch { textarea.value = text; setStatus(validateStatus, `Read ${lines.length} industry choices, but the browser blocked copying. They were placed in the box above: select and copy them.`, "error"); }
+      } catch (error) {
+        setStatus(validateStatus, `The industry list could not be read: ${error.message}`, "error");
+      }
+      industryListButton.disabled = false;
+    });
     const rulesButton = element("button", { className: "btn secondary", text: "Output rules", type: "button", tip: "Saved changes applied to the agent's output before it reaches RTS. Example: keep only the Facebook handle instead of the whole URL." });
     rulesButton.addEventListener("click", () => rulesUi?.open());
 
@@ -424,7 +445,7 @@
     rc?.onChange(showPause);
     rc?.load().then(() => showPause(rc.isPaused()));
     identityCard.appendChild(pauseBanner);
-    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, mappingsButton, rulesButton, historyButton, pauseButton, feedbackButton, gameButton]));
+    identityCard.appendChild(element("div", { className: "buttons" }, [copyPromptButton, openRovoButton, teachButton, mappingsButton, industryListButton, rulesButton, historyButton, pauseButton, feedbackButton, gameButton]));
     identityCard.appendChild(element("p", { className: "helptext", text: "The prompt starts with the domain, then gives the agent the exact JSON format this tool validates. It never changes your methodology, only how the finished result is written." }));
     body.appendChild(identityCard);
 
@@ -1490,7 +1511,48 @@
           if (def.window?.tree) industryAssist.push({ def, value, why: error.message });
         }
       }
-      for (const entry of customEntries.filter((e) => !isWindowField(e))) await publishCustom(entry);
+      // Keywords (a box where words are typed and become tags): all the words are added, then ONE Save and one read-back.
+      async function publishTags(def, entries) {
+        const live = entries.filter((entry) => !holdIfPaused(entry));
+        if (!live.length) return;
+        progress.doing(`${def.label} (all at once, one Save)`);
+        await globalThis.SXRTS.navigation?.showTab("Company");
+        const prepared = [];
+        for (const entry of live) {
+          const value = validatedValueFor(entry);
+          if (value === undefined) continue;
+          prepared.push({ entry, value, record: globalThis.SXRTS.customFields.normalizeRecord(def, def.binds ? globalThis.SXRTS.customFields.toDefRecord(def, value) : value) });
+        }
+        if (!prepared.length) return;
+        let outcomes;
+        try {
+          outcomes = await globalThis.SXRTS.workflows.customField.applyTagBoxMany(def, prepared.map((p) => p.record));
+        } catch (error) {
+          outcomes = prepared.map(() => ({ status: "failed", reason: error.message }));
+        }
+        prepared.forEach(({ entry, value }, index) => {
+          const result = outcomes[index] || { status: "failed", reason: "no result" };
+          const message = result.reason || result.detail || "";
+          if (result.status === "failed") { failed++; setRowStatus(entry.action.actionId, "failed", message); recordResult(entry.action.jsonPath, { status: "error", error: message }); return; }
+          recordResult(entry.action.jsonPath, result);
+          keepForUndo(entry, value, result, { treeWindow: false, single: false });
+          if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
+          else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
+        });
+      }
+      const tagGroups = new Map();
+      const singles = [];
+      const plainEntries = customEntries.filter((e) => !isWindowField(e));
+      if (plainEntries.some((e) => !/^businessEntity\.|^extras\.startDate$/.test(e.action.jsonPath))) await globalThis.SXRTS.navigation?.showTab("Company");
+      for (const entry of plainEntries) {
+        const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
+        const tagShaped = Boolean(def && def.kind === "record" && def.addButton && def.fields.length === 1 && def.fields[0].kind === "text");
+        if (tagShaped && !globalThis.SXRTS.workflows.customField.isTagBoxNow?.(def)) await globalThis.SXRTS.navigation?.openClosedSections?.(() => globalThis.SXRTS.workflows.customField.isTagBoxNow(def));
+        if (def && globalThis.SXRTS.workflows.customField.isTagBoxNow?.(def)) { if (!tagGroups.has(def.key)) tagGroups.set(def.key, { def, entries: [] }); tagGroups.get(def.key).entries.push(entry); }
+        else singles.push(entry);
+      }
+      for (const { def, entries } of tagGroups.values()) await publishTags(def, entries);
+      for (const entry of singles) await publishCustom(entry);
 
       progress.finish(applied, skipped, failed);
       const editsAfter = globalThis.SXRTS.navigation?.readLastEdits?.() ?? [];

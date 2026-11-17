@@ -184,6 +184,8 @@
     const record = { action: outRecord?.action || "addIfMissing", source: outRecord?.source ?? null };
     // Names the row whose window is filled (for example the network).
     if (def.rowBy) record.__row = outRecord?.[def.rowBy.outKey] ?? null;
+    // The group a choice sits in (when the agent names it): only used to tell apart choices that share a name.
+    if (outRecord?.group) record.__group = String(outRecord.group);
     for (const field of def.fields) {
       const outKey = def.binds.map[field.key];
       const value = outRecord?.[outKey];

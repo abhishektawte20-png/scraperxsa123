@@ -81,3 +81,18 @@ test("the real las.app.br output that sent a researcher back to the agent (three
   const yt = JSON.stringify(v);
   assert.match(yt, /https:\/\/www\.youtube\.com\/@LasdoBrasil-ofc"/);
 });
+
+test("the industry goes by its NAME: a group the agent names is carried to the tree search, and a name without a usable code is still used", async () => {
+  await import("../core/customFields.js");
+  const o = validOutput();
+  o.industry_classification.primary_industry_code = { number: "1.2.4", name: "Consulting Services (B2B)", group: "Business Products and Services (B2B) > Commercial Services (B2B)" };
+  const v = validate(o);
+  assert.equal(v.extras.industryCode.value, "1.2.4 — Consulting Services (B2B)");
+  assert.equal(v.extras.industryCode.group, "Business Products and Services (B2B) > Commercial Services (B2B)");
+  assert.ok(!v.warnings.some((w) => /UNKNOWN_FIELD.*group/.test(w)), "the optional group is not reported as an unknown field");
+  const def = { key: "x", label: "Industry", kind: "single", fields: [{ key: "value", kind: "tree", selectors: [] }], binds: { path: "extras.industryCode", map: { value: "value" } } };
+  assert.equal(globalThis.SXRTS.customFields.toDefRecord(def, v.extras.industryCode).__group, "Business Products and Services (B2B) > Commercial Services (B2B)");
+  const o2 = validOutput();
+  o2.industry_classification.primary_industry_code = { number: "Not defined in methodology.", name: "Consulting Services (B2B)" };
+  assert.equal(validate(o2).extras.industryCode.value, "Consulting Services (B2B)");
+});

@@ -305,11 +305,11 @@ test("a generic name such as Other is chosen by its code, in the right group, in
   assert.equal(result.saves, 1);
 });
 
-test("a name that RTS lists at a different code than the report says ticks nothing", { timeout: 150000 }, async () => {
+test("the NAME decides: a name RTS lists at a different code than the report says is still ticked (the code is only a label)", { timeout: 150000 }, async () => {
   const result = await scenario("close", "2.1.2 — Footwear");
-  assert.match(result.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/);
-  assert.deepEqual(result.industries, []);
-  assert.equal(result.saves, 0);
+  assert.equal(result.summary, "Saved 1 · Already in RTS 0 · Needs attention 0");
+  assert.deepEqual(result.industries, ["Apparel and Accessories > Footwear"]);
+  assert.equal(result.saves, 1);
 });
 
 test("a name that is not in the tree publishes nothing", { timeout: 150000 }, async () => {

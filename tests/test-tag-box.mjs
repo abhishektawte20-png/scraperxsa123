@@ -148,3 +148,38 @@ test("when Enter alone adds nothing, the suggestion row for that word is clicked
   assert.equal(wrongClicks, 0);
   assert.equal(state.saves, 1);
 });
+
+const runMany = (values) => globalThis.SXRTS.workflows.customField.applyTagBoxMany(def, values.map((value) => ({ action: "addIfMissing", value })));
+
+test("ALL the keywords are typed first and Save is pressed ONCE, then every tag is read back", async () => {
+  const { state, tags } = setup();
+  const out = await runMany(["high jewellery", "luxury diamonds", "coloured gemstones", "bespoke jewellery"]);
+  assert.deepEqual(out.map((r) => r.status), ["savedValueVerified", "savedValueVerified", "savedValueVerified", "savedValueVerified"]);
+  assert.equal(state.saves, 1, "one Save for four keywords, not four");
+  for (const word of ["high jewellery", "luxury diamonds", "coloured gemstones", "bespoke jewellery"]) assert.ok(tags().some((t) => t.startsWith(word)), word);
+});
+
+test("batch: a word that is already a tag, and a repeated word, are skipped; the rest are added with one Save", async () => {
+  const { state } = setup({ existing: ["agentic ai (1185)"] });
+  const out = await runMany(["agentic ai", "fleet tools", "fleet tools", "route maps"]);
+  assert.deepEqual(out.map((r) => r.status), ["skipped", "savedValueVerified", "skipped", "savedValueVerified"]);
+  assert.equal(state.saves, 1);
+});
+
+test("batch: one word that never becomes a tag fails on its own; the others are still added and saved", async () => {
+  const { state, doc } = setup();
+  const input = doc.querySelector("input");
+  // Enter adds every word except "stubborn word"
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter" && input.value.trim() === "stubborn word") event.stopImmediatePropagation(); }, true);
+  const out = await runMany(["good one", "stubborn word", "good two"]);
+  assert.deepEqual(out.map((r) => r.status), ["savedValueVerified", "failed", "savedValueVerified"]);
+  assert.match(out[1].reason, /no tag appeared/);
+  assert.equal(state.saves, 1);
+  assert.equal(input.value, "", "the stubborn word is not left typed in the box");
+});
+
+test("batch: if the page drops the tags after Save, none is reported as saved", async () => {
+  setup({ dropsTag: true });
+  const out = await runMany(["alpha beta", "gamma delta"]);
+  assert.ok(out.every((r) => r.status === "failed"), JSON.stringify(out));
+});

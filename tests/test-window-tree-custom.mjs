@@ -60,7 +60,7 @@ function setup({ lazy = false, closeOnSave = false } = {}) {
     t.className = open ? "mt_5 sub-section__icon-expand section__icon" : "mt_5 sub-section__icon-collapse section__icon";
   });
   save.addEventListener("click", () => { state.saves++; if (closeOnSave) doc.getElementById("root").remove(); save.disabled = true; });
-  Object.assign(globalThis.SXRTS.workflows.popupWindow.TIMEOUTS, { fields: 400, button: 400, settle: 400, after: 20, branch: 120, poll: 5, search: 5000 });
+  Object.assign(globalThis.SXRTS.workflows.popupWindow.TIMEOUTS, { fields: 400, button: 400, settle: 400, after: 20, branch: 120, poll: 5, search: 5000, afterSave: 250 });
   const ticked = () => Array.from(doc.querySelectorAll(".controls_checkBox_checked")).map((b) => b.parentElement.parentElement.querySelector("[id$=Description]").textContent);
   return { doc, state, ticked };
 }
@@ -107,10 +107,16 @@ test("a generic name such as Other goes by the place RTS gives it, even with no 
   assert.match(box.getAttribute("onclick"), /checkCode\(this, 1, 1, 1\)/, "sector 1, group 1, choice 1 (from 0)");
 });
 
-test("a place that holds a different name, or a wrong name for a place, ticks nothing", async () => {
+test("the NAME decides: a name that exists is ticked wherever RTS has it, even when the report's code is wrong", async () => {
   const { ticked, state } = setup();
-  await assert.rejects(run(job("2.1.2 — Footwear")), /RTS lists "Footwear" at 2\.1\.3, not at 2\.1\.2/);
-  await assert.rejects(run(job("2.2.2 — Chemicals")), /RTS lists "Chemicals" at 1\.1\.2, not at 2\.2\.2/);
+  assert.equal((await run(job("2.1.2 — Footwear"))).status, "saved"); // Footwear is at 2.1.3, the code is off by one
+  assert.equal(state.saves, 1);
+  assert.ok(ticked().includes("Footwear"));
+});
+
+test("a name that is NOT in the tree ticks nothing, and the message names what RTS lists at that code", async () => {
+  const { ticked, state } = setup();
+  await assert.rejects(run(job("2.1.2 — Shoes and Boots")), /not found in the tree of choices/);
   assert.equal(state.saves, 0);
   assert.deepEqual(ticked(), ["Clothing"]);
 });
@@ -159,4 +165,44 @@ test("Detect opens branches when the drawn boxes exist only after a branch is op
   const found = await globalThis.SXRTS.popupPicker.detectTree(globalThis.SXRTS.selectorBuilder, null);
   assert.ok(found.leaf, found.notes.join(" "));
   assert.match(found.summary.join(" "), /11 choices in 7 branches/);
+});
+
+const tickedBoxPlace = () => Array.from(document.querySelectorAll(".controls_checkBox_checked")).filter((b) => /Other/.test(b.parentElement.parentElement.textContent)).map((b) => /checkCode\(this, (\d+), (\d+), (\d+)\)/.exec(b.getAttribute("onclick")).slice(1, 4).join("."));
+
+test("two choices share a name (Other): the group the report names says which one, with no code at all", async () => {
+  const { state } = setup();
+  const out = await run(job("Other", { group: "Apparel and Accessories" }));
+  assert.equal(out.status, "saved");
+  assert.equal(state.saves, 1);
+  assert.deepEqual(tickedBoxPlace(), ["1.0.3"], "the Other under Consumer / Apparel and Accessories, nothing else");
+});
+
+test("the group may be written with its sector in front: Group > Segment", async () => {
+  setup();
+  const out = await run(job("Other", { group: "Information Technology > Software" }));
+  assert.equal(out.status, "saved");
+  assert.deepEqual(tickedBoxPlace(), ["2.0.1"]);
+});
+
+test("the code breaks the tie when no group is given", async () => {
+  setup();
+  const out = await run(job("2.1.4 — Other"));
+  assert.equal(out.status, "saved");
+  assert.deepEqual(tickedBoxPlace(), ["1.0.3"]);
+});
+
+test("a name shared by several choices with no group and no code is refused, never guessed", async () => {
+  const { state } = setup();
+  await assert.rejects(run(job("Other")), /cannot be told apart/);
+  assert.equal(state.saves, 0);
+});
+
+test("the whole tree is read as lines of Group > Segment > Name with RTS's own code", async () => {
+  setup();
+  const out = await run({ tree: { leaf, expander }, list: true });
+  assert.equal(out.status, "list");
+  const lines = out.items.map((i) => `${[...i.path, i.name].join(" > ")}  (${i.code})`);
+  assert.ok(lines.includes("Consumer Products and Services (B2C) > Apparel and Accessories > Clothing  (2.1.2)"), lines.join("\n"));
+  assert.ok(lines.some((l) => /Information Technology > Software > Other/.test(l)));
+  assert.equal(out.items.filter((i) => i.name === "Other").length >= 4, true);
 });

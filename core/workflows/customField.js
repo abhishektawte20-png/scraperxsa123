@@ -284,6 +284,65 @@
     return { status: "savedValueVerified", name: def.key };
   }
 
+  // Several words into one tag box with ONE Save (Keywords): each word is typed and turned into a tag, then Save is pressed once
+  // and every tag is read back. Returns one result per record, in the same order. A word that cannot be added is reported on its own
+  // and does not stop the others; a word that is not there after Save is reported as failed.
+  async function applyTagBoxMany(def, records) {
+    const field = def.fields[0];
+    const sb = globalThis.SXRTS.selectorBuilder;
+    const add = sb.resolveButtonByDefinition(def.addButton);
+    const input = sb.resolveAll(field.selectors).find(isShown);
+    if (!add || !input) throw new Error(`The ${def.label} box was not found on this page. Open the right tab/section, or re-map the field.`);
+    const container = add.contains(input) && add !== input ? add : (input.parentElement || input);
+    const there = (want) => tagsIn(container, input).includes(want) || pillWords(container, input).includes(want);
+    const results = records.map(() => null);
+    const typed = [];
+
+    for (let i = 0; i < records.length; i++) {
+      const value = String(records[i]?.[field.key] ?? "").trim();
+      const want = tagWord(value);
+      if (!value) { results[i] = { status: "skipped", reason: "no values proposed" }; continue; }
+      if (there(want) || typed.some((t) => t.want === want)) { results[i] = { status: "skipped", reason: "duplicate", detail: `${def.label}: "${value}" is already there.` }; continue; }
+      const pillsBefore = pillsIn(container, input).length;
+      const isThere = () => there(want) || pillsIn(container, input).length > pillsBefore;
+      input.focus();
+      await globalThis.SXRTS.adapters.textField.applyText(input, value);
+      let added = false;
+      for (let attempt = 0; attempt < TAG_ATTEMPTS.length && !added; attempt++) {
+        // RTS draws a list of suggestions after typing; Enter pressed before it exists is ignored. Wait for it (at most the usual
+        // time), and press Enter the moment it is there.
+        await waitFor(() => Boolean(suggestionFor(input, container, value)), TAG_ATTEMPTS[attempt].before);
+        if (document.activeElement !== input) input.focus();
+        for (const type of ["keydown", "keypress", "keyup"]) input.dispatchEvent(new window.KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        added = await waitFor(isThere, TAG_ATTEMPTS[attempt].after);
+        if (!added) {
+          const row = suggestionFor(input, container, value);
+          if (row) { row.click(); added = await waitFor(isThere, TAG_ATTEMPTS[attempt].after); }
+        }
+      }
+      if (added) typed.push({ i, value, want });
+      else results[i] = { status: "failed", reason: `${def.label}: "${value}" was typed and Enter was pressed, but no tag appeared. The suggestion list may need a click: send the report so the box can be mapped.` };
+    }
+    if (input.value) await globalThis.SXRTS.adapters.textField.applyText(input, ""); // a word that never became a tag is not left in the box
+
+    if (typed.length) {
+      // Some pages save on Enter; others enable Save Changes. Press it only if it is waiting: ONCE for all the words.
+      const save = findButton(def, def.saveButton);
+      let saveError = "";
+      if (save && !save.disabled) { try { await clickSave(def); } catch (error) { saveError = error.message; } }
+      await waitFor(() => false, 250); // a page that re-draws the list after saving would drop an unsaved tag
+      for (const t of typed) {
+        if (saveError) results[t.i] = { status: "failed", reason: saveError };
+        else if (there(t.want)) results[t.i] = { status: "savedValueVerified", name: def.key };
+        else results[t.i] = { status: "failed", reason: `Save did not complete for ${def.label}: the tag "${t.value}" is no longer there.` };
+      }
+    }
+    return results;
+  }
+
+  // Is this mapping a tag box (words typed and turned into tags) that is on the page right now?
+  const isTagBoxNow = (def) => { try { return def.kind === "record" && isTagBox(def); } catch { return false; } };
+
   async function applyRecord(def, record) {
     const fields = filled(def, record);
     if (!fields.length) return { status: "skipped", reason: "no values proposed" };
@@ -476,6 +535,7 @@
     const job = tree ? {
       tree: { expander: tree.expander || null, leaf: tree.leaf },
       value: String(record.value),
+      ...(record.__group ? { group: String(record.__group) } : {}),
       ...(record.undo === true ? { untick: true } : {}),
       preSave: (def.window.preSave || []).filter((button) => !((Boolean(button.selectors?.[0]) && button.selectors[0] === def.saveButton?.selectors?.[0]) || (button.text && def.saveButton?.text && button.text.trim().toLowerCase() === def.saveButton.text.trim().toLowerCase()))),
       saveButton: def.saveButton
@@ -617,7 +677,21 @@
     return { checked: check.checked === true };
   }
 
+  // Opens the Industry window once, opens every branch and reads every choice. Returns lines "Group > Segment > Name (code)".
+  async function listTree(def) {
+    const find = () => globalThis.SXRTS.selectorBuilder.resolveButtonByDefinition(def.openButton);
+    await globalThis.SXRTS.navigation?.openClosedSections?.(() => Boolean(find()));
+    const opener = find();
+    if (!opener) throw new Error(`The button that opens the window for ${def.label} was not found. Open the Company tab and try again.`);
+    const tree = def.window?.tree;
+    if (!tree) throw new Error(`${def.label} is not a tree of choices.`);
+    await closeStrayWindows();
+    const out = await runInWindow(opener, { tree: { expander: tree.expander || null, leaf: tree.leaf }, list: true }, find);
+    if (out?.status !== "list") throw new Error(`The window could not be read (${out?.status || "no answer"}).`);
+    return out.items.map((item) => `${[...item.path, item.name].join(" > ")}${item.code ? `  (${item.code})` : ""}`);
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow, verifyTree };
+  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow, verifyTree, listTree, applyTagBoxMany, isTagBoxNow };
 })();
