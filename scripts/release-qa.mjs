@@ -61,7 +61,7 @@ try {
   }
 } catch (error) { bad(`team defaults: ${error.message}`); }
 try {
-  const check = globalThis.SXRTS.feedback?.check?.();
+  const check = globalThis.SXRTS.feedback?.check?.(globalThis.SXRTS.feedbackConfig?.webhookUrl);
   if (wantWebhook) check?.ok ? ok(`feedback channel set (${check.kind})`) : bad("the feedback channel (Teams address) is NOT set in this package");
   else console.log(`  info feedback channel: ${check?.ok ? "set" : "not set"}`);
 } catch (error) { bad(`feedback check: ${error.message}`); }
