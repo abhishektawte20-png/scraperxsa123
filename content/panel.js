@@ -1319,7 +1319,8 @@
         if (outcome) {
           for (const { entry, name } of named) {
             const one = outcome.results[name] ?? { status: "failed", detail: `${name}: no result.` };
-            if (one.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail); recordResult(entry.action.jsonPath, { status: "savedValueVerified", name, detail: one.detail }); }
+            if (one.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail); recordResult(entry.action.jsonPath, { status: "savedStateVerified", name, detail: one.detail }); }
+            else if (one.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail); recordResult(entry.action.jsonPath, { status: "savedValueVerified", name, detail: one.detail }); }
             else if (one.status === "skipped") { skipped++; setRowStatus(entry.action.actionId, "skipped", one.detail); recordResult(entry.action.jsonPath, { status: "skipped", reason: one.detail }); }
             else { failed++; setRowStatus(entry.action.actionId, "failed", one.detail); recordResult(entry.action.jsonPath, { status: "error", error: one.detail }); }
           }
@@ -1517,6 +1518,9 @@
         if (!live.length) return;
         progress.doing(`${def.label} (all at once, one Save)`);
         await globalThis.SXRTS.navigation?.showTab("Company");
+        // The box may be drawn a moment late or sit in a closed section: wait for it. Only when it really is not a box where words
+        // become tags is each keyword done the old way (one at a time).
+        if (!(await globalThis.SXRTS.workflows.customField.waitForTagBox(def, 5000))) { progress.doing(`${def.label} (one at a time: its box is not a tag box on this page)`); for (const entry of live) await publishCustom(entry); return; }
         const prepared = [];
         for (const entry of live) {
           const value = validatedValueFor(entry);
@@ -1546,9 +1550,8 @@
       if (plainEntries.some((e) => !/^businessEntity\.|^extras\.startDate$/.test(e.action.jsonPath))) await globalThis.SXRTS.navigation?.showTab("Company");
       for (const entry of plainEntries) {
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
-        const tagShaped = Boolean(def && def.kind === "record" && def.addButton && def.fields.length === 1 && def.fields[0].kind === "text");
-        if (tagShaped && !globalThis.SXRTS.workflows.customField.isTagBoxNow?.(def)) await globalThis.SXRTS.navigation?.openClosedSections?.(() => globalThis.SXRTS.workflows.customField.isTagBoxNow(def));
-        if (def && globalThis.SXRTS.workflows.customField.isTagBoxNow?.(def)) { if (!tagGroups.has(def.key)) tagGroups.set(def.key, { def, entries: [] }); tagGroups.get(def.key).entries.push(entry); }
+        const tagShaped = Boolean(def && def.kind === "record" && def.addButton && def.fields.length === 1 && def.fields[0].kind === "text" && def.binds);
+        if (tagShaped) { if (!tagGroups.has(def.key)) tagGroups.set(def.key, { def, entries: [] }); tagGroups.get(def.key).entries.push(entry); }
         else singles.push(entry);
       }
       for (const { def, entries } of tagGroups.values()) await publishTags(def, entries);

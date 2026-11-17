@@ -44,20 +44,33 @@
     const end = rest.search(/recommended verticals/i);
     return plain(end >= 0 ? rest.slice(0, end) : rest);
   }
-  // The vertical NAMES under "Published Verticals" (each row prints its name as a link): everything between the "Published
-  // Verticals" heading and the "Recommended Verticals" heading, in page order. Null when the rows draw no links.
-  function publishedNames(section) {
+  // The elements between the "Published Verticals" heading and the "Recommended Verticals" heading, in page order.
+  function publishedNodes(section) {
     const all = Array.from(section.querySelectorAll("*"));
-    const heading = (re) => all.filter((node) => node.children.length === 0 && re.test(squash(node.textContent))).pop();
     const from = all.find((node) => node.children.length === 0 && /^published verticals\b/i.test(squash(node.textContent)));
-    const to = heading(/^recommended verticals\b/i);
     if (!from) return null;
-    const links = all.filter((node) => node.children.length === 0 && /typography_link/.test(String(node.className)) && Boolean(from.compareDocumentPosition(node) & 4) && (!to || Boolean(to.compareDocumentPosition(node) & 2)));
-    return links.length ? links.map((node) => plain(node.textContent)) : null;
+    const to = all.filter((node) => node.children.length === 0 && /^recommended verticals\b/i.test(squash(node.textContent))).pop();
+    return all.filter((node) => node !== from && Boolean(from.compareDocumentPosition(node) & 4) && (!to || Boolean(to.compareDocumentPosition(node) & 2)));
   }
+  // The words an element prints by ITSELF (its own text, not its children's): the name of a row, whether it is a link, a span
+  // or plain text beside an "Edit" link.
+  const ownText = (node) => squash(Array.from(node.childNodes).filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join(" "));
+  // Short texts the published area prints, to show in a message when the name is not found.
+  function publishedShows(section) {
+    const nodes = publishedNodes(section) || [];
+    const texts = [];
+    for (const node of nodes) {
+      const text = node.children.length === 0 ? squash(node.textContent) : ownText(node);
+      if (text && text.length <= 60 && !texts.includes(text)) texts.push(text);
+    }
+    return texts.slice(0, 12);
+  }
+  // Is the vertical listed? Its name is printed by an element of its own (exactly), or the area's words contain it.
   const listed = (section, name) => {
-    const names = publishedNames(section);
-    return names ? names.includes(plain(name)) : ` ${publishedText(section)} `.includes(` ${plain(name)} `);
+    const want = plain(name);
+    const nodes = publishedNodes(section);
+    if (nodes && nodes.some((node) => plain(node.children.length === 0 ? node.textContent : ownText(node)) === want)) return true;
+    return ` ${publishedText(section)} `.includes(` ${want} `);
   };
 
   // The section's own "Save changes" sits just below it: the first one that comes after the Add button on the page.
@@ -105,23 +118,29 @@
     add = findAdd() || add;
     section = sectionOf(add);
     const save = saveButtonOf(add);
+    let saved = false;
     if (save) {
       if (await waitFor(() => !save.disabled, TIMEOUTS.enable)) {
         save.click();
-        await waitFor(() => save.disabled || !save.isConnected, TIMEOUTS.save);
+        saved = await waitFor(() => save.disabled || !save.isConnected, TIMEOUTS.save);
       }
     }
+    // RTS accepted the Save when the button went grey again (it was pressed, and it is not enabled any more).
+    const saveAccepted = Boolean(save && saved && (save.disabled || !save.isConnected));
     for (const name of pressed) {
       if (results[name]) continue;
       const ok = await waitFor(() => listed(sectionOf(findAdd() || add), name), TIMEOUTS.list);
+      const shows = publishedShows(sectionOf(findAdd() || add)).join(", ") || "no names";
       results[name] = ok
         ? { status: "savedValueVerified", detail: `${name} is now in the Published Verticals list.` }
-        : { status: "failed", detail: `True was pressed for ${name}${save ? " and Save changes was pressed" : ""}, but ${name} is not in the Published Verticals list afterwards (it shows: ${(publishedNames(sectionOf(findAdd() || add)) || []).join(", ") || "no names"}). Check the section in RTS.` };
+        : saveAccepted
+          ? { status: "savedStateVerified", detail: `True was chosen for ${name} and RTS accepted Save changes, but the Published Verticals list does not show "${name}" yet (it shows: ${shows}). Check the section in RTS.` }
+          : { status: "failed", detail: `True was pressed for ${name}${save ? " and Save changes was pressed" : ""}, but RTS did not accept the save, and ${name} is not in the Published Verticals list afterwards (it shows: ${shows}). Check the section in RTS.` };
     }
     return { results };
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.verticals = { applyVerticals, TIMEOUTS, SYSTEM_MANAGED, publishedText };
+  globalThis.SXRTS.workflows.verticals = { applyVerticals, TIMEOUTS, SYSTEM_MANAGED, publishedText, publishedShows };
 })();

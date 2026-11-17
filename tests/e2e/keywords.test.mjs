@@ -14,12 +14,15 @@ import { validOutput } from "../helpers/rovo-sample.mjs";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const chromiumPath = () => { const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"; const dir = fs.readdirSync(root).find((d) => d.startsWith("chromium-")); return dir ? [path.join(root, dir, "chrome-linux", "chrome"), path.join(root, dir, "chrome-linux64", "chrome")].find((p) => fs.existsSync(p)) : undefined; };
 
-const PAGE = (existing, suggestMs, dropWord) => `<!doctype html><body style="font:14px sans-serif"><span class="flat-button__caption-x1">PBID: PB-1</span>
-<div data-v-1 class="keywords"><div data-v-1 class="keywords__list" id="list">${existing.map((w) => `<div class="element-group base-pill"><div class="element-group__item">${w}</div><div class="element-group__item base-pill__close-icon"><i class="rts-icon-close"></i></div></div>`).join("")}<input placeholder="Enter or paste keywords" class="keywords__input" type="text" maxlength="100" id="kw"></div></div>
+const PAGE = (existing, suggestMs, dropWord, lateMs = 0) => `<!doctype html><body style="font:14px sans-serif"><span class="flat-button__caption-x1">PBID: PB-1</span>
+<div id="late-host"></div><template id="kwtpl"><div data-v-1 class="keywords"><div data-v-1 class="keywords__list" id="list">${existing.map((w) => `<div class="element-group base-pill"><div class="element-group__item">${w}</div><div class="element-group__item base-pill__close-icon"><i class="rts-icon-close"></i></div></div>`).join("")}<input placeholder="Enter or paste keywords" class="keywords__input" type="text" maxlength="100" id="kw"></div></div></template>
 <div id="suggest" style="display:none"><ul></ul></div>
 <button data-test-id="description-keywords-save-btn" class="button_main button_primary-color button_size-default" id="save" disabled>Save Changes</button>
 <script>
   window.saves = 0; window.savedTags = [];
+  const draw = () => { document.getElementById("late-host").appendChild(document.getElementById("kwtpl").content.cloneNode(true)); wire(); };
+  setTimeout(draw, ${lateMs});
+  function wire() {
   const input = document.getElementById("kw"), list = document.getElementById("list"), save = document.getElementById("save"), box = document.getElementById("suggest");
   let drawn = "";
   input.addEventListener("input", () => { drawn = ""; box.style.display = "none"; const w = input.value.trim(); if (!w) return; setTimeout(() => { if (input.value.trim() === w) { drawn = w; box.querySelector("ul").innerHTML = "<li>" + w + " (new)</li>"; box.style.display = ""; } }, ${suggestMs}); });
@@ -32,9 +35,10 @@ const PAGE = (existing, suggestMs, dropWord) => `<!doctype html><body style="fon
     input.before(pill); input.value = ""; box.style.display = "none"; save.disabled = false;
   });
   save.addEventListener("click", () => { window.saves++; window.savedTags = [...list.querySelectorAll(".base-pill .element-group__item:first-child")].map((n) => n.textContent); save.disabled = true; });
+  }
 </script></body>`;
 
-async function run({ existing = [], suggestMs = 350, dropWord = "" } = {}) {
+async function run({ existing = [], suggestMs = 350, dropWord = "", lateMs = 0 } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "sxrts-kw-"));
   const ext = path.join(work, "ext"); fs.mkdirSync(ext);
   for (const item of ["manifest.json", "background", "content", "core", "registry", "icons"]) fs.cpSync(path.join(process.env.SX_PKG || repo, item), path.join(ext, item), { recursive: true });
@@ -43,7 +47,7 @@ async function run({ existing = [], suggestMs = 350, dropWord = "" } = {}) {
   manifest.host_permissions = ["http://127.0.0.1/*"];
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   fs.copyFileSync(path.join(repo, "team/teamDefaults.js"), path.join(ext, "core", "teamDefaults.js")); // the shipped mappings
-  const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(PAGE(existing, suggestMs, dropWord)); });
+  const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(PAGE(existing, suggestMs, dropWord, lateMs)); });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const ctx = await chromium.launchPersistentContext(path.join(work, "profile"), { executablePath: chromiumPath(), headless: false, viewport: { width: 1280, height: 800 }, args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`] });
@@ -105,4 +109,10 @@ test("a keyword RTS never accepts fails on its own; the other nine are saved, on
   assert.match(r.summary, /Saved 9 · Already in RTS 0 · Needs attention 1/, r.text.slice(-600));
   assert.equal(r.saves, 1);
   assert.ok(!r.tags.includes("driver safety"));
+});
+
+test("the Keywords box is drawn 3 seconds late and sits in a closed section: it is waited for, and the keywords still go in with ONE Save", { timeout: 240000 }, async () => {
+  const r = await run({ lateMs: 3000 });
+  assert.match(r.summary, /Saved 10 · Already in RTS 0 · Needs attention 0/, r.text.slice(-600));
+  assert.equal(r.saves, 1);
 });

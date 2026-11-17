@@ -137,11 +137,28 @@ test("the page: a vertical RTS does not list is a failure with the name; TMT and
   assert.deepEqual(state.windows[0].rows.names, ["Space Tourism", "AdTech"]);
 });
 
-test("the page: success is never claimed when the list does not show the vertical afterwards", async () => {
+test("the page: Save was accepted but the list does not show the vertical: NOT a verified success, and the message says what the list shows", async () => {
   mainPage({ windowIgnores: true });
   const { results } = await apply(["AdTech"]);
+  assert.equal(results.AdTech.status, "savedStateVerified");
+  assert.match(results.AdTech.detail, /does not show "AdTech" yet \(it shows: .*LOHAS & Wellness.*\)/);
+});
+
+test("the page: when RTS never lets Save go through, it is a failure", async () => {
+  mainPage({ saveNeverEnables: true });
+  const { results } = await apply(["AdTech"]);
   assert.equal(results.AdTech.status, "failed");
-  assert.match(results.AdTech.detail, /is not in the Published Verticals list afterwards/);
+  assert.match(results.AdTech.detail, /did not accept the save/);
+});
+
+test("the page: the list is read by each row's OWN name even when an Edit link sits beside it (the 'it shows: edit' case)", async () => {
+  const state = mainPage({ published: ["LOHAS & Wellness"] });
+  document.getElementById("vert").insertAdjacentHTML("afterbegin", "");
+  // a row drawn like RTS's Vue list: a link-styled Edit, the name in its own span, a description paragraph
+  document.querySelectorAll(".r").forEach((row) => { row.innerHTML = '<span class="typography typography_link">edit</span><span class="typography typography_bold">LOHAS & Wellness</span><p title="d">A long description that mentions manufacturing and beauty.</p>'; });
+  const { results } = await apply(["LOHAS & Wellness", "AdTech"]);
+  assert.equal(results["LOHAS & Wellness"].status, "skipped", "found by its own span, not mistaken for the Edit link");
+  assert.equal(state.windows.length, 1);
 });
 
 test("the page: no section on the page says which tab to open", async () => {

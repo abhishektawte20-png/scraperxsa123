@@ -82,5 +82,7 @@ test("a vertical that is already published is not touched: no window, no save", 
 test("RTS refuses the save: the vertical is not reported as saved", { timeout: 180000 }, async () => {
   const r = await publishVerticals({ saveRefuses: true });
   assert.deepEqual(r.server.published, ["LOHAS & Wellness"]);
-  assert.match(r.summary, /Saved 0 · Already in RTS 0 · Needs attention 1/, r.text);
+  // RTS accepted Save (the button went grey) but its list does not show the vertical: reported as "saved, not read back", never as verified
+  assert.match(r.text, /does not show "[^"]+" yet/, r.text.slice(-500));
+  assert.doesNotMatch(r.text, /is now in the Published Verticals list/);
 });

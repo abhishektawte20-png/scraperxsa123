@@ -342,6 +342,12 @@
 
   // Is this mapping a tag box (words typed and turned into tags) that is on the page right now?
   const isTagBoxNow = (def) => { try { return def.kind === "record" && isTagBox(def); } catch { return false; } };
+  // RTS may draw the box a moment after its section opens: look for it for a while, opening closed sections now and then.
+  async function waitForTagBox(def, ms = TIMEOUTS.appear) {
+    if (isTagBoxNow(def)) return true;
+    await globalThis.SXRTS.navigation?.openClosedSections?.(() => isTagBoxNow(def));
+    return waitFor(() => isTagBoxNow(def), ms);
+  }
 
   async function applyRecord(def, record) {
     const fields = filled(def, record);
@@ -693,5 +699,5 @@
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow, verifyTree, listTree, applyTagBoxMany, isTagBoxNow };
+  globalThis.SXRTS.workflows.customField = { TAG_ATTEMPTS, applyCustomField, rowsOf, TIMEOUTS, runInWindow, verifyTree, listTree, applyTagBoxMany, isTagBoxNow, waitForTagBox };
 })();
