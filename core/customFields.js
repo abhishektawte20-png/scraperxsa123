@@ -186,6 +186,8 @@
     if (def.rowBy) record.__row = outRecord?.[def.rowBy.outKey] ?? null;
     // The group a choice sits in (when the agent names it): only used to tell apart choices that share a name.
     if (outRecord?.group) record.__group = String(outRecord.group);
+    // Other written forms of the same value, tried when the page will not keep the first.
+    if (Array.isArray(outRecord?.alternatives) && outRecord.alternatives.length) record.__alternatives = outRecord.alternatives.map(String);
     for (const field of def.fields) {
       const outKey = def.binds.map[field.key];
       const value = outRecord?.[outKey];

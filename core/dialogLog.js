@@ -7,6 +7,7 @@
 (() => {
   const root = () => document.documentElement;
   function begin() {
+    root().removeAttribute("data-sx-popups");
     root().removeAttribute("data-sx-dialogs");
     root().setAttribute("data-sx-run", "1");
   }
@@ -24,7 +25,11 @@
     for (const entry of log) counts.set(entry.message, (counts.get(entry.message) ?? 0) + 1);
     return Array.from(counts, ([message, times]) => ({ message, times }));
   }
+  // The windows the page tried to open during this run: [{ url, blocked, at }].
+  function popups() {
+    try { return JSON.parse(root().getAttribute("data-sx-popups") || "[]"); } catch { return []; }
+  }
   const saw = (pattern, from = 0) => peek().slice(from).some((entry) => pattern.test(entry.message));
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.dialogLog = { begin, peek, end, summarize, saw };
+  globalThis.SXRTS.dialogLog = { begin, peek, end, summarize, saw, popups };
 })();

@@ -50,3 +50,52 @@ test("one field that cannot be found does not stop the others", async () => {
   assert.match(result.results.financingStatus.reason, /Financing Status dropdown was not found/);
   assert.equal(result.results.websiteAddresses.status, "savedValueVerified");
 });
+
+function menuPage() {
+  const dom = new JSDOM(`<!doctype html><body>
+    <nav><ul>
+      <li class="nav-list-item" data-test-id="business-entity-entity"><div tabindex="0" id="m-entity">Entity</div></li>
+      <li class="nav-list-item" data-test-id="business-entity-social"><div tabindex="0" id="m-social">Social Media</div></li>
+    </ul></nav>
+    <main id="view"><p>General</p></main>
+  </body>`, { runScripts: "outside-only", url: "http://localhost/" });
+  const { window } = dom;
+  Object.assign(global, { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement, Event: window.Event, InputEvent: window.InputEvent });
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.HTMLElement.prototype.checkVisibility = () => true;
+  const clicks = [];
+  document.getElementById("m-entity").addEventListener("click", () => {
+    clicks.push("entity");
+    document.getElementById("view").innerHTML = '<input id="webURL" type="text"><button id="saveBusinessEntityButton" disabled>Save</button>';
+    document.getElementById("webURL").addEventListener("input", () => { document.getElementById("saveBusinessEntityButton").disabled = false; });
+    document.getElementById("saveBusinessEntityButton").addEventListener("click", () => setTimeout(() => { document.getElementById("saveBusinessEntityButton").disabled = true; }, 20));
+  });
+  document.getElementById("m-social").addEventListener("click", () => clicks.push("social"));
+  return clicks;
+}
+
+test("the Website box is in a section the page's LEFT MENU shows: the menu entries are pressed one at a time until it appears, then it is written and read back", async () => {
+  const clicks = menuPage();
+  const result = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ websiteAddresses: [{ value: "https://las.app.br", action: "addIfMissing" }] });
+  assert.equal(result.status, "savedValueVerified", JSON.stringify(result));
+  assert.deepEqual(clicks, ["entity"], "it stopped as soon as the box was there");
+  assert.equal(document.getElementById("webURL").value, "https://las.app.br");
+});
+
+test("a box that cannot be found says what the left menu offers", async () => {
+  menuPage();
+  const result = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ emailDefaultStructure: { value: "First.Last@domain.com", action: "addIfMissing" } });
+  assert.equal(result.status, "failed");
+  assert.match(result.results.emailDefaultStructure.reason, /Left menu: entity \/ social media/);
+});
+
+test("the website is read back after Save: if the box shows something else afterwards it is a failure, not a success", async () => {
+  menuPage();
+  document.getElementById("m-entity").click();
+  const input = document.getElementById("webURL");
+  // RTS puts the old value back when it saves
+  document.getElementById("saveBusinessEntityButton").addEventListener("click", () => setTimeout(() => { input.value = "https://old.example"; }, 5));
+  const result = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ websiteAddresses: [{ value: "https://las.app.br", action: "replaceAfterConfirmation" }] });
+  assert.equal(result.results.websiteAddresses.status, "failed");
+  assert.match(result.results.websiteAddresses.reason, /now shows "https:\/\/old\.example"/);
+});

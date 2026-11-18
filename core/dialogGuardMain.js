@@ -22,6 +22,18 @@
     log.push({ kind, message: String(message ?? "").slice(0, 300), answer, at: Date.now() });
     root.setAttribute("data-sx-dialogs", JSON.stringify(log.slice(-30)));
   };
+  // Every window the page tries to open while a run is going, and whether Chrome let it open (a blocked one returns null).
+  const nativeOpen = window.open;
+  window.open = function () {
+    const opened = nativeOpen.apply(this, arguments);
+    if (active()) {
+      let log = [];
+      try { log = JSON.parse(root.getAttribute("data-sx-popups") || "[]"); } catch { log = []; }
+      log.push({ url: String(arguments[0] ?? "").slice(0, 160), blocked: !opened, at: Date.now() });
+      root.setAttribute("data-sx-popups", JSON.stringify(log.slice(-20)));
+    }
+    return opened;
+  };
   window.alert = function (message) {
     if (!active()) return nativeAlert.apply(this, arguments);
     note("alert", message, "OK");

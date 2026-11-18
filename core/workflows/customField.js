@@ -73,10 +73,13 @@
       }
       return;
     }
-    await globalThis.SXRTS.adapters.textField.applyText(control, value);
-    if (!globalThis.SXRTS.adapters.textField.verifyText(control, value)) {
-      throw new Error(`${def.label} › ${field.key} did not retain the proposed value.`);
-    }
+    const tf = globalThis.SXRTS.adapters.textField;
+    await tf.applyText(control, value);
+    if (await tf.retains(control, value, 400)) return;
+    // The page did not keep it (it rebuilds its value from keystrokes, or validated it away): type it the way a person does.
+    await tf.applyTyped(control, value);
+    if (await tf.retains(control, value, 600)) return;
+    throw new Error(`${def.label} › ${field.key} did not retain the proposed value. ${mismatchDetail(value, tf.readText(control))}`);
   }
 
   // A field inside a popup is the first match that is actually on screen; a
@@ -168,15 +171,25 @@
         return { status: "skipped", reason: "duplicate", detail: `${def.label} already equals "${value}".` };
       }
 
-      await writeField(def, field, control, value);
+      // The value as the report gives it; when the page will not keep it (a date box that wants MM/DD/YYYY, for example) the
+      // other forms of the SAME value the report carries are tried in turn.
+      let written = value;
+      let notKept = null;
+      for (const candidate of [value, ...(record.__alternatives || [])]) {
+        try { await writeField(def, field, control, candidate); written = candidate; notKept = null; break; } catch (error) {
+          if (!/did not retain/.test(String(error?.message))) throw error;
+          notKept = notKept || error;
+        }
+      }
+      if (notKept) throw notKept;
       await clickSave(def);
 
       // A popup usually closes on Save, taking the input with it. Read the
       // value back from the popup again so success is never assumed.
       if (def.openButton && !shownControls(def, field).length) weOpened = (await reopenForReadBack(def)) || weOpened;
       const after = findControl(def, field);
-      if (normalize(readField(field, after)) !== normalize(value)) {
-        throw new Error(`Save did not complete for ${def.label}: the saved value no longer matches. ${mismatchDetail(value, readField(field, after))}`);
+      if (normalize(readField(field, after)) !== normalize(written)) {
+        throw new Error(`Save did not complete for ${def.label}: the saved value no longer matches. ${mismatchDetail(written, readField(field, after))}`);
       }
       return { status: "savedValueVerified", name: def.key, before: current };
     } finally {
@@ -297,6 +310,9 @@
     const there = (want) => tagsIn(container, input).includes(want) || pillWords(container, input).includes(want);
     const results = records.map(() => null);
     const typed = [];
+    // RTS keeps at most 10 keywords in the box and drops the rest when it saves (seen: 10 tags kept, the other 3 gone). Every word is
+    // still tried (nothing is left untested on a guess); a word dropped because the box is full is reported as a limit, not a failure.
+    const limit = Number.isFinite(def.maxTags) ? def.maxTags : (/keyword/i.test(`${def.key} ${def.label}`) ? 10 : Infinity);
 
     for (let i = 0; i < records.length; i++) {
       const value = String(records[i]?.[field.key] ?? "").trim();
@@ -334,6 +350,7 @@
       for (const t of typed) {
         if (saveError) results[t.i] = { status: "failed", reason: saveError };
         else if (there(t.want)) results[t.i] = { status: "savedValueVerified", name: def.key };
+        else if (pillsIn(container, input).length >= limit) results[t.i] = { status: "skipped", reason: "limit", detail: `${def.label}: RTS kept ${limit} and dropped "${t.value}" (its limit); nothing is wrong, it just does not fit.` };
         else results[t.i] = { status: "failed", reason: `Save did not complete for ${def.label}: the tag "${t.value}" is no longer there.` };
       }
     }
@@ -389,6 +406,7 @@
   // it, runs core/workflows/popupWindow.js inside it, and hands the result
   // back over a port. This page then checks that RTS really changed state.
   const WINDOW_TIMEOUT = 90000;
+  const NO_WINDOW_TEXT = "No popup window opened. Chrome blocked it.";
 
   function queryIn(selector, root) {
     try {
@@ -410,7 +428,7 @@
 
   function findRow(def, label) {
     const rows = shownIn([def.rowBy.rowSelector]).filter((row) => globalThis.SXRTS.selectorBuilder.textHasWord(row.textContent, label));
-    if (!rows.length) throw new Error(`No row labelled "${label}" was found in the ${def.label} section. Open that section on the page so its rows are visible, then publish again.`);
+    if (!rows.length) throw new Error(`No row labelled "${label}" was found in the ${def.label} section. Open that section on the page so its rows are visible, then publish again. ${globalThis.SXRTS.navigation?.describeMenu?.() || ""}`);
     return rows.sort((a, b) => a.textContent.length - b.textContent.length)[0];
   }
 
@@ -463,7 +481,12 @@
           if (el?.isConnected && !el.disabled) break;
           await new Promise((resolve) => setTimeout(resolve, 60));
         }
+        const popupsBefore = (globalThis.SXRTS.dialogLog?.popups?.() ?? []).length;
         el.click();
+        // Chrome refused the window at once (the page's window.open returned nothing): no point waiting ten seconds for it.
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        const now = globalThis.SXRTS.dialogLog?.popups?.() ?? [];
+        if (now.length > popupsBefore && now.slice(popupsBefore).every((t) => t.blocked)) finish(reject, new Error(NO_WINDOW_TEXT));
       };
       port.onMessage.addListener((message) => {
         if (message.type === "armed") pressOpener();
@@ -532,7 +555,7 @@
           opener = opener || find();
         }
       }
-      if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page after waiting ${Math.round(TIMEOUTS.appear / 1000)} seconds and opening the closed sections. Open the right tab/section, or re-map the field. Page check: ${(() => { const g = document.querySelector("#containerIndustryGroup"); const sel = def.openButton?.selectors?.[0]; let n = 0; try { n = sel ? document.querySelectorAll(sel).length : 0; } catch { n = -1; } return `Industry block ${g ? (g.checkVisibility?.() === false ? "present but hidden" : "present") : "missing from the page"}, first mapped selector matches ${n} element(s), tab buttons: ${Array.from(document.querySelectorAll("button.navigation__button")).map((b) => b.textContent.trim()).join(" / ") || "none"}.`; })()}`);
+      if (!opener) throw new Error(`The button that opens the popup window for ${def.label} was not found on this page after waiting ${Math.round(TIMEOUTS.appear / 1000)} seconds and opening the closed sections. Open the right tab/section, or re-map the field. Page check: ${(() => { const g = document.querySelector("#containerIndustryGroup"); const sel = def.openButton?.selectors?.[0]; let n = 0; try { n = sel ? document.querySelectorAll(sel).length : 0; } catch { n = -1; } return `Industry block ${g ? (g.checkVisibility?.() === false ? "present but hidden" : "present") : "missing from the page"}, first mapped selector matches ${n} element(s), ${globalThis.SXRTS.navigation?.describeMenu?.() || ""}`; })()}`);
     }
     if (opener.disabled) await waitFor(() => !opener.disabled, TIMEOUTS.enable);
     if (opener.disabled) throw new Error(`The button that opens the popup window for ${def.label} is disabled right now.`);
@@ -571,6 +594,13 @@
         if (attempt > 0 && firstFailure && !/first try had failed/.test(String(error?.message))) error.message += ` (The first try had failed with: ${firstFailure})`;
         if (/No popup window opened/.test(String(error?.message))) {
           const said = (globalThis.SXRTS.dialogLog?.peek?.() ?? []).map((entry) => `"${entry.message}"`).join(", ");
+          const tried = globalThis.SXRTS.dialogLog?.popups?.() ?? [];
+          // What really happened: Chrome refused the window, or the page never asked for one.
+          const why = tried.some((t) => t.blocked)
+            ? "WHY: the page asked for the window and Chrome BLOCKED it (its pop-up blocker; a window that a script opens needs a recent click). Click the pop-up icon at the right end of the address bar and choose \"Always allow pop-ups from rts.pitchbook.com\", or press \"Try again\" below (a real click is always allowed)."
+            : tried.length ? "The page opened a window but it was not found. Close other RTS windows and try again."
+            : "WHY: the page did not try to open a window at all (the button did nothing). It may be greyed out or waiting for something; look at the section, then press \"Try again\" below.";
+          error.message = `${why} ${error.message}`;
           error.message += ` (RTS messages seen during this run: ${said || "none"}.)`;
         }
         if (!firstFailure) firstFailure = String(error?.message);
@@ -646,6 +676,11 @@
   async function applyCustomField(def, record) {
     // The field may sit in a section RTS shows closed: open sections one at a time, only until its control shows.
     if (!def.rowBy && !controlReady(def)) await globalThis.SXRTS.navigation?.openClosedSections?.(() => controlReady(def));
+    // A list of rows (social networks): the row of this record must be on screen. Sections and the left menu are opened until it is.
+    if (def.rowBy && record.__row) {
+      const rowThere = () => shownIn([def.rowBy.rowSelector]).some((row) => globalThis.SXRTS.selectorBuilder.textHasWord(row.textContent, record.__row));
+      if (!rowThere()) await globalThis.SXRTS.navigation?.openClosedSections?.(rowThere);
+    }
     if (def.tree && !controlReady(def)) await waitFor(() => controlReady(def), TIMEOUTS.appear); // RTS draws the section a moment after it opens
     try {
       return await applyHere(def, record);

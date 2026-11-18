@@ -881,11 +881,12 @@
       return card;
     }
 
-    function setRowStatus(actionId, statusText, reasonText) {
+    function setRowStatus(actionId, statusText, reasonText, notReadBack = false) {
       const entry = rowsByActionId.get(actionId);
       if (!entry) return;
       entry.action.executionStatus = statusText;
       entry.action.resultMessage = reasonText || "";
+      entry.action.notReadBack = Boolean(notReadBack);
       const already = statusText === "skipped" && globalThis.SXRTS.resultsSummary?.isAlready?.(reasonText);
       entry.statusBadge.textContent = already ? "already in RTS" : statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "needs attention" : statusText;
       entry.statusBadge.className = `badge badge-${already ? "already" : statusText === "savedValueVerified" ? "saved" : statusText === "failed" ? "failed" : "skipped"}`;
@@ -1319,7 +1320,7 @@
         if (outcome) {
           for (const { entry, name } of named) {
             const one = outcome.results[name] ?? { status: "failed", detail: `${name}: no result.` };
-            if (one.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail); recordResult(entry.action.jsonPath, { status: "savedStateVerified", name, detail: one.detail }); }
+            if (one.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail, true); recordResult(entry.action.jsonPath, { status: "savedStateVerified", name, detail: one.detail }); }
             else if (one.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", one.detail); recordResult(entry.action.jsonPath, { status: "savedValueVerified", name, detail: one.detail }); }
             else if (one.status === "skipped") { skipped++; setRowStatus(entry.action.actionId, "skipped", one.detail); recordResult(entry.action.jsonPath, { status: "skipped", reason: one.detail }); }
             else { failed++; setRowStatus(entry.action.actionId, "failed", one.detail); recordResult(entry.action.jsonPath, { status: "error", error: one.detail }); }
@@ -1454,7 +1455,7 @@
           // One line on the results screen for the one site (its cards each show their own status).
           recordResult("company.sites", kind === "failed" ? { status: "error", error: message } : result);
           for (const entry of entries) {
-            setRowStatus(entry.action.actionId, kind, kind === "savedValueVerified" ? (result.detail || "") : message);
+            setRowStatus(entry.action.actionId, kind, kind === "savedValueVerified" ? (result.detail || "") : message, result.status === "savedStateVerified");
             if (kind === "savedValueVerified") applied++; else if (kind === "skipped") skipped++; else failed++;
           }
           keepForUndo({ action: { jsonPath: "company.sites" } }, result.name || record.city, result);
@@ -1489,7 +1490,7 @@
         if (holdIfPaused(entry)) return;
         let value = validatedValueFor(entry);
         if (value === undefined) return;
-        if (entry.action.jsonPath === "extras.startDate" && typeof value?.value === "string") value = { ...value, value: globalThis.SXRTS.workflows.statusHistory.startDateText(value.value) };
+        if (entry.action.jsonPath === "extras.startDate" && typeof value?.value === "string") { const history = globalThis.SXRTS.workflows.statusHistory; const typed = history.startDateText(value.value); value = { ...value, value: typed, alternatives: history.startDateAlternatives(typed) }; }
         const def = globalThis.SXRTS.customFields?.getDefinition(entry.action.customKey);
         progress.doing(def?.label || entry.action.section || "Mapped field");
         // The tab this field lives on is put in front first (names, website, social media, start date: Business Entity).
@@ -1504,7 +1505,7 @@
           recordResult(entry.action.jsonPath, result);
           keepForUndo(entry, value, result, { treeWindow: Boolean(def.window?.tree), single: def.kind === "single" && !def.window && !def.tree });
           if (result.status === "savedValueVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", ""); }
-          else if (result.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", result.detail); }
+          else if (result.status === "savedStateVerified") { applied++; setRowStatus(entry.action.actionId, "savedValueVerified", result.detail, true); }
           else { skipped++; setRowStatus(entry.action.actionId, "skipped", result.detail || result.reason); }
         } catch (error) {
           failed++; setRowStatus(entry.action.actionId, "failed", error.message);

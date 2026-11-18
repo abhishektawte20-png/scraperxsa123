@@ -109,7 +109,33 @@
       const deadline = Date.now() + 1200;
       while (Date.now() < deadline) { if (isReady()) return true; await wait(60); }
     }
+    // Last resort: the page's own left menu. Each entry shows its section; they are pressed one at a time, only until the control shows.
+    for (const item of menuItems()) {
+      item.click();
+      const deadline = Date.now() + 1500;
+      while (Date.now() < deadline) { if (isReady()) return true; await wait(60); }
+    }
     return Boolean(isReady());
+  }
+
+  // The entries of the profile's left menu (RTS: li.nav-list-item with a data-test-id, inside the navigation). The one already
+  // shown is left alone.
+  function menuItems() {
+    const out = [];
+    for (const li of Array.from(document.querySelectorAll("li.nav-list-item[data-test-id], li[class*='nav-list-item']"))) {
+      if (li.closest("#sxrts-assistant-root") || !isShown(li)) continue;
+      const target = li.querySelector("[tabindex], button, a") || li;
+      const marks = `${li.className} ${target.className}`;
+      if (/(^|[^a-z])(active|selected|current)([^a-z]|$)/i.test(marks) || li.getAttribute("aria-current")) continue;
+      out.push(target);
+    }
+    return out;
+  }
+  // The labels of that menu, for messages ("Left menu: Entity, Social Media, ..."), so a control that cannot be found says where it could be.
+  function describeMenu() {
+    const labels = Array.from(document.querySelectorAll("li.nav-list-item[data-test-id], li[class*='nav-list-item']")).filter((li) => !li.closest("#sxrts-assistant-root")).map((li) => norm(li.textContent)).filter(Boolean);
+    const tabs = Array.from(document.querySelectorAll("button.navigation__button")).map((b) => norm(b.textContent)).filter(Boolean);
+    return `Left menu: ${labels.join(" / ") || "(not found)"}. Menu buttons: ${tabs.join(" / ") || "(none)"}.`;
   }
 
   // The two tabs of a profile. Only the tab being shown has its fields on screen, so each group of fields is
@@ -164,5 +190,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.navigation = { readLastEdits, expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar, openClosedSections };
+  globalThis.SXRTS.navigation = { readLastEdits, expandEverything, showTab, currentTab, expandAll, findExpandControl, navigateToSection, navigateToCompany, navigateToBusinessEntity, ensureSectionOpen, findSectionBar, openClosedSections, menuItems, describeMenu };
 })();

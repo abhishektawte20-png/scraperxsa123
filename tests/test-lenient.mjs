@@ -96,3 +96,13 @@ test("the industry goes by its NAME: a group the agent names is carried to the t
   o2.industry_classification.primary_industry_code = { number: "Not defined in methodology.", name: "Consulting Services (B2B)" };
   assert.equal(validate(o2).extras.industryCode.value, "Consulting Services (B2B)");
 });
+
+test("employee count: RTS takes ONE number: a range is the average, '500+' is 500, an exact count stays; the preview says so", () => {
+  const read = (count) => { const o = validOutput(); o.employee_count.current.count = count; return validate(o); };
+  assert.equal(read("51-200").extras.employeeCount.value, "126");
+  assert.equal(read("201-500").extras.employeeCount.value, "351");
+  assert.equal(read("1,000-5,000").extras.employeeCount.value, "3000");
+  assert.equal(read("500+").extras.employeeCount.value, "500");
+  assert.equal(read(125).extras.employeeCount.value, "125");
+  assert.ok(read("51-200").warnings.some((w) => /\[EMPLOYEE_NUMBER\].*range.*126.*average/.test(w)));
+});

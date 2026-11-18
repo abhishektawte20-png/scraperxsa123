@@ -132,7 +132,7 @@
     itemLines("NOT MAPPED YET (no RTS field known for these)", notMapped, "not-mapped", false);
     itemLines("NOT PUBLISHED (ready, but not ticked or not run)", notPublished, "not-published", false);
 
-    const stateOnly = saved.filter((a) => a.resultMessage);
+    const stateOnly = saved.filter((a) => a.resultMessage && a.notReadBack);
     if (stateOnly.length) {
       add(`SAVED, BUT NOT READ BACK (${stateOnly.length})`);
       stateOnly.forEach((a, i) => { add(`${i + 1}. ${a.jsonPath}: ${a.resultMessage}`); items.push({ type: "saved-state-only", path: a.jsonPath, message: a.resultMessage }); });

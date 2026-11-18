@@ -135,9 +135,16 @@
     const hasDay = /^\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}/.test(text) || /^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}/.test(text) || /^\d{4}-\d{1,2}-\d{1,2}/.test(text) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text);
     return hasDay ? toMdy(text) || String(value) : String(value);
   }
+  // Other forms a start date can be typed in when the box will not keep the one the report gives: a bare year or a month and year
+  // as a full MM/DD/YYYY date (the first of the month, the first of the year).
+  function startDateAlternatives(value) {
+    const text = squash(value);
+    const full = toMdy(text);
+    return full && full !== String(value).trim() && !/^\d{2}\/\d{2}\/\d{4}$/.test(String(value).trim()) ? [full] : [];
+  }
   const todayMdy = (now = new Date()) => `${two(now.getMonth() + 1)}/${two(now.getDate())}/${now.getFullYear()}`;
 
   globalThis.SXRTS = globalThis.SXRTS || {};
   globalThis.SXRTS.workflows = globalThis.SXRTS.workflows || {};
-  globalThis.SXRTS.workflows.statusHistory = { applyStatusHistory, toMdy, startDateText, todayMdy, TIMEOUTS, KINDS };
+  globalThis.SXRTS.workflows.statusHistory = { applyStatusHistory, toMdy, startDateText, startDateAlternatives, todayMdy, TIMEOUTS, KINDS };
 })();

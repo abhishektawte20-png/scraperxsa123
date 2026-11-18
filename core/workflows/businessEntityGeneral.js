@@ -52,7 +52,7 @@
     const field = entry("businessEntity.websiteAddresses");
     await ensureShown(() => document.querySelector(field.form.input.candidates[0]));
     const input = document.querySelector(field.form.input.candidates[0]);
-    if (!input) throw new Error("Website Address field was not found. Open the Business Entity tab and its Entity section so the Website Address box is visible, then publish again.");
+    if (!input) throw new Error("Website Address field was not found. Open the Business Entity tab and its Entity section so the Website Address box is visible, then publish again. " + (globalThis.SXRTS.navigation?.describeMenu?.() || ""));
     if (record.action === "skip") return { status: "skipped", reason: "action=skip" };
 
     const current = input.value.trim();
@@ -71,7 +71,7 @@
     const field = entry("businessEntity.emailDefaultStructure");
     await ensureShown(() => document.querySelector(field.form.select.candidates[0]));
     const select = document.querySelector(field.form.select.candidates[0]);
-    if (!select) throw new Error("Email Default Structure dropdown was not found.");
+    if (!select) throw new Error("Email Default Structure dropdown was not found. " + (globalThis.SXRTS.navigation?.describeMenu?.() || ""));
     if (envelope.action === "skip") return { status: "skipped", reason: "action=skip" };
 
     const current = select.selectedOptions[0]?.textContent.trim() || "";
@@ -197,6 +197,36 @@
     return { status: "savedValueVerified", detail: "Act log text removed and read back." };
   }
 
+  // After Save: does the box show what was written? Returns a message when it does not, "" when it does.
+  function readBackProblem(key, outcome) {
+    try {
+      const shown = (selectors, pick) => selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+      if (key === "websiteAddresses") {
+        const input = shown(entry("businessEntity.websiteAddresses").form.input.candidates);
+        const now = input ? input.value.trim() : "";
+        return normalize(now) === normalize(outcome.value) ? "" : `Save was pressed, but Website Address now shows "${now}" instead of "${outcome.value}".`;
+      }
+      if (key === "emailDefaultStructure") {
+        const select = shown(entry("businessEntity.emailDefaultStructure").form.select.candidates);
+        const now = select?.selectedOptions[0]?.textContent.trim() || "";
+        return normalize(now) === normalize(outcome.value) ? "" : `Save was pressed, but Email Default Structure now shows "${now}" instead of "${outcome.value}".`;
+      }
+      if (["financingStatus", "researchStatus", "publishStatus"].includes(key)) {
+        const select = shown(entry(`businessEntity.${key}`).form.select.candidates);
+        const now = select?.selectedOptions[0]?.textContent.replace(/\s+/g, " ").trim() || "";
+        return normalize(now) === normalize(outcome.value) ? "" : `Save was pressed, but the dropdown now shows "${now}" instead of "${outcome.value}".`;
+      }
+      if (key === "researchNotes" && outcome.added?.length) {
+        const box = findResearchNotesBox(entry("businessEntity.researchNotes"));
+        const text = normalize(globalThis.SXRTS.adapters.contentEditable.readContentEditable(box));
+        return outcome.added.every((added) => text.includes(normalize(added))) ? "" : "Save was pressed, but Research Notes no longer shows the text that was added.";
+      }
+    } catch (error) {
+      return `The box could not be read again after saving (${error.message}).`;
+    }
+    return "";
+  }
+
   async function saveGeneralGroup() {
     const field = entry("businessEntity.websiteAddresses"); // any of the 3 entries share the same Save button
     const saveButton = document.querySelector(field.saveButton.candidates[0]);
@@ -247,11 +277,16 @@
     }
 
     const saveOutcome = await saveGeneralGroup();
+    if (saveOutcome.success) await wait(200); // RTS may redraw the boxes just after saving
     for (const key of touched) {
-      results[key].status = saveOutcome.success ? "savedValueVerified" : "failed";
-      if (!saveOutcome.success) results[key].reason = saveOutcome.reason;
+      if (!saveOutcome.success) { results[key].status = "failed"; results[key].reason = saveOutcome.reason; continue; }
+      // Success is claimed only after the box is read again and shows what was written.
+      const problem = readBackProblem(key, results[key]);
+      results[key].status = problem ? "failed" : "savedValueVerified";
+      if (problem) results[key].reason = problem;
     }
-    return { status: saveOutcome.success ? "savedValueVerified" : "failed", results };
+    const anyFailed = touched.some((key) => results[key].status === "failed");
+    return { status: saveOutcome.success && !anyFailed ? "savedValueVerified" : "failed", results };
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};

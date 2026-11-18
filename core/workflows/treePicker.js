@@ -276,7 +276,7 @@
     if (!code) throw new Error(`"${raw}" is not a 6-digit NAICS code.`);
 
     const opener = findOpener(def);
-    if (!opener) throw new Error(`The "${def.openButton.text || "Add"}" button was not found on this page. Open the Industry Classification section, or re-map the field.`);
+    if (!opener) throw new Error(`The "${def.openButton.text || "Add"}" button was not found on this page. Open the Industry Classification section, or re-map the field. ${globalThis.SXRTS.navigation?.describeMenu?.() || ""}`);
     const scope = scopeFor(opener, def.tree.sectionSave);
     if (!scope) throw new Error("The section's Save Changes button was not found next to the Add button. Re-map the field.");
     if (plain(scope.root.textContent).includes(code)) {

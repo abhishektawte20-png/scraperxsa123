@@ -183,3 +183,15 @@ test("batch: if the page drops the tags after Save, none is reported as saved", 
   const out = await runMany(["alpha beta", "gamma delta"]);
   assert.ok(out.every((r) => r.status === "failed"), JSON.stringify(out));
 });
+
+test("RTS keeps at most 10 keywords: the ones it drops on Save are reported as its limit (skipped), not as failures; the first ten are kept", async () => {
+  const { doc, state } = setup({ existing: ["a1 x", "a2 x", "a3 x"] });
+  const save = doc.querySelector("button");
+  // like RTS: when Save is pressed, only the first 10 tags stay
+  save.addEventListener("click", () => { const tags = Array.from(doc.querySelectorAll(".tag")); tags.slice(10).forEach((t) => t.remove()); });
+  const words = ["w1 x", "w2 x", "w3 x", "w4 x", "w5 x", "w6 x", "w7 x", "w8 x", "w9 x", "w10 x"];
+  const out = await runMany(words);
+  assert.equal(state.saves, 1);
+  assert.deepEqual(out.map((r) => r.status), ["savedValueVerified", "savedValueVerified", "savedValueVerified", "savedValueVerified", "savedValueVerified", "savedValueVerified", "savedValueVerified", "skipped", "skipped", "skipped"]);
+  assert.match(out[9].detail, /RTS kept 10 and dropped "w10 x"/);
+});

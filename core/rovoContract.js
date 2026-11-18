@@ -370,6 +370,23 @@
     });
   }
 
+  // RTS's employee count box takes ONE number. A range is written as its average; "500+" / "over 500" as 500; "<50" as 50.
+  // An exact count is kept as it is. Returns { number, how } or null when the text holds no count.
+  function employeeNumber(count) {
+    const text = String(count ?? "").replace(/,/g, "").replace(/\s+/g, " ").trim();
+    if (!text) return null;
+    let m;
+    if ((m = /^(\d+)$/.exec(text))) return { number: Number(m[1]), how: "exact" };
+    if ((m = /^(\d+)\s*(?:-|\u2013|\u2014|to)\s*(\d+)\b/i.exec(text))) { const a = Number(m[1]); const b = Number(m[2]); return { number: Math.round((a + b) / 2), how: "average", from: `${a}-${b}` }; }
+    if ((m = /^(?:>=?|over|more than|at least)?\s*(\d+)\s*\+?$/i.exec(text)) && /[+>]|over|more|least/i.test(text)) return { number: Number(m[1]), how: "floor" };
+    if ((m = /^(?:<=?|under|less than|up to|fewer than)\s*(\d+)$/i.exec(text))) return { number: Number(m[1]), how: "ceiling" };
+    return null;
+  }
+  function checkEmployeeNumber(src, issues) {
+    const found = employeeNumber(src.employee_count?.current?.count);
+    if (found && found.how !== "exact") issue(issues, "info", "EMPLOYEE_NUMBER", "employee_count.current.count", `"${src.employee_count.current.count}" is ${found.how === "average" ? "a range" : "not an exact count"}: RTS takes one number, so ${found.number} is used${found.how === "average" ? " (the average)" : ""}.`);
+  }
+
   function checkKeywords(src, issues) {
     const keywords = src.keywords;
     if (!Array.isArray(keywords)) return;
@@ -646,7 +663,7 @@
       extras.industryCode = { value, action: act, source: null, ...(real(ic.group) ? { group: ic.group } : {}) };
     }
     const emp = src.employee_count?.current;
-    if (real(String(emp?.count ?? ""))) extras.employeeCount = { value: String(emp.count), action: act, source: emp.source_url ?? null };
+    if (real(String(emp?.count ?? ""))) { const found = employeeNumber(emp.count); extras.employeeCount = { value: found ? String(found.number) : String(emp.count), action: act, source: emp.source_url ?? null }; }
     const verticals = (src.verticals?.assigned || []).map((v) => v?.vertical_name).filter(real);
     if (verticals.length) extras.verticals = verticals.map((value) => ({ value, action: act }));
     const people = (Array.isArray(src.management) ? src.management : []).filter((m) => real(m?.full_name) && isLatinName(m.full_name));
@@ -776,6 +793,7 @@
       safely(() => checkDescription(src, issues));
       safely(() => checkNames(src, issues));
       safely(() => checkNonEnglish(src, issues));
+      safely(() => checkEmployeeNumber(src, issues));
       return issues;
     };
     const { src, issues: all } = soft ? lenient(srcIn, check) : { src: srcIn, issues: check(srcIn) };
@@ -841,6 +859,7 @@
       safely(() => checkDescription(current, found));
       safely(() => checkNames(current, found));
       safely(() => checkNonEnglish(current, found));
+      safely(() => checkEmployeeNumber(current, found));
       return found;
     };
     const result = options.lenient ? lenient(src, check) : { src, issues: check(src) };
@@ -950,5 +969,5 @@
   }
 
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.rovoContract = { isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, toHandle, settings: SETTINGS, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, externalCode, externalSeverity, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
+  globalThis.SXRTS.rovoContract = { employeeNumber, isContract, analyze, analyzeParsed, formatIssue, buildCorrectionPrompt, toHandle, settings: SETTINGS, buildFormatCorrectionPrompt, buildJsonRepairPrompt, reviewIssues, FALLBACKS, TEMPLATE, normalizeDomain, isFallback, real, hostOf, hostMatches, externalCode, externalSeverity, CLASSIFICATION_PREFIXES, UNIVERSALLY_PROHIBITED_CODES, issue };
 })();

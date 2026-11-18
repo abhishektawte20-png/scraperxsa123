@@ -152,3 +152,14 @@ test("areaAround with full climbs to the largest area that fits, not just the fi
   assert.equal(full.id, "all");
   assert.notEqual(small.id, "all");
 });
+
+test("'saved, but not read back' lists only what really was not read back: a status that changed and a history row that was read back are not in it", () => {
+  const actions = [
+    { jsonPath: "businessEntity.researchStatus", executionStatus: "savedValueVerified", resultMessage: 'Research status changed from "A" to "B".', proposedValue: {} },
+    { jsonPath: "extras.address", executionStatus: "savedValueVerified", resultMessage: "Saved, but it is not in the Site list.", notReadBack: true, proposedValue: {} }
+  ];
+  const text = globalThis.SXRTS.issueReport.build({ version: "9", domain: "acme.com", actions }).text;
+  assert.match(text, /SAVED, BUT NOT READ BACK \(1\)/);
+  assert.match(text, /extras\.address/);
+  assert.doesNotMatch(text, /businessEntity\.researchStatus: Research status changed/);
+});
