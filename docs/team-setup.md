@@ -359,3 +359,8 @@ From the issue report on LAS (12 fields needed attention):
 - **The general group is read back.** Website, Email, the three statuses and the act log are read again after Save and must show what was written; a status that changed no longer shows up under "saved, but not read back" (only what really was not read back does).
 - **Start date.** A value the box clears (a bare year) is retried as a full MM/DD/YYYY date (2004 -> 01/01/2004); a date or text the page does not keep is typed the way a person types; if nothing is kept the message says what was typed and what the page has.
 - **Popup blocked.** The page's own window.open is watched during a run. When Chrome refuses the Industry window, the error says so at once (no 10-second wait) and what to do: allow pop-ups for rts.pitchbook.com, or press "Try again" (a real click is always allowed). If the page never asked for a window, it says that instead.
+
+## 0.37.1
+
+- **Faster, no wandering.** The left-menu pressing added in 0.37.0 is removed (it scrolled the page around and took long). Sections are expanded ONCE at the start of a publish with the page's own Expand button; switching between the Business Entity and Company tabs afterwards no longer presses Expand again each time.
+- The read-back after the general Save waits up to 2 seconds for RTS to redraw before judging a status.

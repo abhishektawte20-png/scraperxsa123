@@ -109,12 +109,6 @@
       const deadline = Date.now() + 1200;
       while (Date.now() < deadline) { if (isReady()) return true; await wait(60); }
     }
-    // Last resort: the page's own left menu. Each entry shows its section; they are pressed one at a time, only until the control shows.
-    for (const item of menuItems()) {
-      item.click();
-      const deadline = Date.now() + 1500;
-      while (Date.now() < deadline) { if (isReady()) return true; await wait(60); }
-    }
     return Boolean(isReady());
   }
 
@@ -149,6 +143,7 @@
   const currentTab = () => ["Business Entity", "Company"].find(tabShown) || null;
 
   // Brings a tab to the front (only when it is not already) and opens its sections. Returns true when its fields are on screen.
+  let expandedOnce = false;
   async function showTab(name) {
     if (tabShown(name)) return true;
     const button = Array.from(document.querySelectorAll("button.navigation__button")).find((btn) => btn.textContent.includes(name));
@@ -156,7 +151,7 @@
     button.click();
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline && !tabShown(name)) await wait(60);
-    await expandAll();
+    if (!expandedOnce) await expandAll();
     return tabShown(name);
   }
 
@@ -164,6 +159,7 @@
   // section was collapsed. "Expand" is only pressed where it says Expand, so nothing already open is collapsed.
   // The tab that was in front at the start is put back in front at the end.
   async function expandEverything() {
+    expandedOnce = true;
     const start = currentTab();
     const startY = window.scrollY || 0;
     let opened = 0;

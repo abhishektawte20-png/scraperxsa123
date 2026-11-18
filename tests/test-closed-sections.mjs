@@ -74,21 +74,6 @@ function menuPage() {
   return clicks;
 }
 
-test("the Website box is in a section the page's LEFT MENU shows: the menu entries are pressed one at a time until it appears, then it is written and read back", async () => {
-  const clicks = menuPage();
-  const result = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ websiteAddresses: [{ value: "https://las.app.br", action: "addIfMissing" }] });
-  assert.equal(result.status, "savedValueVerified", JSON.stringify(result));
-  assert.deepEqual(clicks, ["entity"], "it stopped as soon as the box was there");
-  assert.equal(document.getElementById("webURL").value, "https://las.app.br");
-});
-
-test("a box that cannot be found says what the left menu offers", async () => {
-  menuPage();
-  const result = await globalThis.SXRTS.workflows.businessEntityGeneral.applyBusinessEntityGeneral({ emailDefaultStructure: { value: "First.Last@domain.com", action: "addIfMissing" } });
-  assert.equal(result.status, "failed");
-  assert.match(result.results.emailDefaultStructure.reason, /Left menu: entity \/ social media/);
-});
-
 test("the website is read back after Save: if the box shows something else afterwards it is a failure, not a success", async () => {
   menuPage();
   document.getElementById("m-entity").click();

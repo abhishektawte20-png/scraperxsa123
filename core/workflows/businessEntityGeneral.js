@@ -281,7 +281,8 @@
     for (const key of touched) {
       if (!saveOutcome.success) { results[key].status = "failed"; results[key].reason = saveOutcome.reason; continue; }
       // Success is claimed only after the box is read again and shows what was written.
-      const problem = readBackProblem(key, results[key]);
+      let problem = readBackProblem(key, results[key]);
+      for (let i = 0; problem && i < 8; i++) { await wait(250); problem = readBackProblem(key, results[key]); } // RTS may redraw a moment after saving
       results[key].status = problem ? "failed" : "savedValueVerified";
       if (problem) results[key].reason = problem;
     }
