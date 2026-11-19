@@ -97,3 +97,25 @@ test("a start date that names a day is typed as MM/DD/YYYY; a year or month and 
   const f = globalThis.SXRTS.workflows.statusHistory.startDateText;
   assert.deepEqual(["12 Apr 2025", "Apr 12, 2025", "2025-04-12", "2025", "05/2022"].map(f), ["04/12/2025", "04/12/2025", "04/12/2025", "2025", "05/2022"]);
 });
+
+test("the result a researcher sees is short and plain: one headline, only what needs a look, no ticks, crosses or codes; the old list is folded under 'Details'", async () => {
+  await import("../core/resultsSummary.js");
+  const rs = globalThis.SXRTS.resultsSummary;
+  const clean = rs.buildSummary({ "company.keywords": { status: "savedValueVerified", name: "k" }, "company.briefDescription": { status: "skipped", reason: "duplicate", detail: "already equals x" } });
+  assert.match(clean.html, /All done · 2 saved/);
+  assert.doesNotMatch(clean.html.split("<details")[0], /✗|✓|needs attention/i, "nothing alarming above the folded details");
+  const mixed = rs.buildSummary({
+    "company.keywords": { status: "savedValueVerified" },
+    "extras.startDate": { status: "error", error: "Save did not complete for Start date: the saved value no longer matches." },
+    "businessEntity.websiteAddresses": { status: "error", error: "Website Address field was not found." },
+    "extras.employeeCount": { status: "error", error: "The Save button for Employee count is disabled; the change was not registered by the page." }
+  });
+  const top = mixed.html.split("<details")[0];
+  assert.match(top, /1 done · 3 to look at/);
+  assert.match(top, /Start date<\/b>: saved, but please check it in RTS/);
+  assert.match(top, /Website address<\/b>: could not find this box on the page/);
+  assert.match(top, /Employee count<\/b>: RTS did not accept it/);
+  assert.doesNotMatch(top, /Save did not complete|disabled|✗/, "no technical text for the researcher");
+  assert.match(mixed.html, /Details \(for the developer\)/);
+  assert.match(mixed.html, /Needs attention 3/, "the exact numbers and messages are still there, folded");
+});

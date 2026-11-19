@@ -364,3 +364,9 @@ From the issue report on LAS (12 fields needed attention):
 
 - **Faster, no wandering.** The left-menu pressing added in 0.37.0 is removed (it scrolled the page around and took long). Sections are expanded ONCE at the start of a publish with the page's own Expand button; switching between the Business Entity and Company tabs afterwards no longer presses Expand again each time.
 - The read-back after the general Save waits up to 2 seconds for RTS to redraw before judging a status.
+
+## 0.38.0
+
+- **A short, plain result.** After a publish the researcher sees one headline ("All done · 31 saved", or "29 done · 2 to look at") and, only for what needs a look, one plain line each ("Start date: saved, but please check it in RTS", "Website address: could not find this box on the page", "Employee count: RTS did not accept it"). No ticks, crosses, codes or technical messages. The old per-field list, the exact numbers and messages are kept folded under "Details (for the developer)" and in the report.
+- **The fields list folds away after a publish** (button "Show the fields" brings it back), so the result is not buried under dozens of rows.
+- **Not red any more.** A finished run is never shown in red. A problem is split in two: "saved, but please check it" (the save went through but the read-back could not confirm it) and "not saved" (RTS did not accept it).

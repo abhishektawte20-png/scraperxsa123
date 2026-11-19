@@ -200,6 +200,11 @@
       .foot { text-align: center; padding: 6px 18px 18px; font-size: 11px; color: var(--muted); }
       .foot strong { color: var(--navy); font-weight: 700; }
 
+      .simple-head { font-size: 15px; font-weight: 700; margin: 2px 0 6px; }
+      .simple-ok { color: var(--ok); }
+      .simple-warn { color: var(--warn); }
+      .simple-look { margin: 0 0 3px; padding: 6px 9px; border-radius: 6px; background: var(--warn-soft); font-size: 12px; }
+      .summary-dev { margin-top: 8px; }
       .summary-header { margin-bottom: 8px; }
       .summary-header h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--ink); }
       .summary-stats { display: flex; gap: 12px; flex-wrap: wrap; font-weight: 650; }
@@ -916,6 +921,7 @@
       siteRegionalRow.classList.toggle("hidden", !lastActions.some((a) => a.siteGroup || a.jsonPath === "company.sites"));
       rowsByActionId.clear();
       actionList.replaceChildren();
+      actionList.classList.remove("hidden");
       const ready = lastActions.filter((a) => a.executionStatus === "pending");
       const waiting = lastActions.filter((a) => a.executionStatus !== "pending");
       const groupTitle = (cls, text, n) => element("div", { className: `group-title ${cls}` }, [element("span", { text }), element("span", { className: "n", text: String(n) })]);
@@ -1568,7 +1574,13 @@
       summaryDiv.innerHTML = summary.html;
       publishStatus.textContent = "";
       publishStatus.appendChild(summaryDiv);
-      publishStatus.className = `status ${failed ? "error" : "success"}`;
+      // The long list of fields (each with its own badge) is folded away after a publish; one button brings it back.
+      actionList.classList.add("hidden");
+      const showFields = document.createElement("button");
+      showFields.type = "button"; showFields.className = "btn secondary"; showFields.textContent = "Show the fields";
+      showFields.addEventListener("click", () => { const hide = !actionList.classList.contains("hidden"); actionList.classList.toggle("hidden", hide); showFields.textContent = hide ? "Show the fields" : "Hide the fields"; });
+      publishStatus.appendChild(showFields);
+      publishStatus.className = `status ${failed ? "warn" : "success"}`;
       // A window field that could not be done by itself is never left as a dead end: one click opens the window again (a real click
       // always lets the window open), or the researcher ticks it by hand and has the extension check it.
       for (const { def, value, why } of industryAssist) {

@@ -148,8 +148,36 @@
     };
   }
 
-  // One line per field, worst first: what needs attention, what was saved, then (folded) what was already there.
-  function generateHtml(byField, counts) {
+  // What a researcher needs to know about one item that did not go through, in a few plain words. The exact message stays in the
+  // details (and in the report for the developer).
+  // "check": the save was pressed and RTS accepted it but the read-back could not confirm it (the value is probably there).
+  // "notSaved": the value was not accepted at all.
+  const CHECK = /Save did not complete|no longer (there|matches)|not found after saving|not in the .* list|not read back|could not be reopened|was pressed, but|does not show/i;
+  function plainReason(message) {
+    const text = String(message ?? "");
+    if (CHECK.test(text) && !/did not retain/i.test(text)) return { kind: "check", words: "saved, but please check it in RTS" };
+    if (/No popup window opened|BLOCKED|blocked/i.test(text)) return { kind: "notSaved", words: "the window did not open (allow pop-ups for RTS, then press Try again)" };
+    if (/not found|not on screen|No row labelled/i.test(text)) return { kind: "notSaved", words: "could not find this box on the page" };
+    if (/did not retain|disabled|not registered|refus|did not accept/i.test(text)) return { kind: "notSaved", words: "RTS did not accept it" };
+    return { kind: "notSaved", words: "not saved, please add it by hand or try again" };
+  }
+
+  // The short version a researcher sees: one headline, and only what needs a look, in plain words. No ticks, no crosses, no codes.
+  function simpleHtml(byField, counts) {
+    const look = [];
+    for (const [field, results] of byField.entries()) for (const r of results) if (r.status === "error") look.push({ name: friendly(field), ...plainReason(r.message) });
+    const done = counts.success + counts.already;
+    const head = look.length
+      ? `<div class="simple-head simple-warn">${done} done \u00B7 ${look.length} to look at</div>`
+      : `<div class="simple-head simple-ok">All done \u00B7 ${done} saved</div>`;
+    const seen = new Set();
+    const lines = look.filter((x) => { const key = `${x.name}|${x.words}`; if (seen.has(key)) return false; seen.add(key); return true; })
+      .map((x) => `<div class="simple-look"><b>${esc(x.name)}</b>: ${esc(x.words)}</div>`);
+    return `${head}${lines.join("")}${look.length ? `<div class="helptext">Everything else was saved. If you want us to look into it, press \"Send to developer\" below.</div>` : ""}`;
+  }
+
+  // One line per field, worst first (kept for the developer, folded away).
+  function detailsHtml(byField, counts) {
     const line = (field, r) => `<div class="summary-item summary-item-${r.status}"><span class="summary-icon">${r.icon}</span><span class="summary-field">${esc(friendly(field))}</span><span class="summary-message">${esc(shorten(r.message))}</span></div>${r.detail && r.status === "error" ? `<div class="summary-detail">${esc(r.detail)}</div>` : ""}`;
     const rows = { error: [], success: [], skipped: [], already: [] };
     for (const [field, results] of byField.entries()) for (const r of results) (rows[r.status] || rows.skipped).push(line(field, r));
@@ -160,6 +188,10 @@
     return out.join("\n");
   }
 
+  function generateHtml(byField, counts) {
+    return `${simpleHtml(byField, counts)}<details class="summary-fold summary-dev"><summary>Details (for the developer)</summary>${detailsHtml(byField, counts)}</details>`;
+  }
+
   globalThis.SXRTS = globalThis.SXRTS || {};
-  globalThis.SXRTS.resultsSummary = { buildSummary, formatResult, getSolution, isAlready, friendly };
+  globalThis.SXRTS.resultsSummary = { buildSummary, formatResult, getSolution, isAlready, friendly, plainReason };
 })();
